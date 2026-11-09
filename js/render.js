@@ -81,7 +81,8 @@ function drawRaster(ctx, img, x, y, w, h, smooth) {
  *   series: [{ ux, uy, idx, fullIdx, color, label }], // idx = events drawn as dots; fullIdx = all (density/contours)
  *   hist: { mode: 'count'|'mode', smooth, offset: 0..1, fill, bins },
  *   contour: { step: 0.1, outliers: true },
- *   gates: [{ gate, text, selected, color }],     // render sets item.labelBox
+ *   gates: [{ gate, text, lines?, labelPos?, selected, color }], // lines = [{text, color}] for a multi-line label;
+ *                                                  // labelPos overrides gate.labelPos; render sets item.labelBox
  *   showLegend
  * }
  */
@@ -444,7 +445,11 @@ function drawGate(ctx, L, spec, item, T) {
   const cy = y => Math.min(MARGIN.t + L.ph - 2, Math.max(MARGIN.t + 2, y));
   ctx.save();
   ctx.font = LABEL_FONT;
-  const tw = ctx.measureText(text).width;
+  // one line (gate name + %) or several (one per overlaid sample, in its colour)
+  const lines = item.lines && item.lines.length ? item.lines : [{ text, color: item.color || '#000' }];
+  const LH = 14;
+  const tw = Math.max(...lines.map(l => ctx.measureText(l.text).width));
+  const bh = lines.length * LH + 2;
   let def; // default label centre
   ctx.save();
   ctx.beginPath(); ctx.rect(MARGIN.l - 1, MARGIN.t - 1, L.pw + 2, L.ph + 2); ctx.clip();
@@ -473,16 +478,17 @@ function drawGate(ctx, L, spec, item, T) {
     ctx.moveTo(geo.x0, geo.y); ctx.lineTo(geo.x1, geo.y);
     ctx.stroke();
     if (selected) { ctx.fillStyle = color; ctx.fillRect(cx(geo.x0) - 3, geo.y - 3, 6, 6); ctx.fillRect(cx(geo.x1) - 3, geo.y - 3, 6, 6); }
-    def = [(cx(geo.x0) + cx(geo.x1)) / 2, geo.y - 14];
+    def = [(cx(geo.x0) + cx(geo.x1)) / 2, geo.y - 6 - bh / 2];
   }
   ctx.restore();
   // Label: user-dragged position (stored in plot units) or the default, kept inside the plot
-  let [lx, ly] = g.labelPos ? [L.ux2px(g.labelPos[0]), L.uy2px(g.labelPos[1])] : def;
+  const pos = item.labelPos || g.labelPos;
+  let [lx, ly] = pos ? [L.ux2px(pos[0]), L.uy2px(pos[1])] : def;
   lx = Math.min(MARGIN.l + L.pw - tw / 2 - 4, Math.max(MARGIN.l + tw / 2 + 4, lx));
-  ly = Math.min(MARGIN.t + L.ph - 9, Math.max(MARGIN.t + 9, ly));
+  ly = Math.min(MARGIN.t + L.ph - bh / 2 - 1, Math.max(MARGIN.t + bh / 2 + 1, ly));
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-  ctx.fillStyle = T.labelBg; ctx.fillRect(lx - tw / 2 - 3, ly - 8, tw + 6, 16);
-  ctx.fillStyle = color; ctx.fillText(text, lx, ly);
-  item.labelBox = { x: lx - tw / 2 - 3, y: ly - 8, w: tw + 6, h: 16, cx: lx, cy: ly };
+  ctx.fillStyle = T.labelBg; ctx.fillRect(lx - tw / 2 - 3, ly - bh / 2, tw + 6, bh);
+  lines.forEach((l, i) => { ctx.fillStyle = l.color || color; ctx.fillText(l.text, lx, ly - bh / 2 + 1 + LH / 2 + i * LH); });
+  item.labelBox = { x: lx - tw / 2 - 3, y: ly - bh / 2, w: tw + 6, h: bh, cx: lx, cy: ly };
   ctx.restore();
 }

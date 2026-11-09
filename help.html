@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2024%2026%22%3E%3Cg%20stroke%3D%22%23a855f7%22%20stroke-width%3D%221.6%22%20stroke-linecap%3D%22round%22%3E%3Cpath%20d%3D%22M12%2010V2%22%2F%3E%3Cpath%20d%3D%22M12%2010L7%203%22%2F%3E%3Cpath%20d%3D%22M12%2010L17%203%22%2F%3E%3Cpath%20d%3D%22M12%2010L4.5%206%22%2F%3E%3Cpath%20d%3D%22M12%2010L19.5%206%22%2F%3E%3Cpath%20d%3D%22M12%2010L9.5%202.3%22%2F%3E%3Cpath%20d%3D%22M12%2010L14.5%202.3%22%2F%3E%3C%2Fg%3E%3Cellipse%20cx%3D%2212%22%20cy%3D%2213.5%22%20rx%3D%225%22%20ry%3D%224.2%22%20fill%3D%22%2322c55e%22%2F%3E%3Cg%20fill%3D%22%2315803d%22%3E%3Ccircle%20cx%3D%229.7%22%20cy%3D%2212.7%22%20r%3D%22.95%22%2F%3E%3Ccircle%20cx%3D%2212.3%22%20cy%3D%2211.9%22%20r%3D%22.95%22%2F%3E%3Ccircle%20cx%3D%2214.7%22%20cy%3D%2213.3%22%20r%3D%22.95%22%2F%3E%3Ccircle%20cx%3D%2210.8%22%20cy%3D%2215.3%22%20r%3D%22.95%22%2F%3E%3Ccircle%20cx%3D%2213.5%22%20cy%3D%2215.5%22%20r%3D%22.95%22%2F%3E%3C%2Fg%3E%3Cpath%20d%3D%22M12%2017.5V25%22%20stroke%3D%22%2316a34a%22%20stroke-width%3D%221.8%22%20stroke-linecap%3D%22round%22%2F%3E%3Cpath%20d%3D%22M12%2021.5c-2.5-.5-4.5-2-5.5-4M12%2021c2.5-.5%204.3-1.8%205.3-3.8%22%20stroke%3D%22%2316a34a%22%20stroke-width%3D%221.4%22%20fill%3D%22none%22%20stroke-linecap%3D%22round%22%2F%3E%3C%2Fsvg%3E">
-<title>Thistle Flow v0.3.0 (Beta) — Help</title>
+<title>Thistle Flow v0.4.0 (Beta) — Help</title>
 <style>
   /* Thistle Plot palette: dark by default, light when the system asks for it */
   :root { --bg: #0f172a; --surf: #1e293b; --surf2: #263347; --text: #e2e8f0; --muted: #94a3b8; --border: #334155; --accent: #3b82f6; --code: #263347; --badge-bg: #1d3461; --note-bg: #1a2744; --note-bd: #2a4080; --note-tx: #93c5fd; color-scheme: dark; }
@@ -39,13 +39,13 @@
   <svg width="24" height="26" viewBox="0 0 24 26" aria-hidden="true" style="flex:none"><g stroke="#a855f7" stroke-width="1.6" stroke-linecap="round"><path d="M12 10V2"/><path d="M12 10L7 3"/><path d="M12 10L17 3"/><path d="M12 10L4.5 6"/><path d="M12 10L19.5 6"/><path d="M12 10L9.5 2.3"/><path d="M12 10L14.5 2.3"/></g><ellipse cx="12" cy="13.5" rx="5" ry="4.2" fill="#22c55e"/><g fill="#15803d"><circle cx="9.7" cy="12.7" r=".95"/><circle cx="12.3" cy="11.9" r=".95"/><circle cx="14.7" cy="13.3" r=".95"/><circle cx="10.8" cy="15.3" r=".95"/><circle cx="13.5" cy="15.5" r=".95"/></g><path d="M12 17.5V25" stroke="#16a34a" stroke-width="1.8" stroke-linecap="round"/><path d="M12 21.5c-2.5-.5-4.5-2-5.5-4M12 21c2.5-.5 4.3-1.8 5.3-3.8" stroke="#16a34a" stroke-width="1.4" fill="none" stroke-linecap="round"/></svg>
   <span class="title">Thistle Flow</span>
   <span class="badge beta">BETA</span>
-  <span class="badge">v0.3.0</span>
+  <span class="badge">v0.4.0</span>
   <a class="app" href="./">Open the app</a>
 </header>
 <main>
 <h1>Help and manual</h1>
 <p class="muted">Lightweight flow cytometry analysis in your browser; your data never leaves your computer. Sister app of <a href="https://actinomycetes.github.io/thistle-plot/">Thistle Plot</a> (statistics and figures). <a href="https://github.com/actinomycetes/thistle-flow">Source on GitHub</a>.</p>
-<div class="note">Thistle Flow is a <b>beta (v0.3.0)</b>. Check important results against an established package before you rely on them in a publication.</div>
+<div class="note">Thistle Flow is a <b>beta (v0.4.0)</b>. Check important results against an established package before you rely on them in a publication.</div>
 
 <nav class="toc">
   <a href="#start">Getting started</a>
@@ -136,6 +136,10 @@
   <li><b>Batch</b>: the same plot for every sample, with gate percentages.</li>
 </ul>
 <p><b>All samples</b> resets the series list to every sample. <b>Child gates</b> makes one series per subpopulation.</p>
+<h3>Gating all samples from a histogram overlay</h3>
+<p>Click <b>↔ Range gate</b> in a histogram overlay's settings and drag across the histograms. One gate is created and, because gates are shared by every sample in the workspace, it applies to <b>all samples at once</b>. The label lists each sample's % in its series colour. Drag the gate's ends or bar to adjust it, and double-click the label to rename it. The new gate also appears in the gate tree, in Gating plots and in Statistics. The series must all use the same population, which becomes the gate's parent. The gate belongs to the Gating history, so undo it from the Gating tab (or delete it with <kbd>Delete</kbd>).</p>
+<h3>Moving labels in figures</h3>
+<p>Drag any gate label in a Layout figure to move it, as in Gating. Each figure keeps its own label positions, so arranging a figure does not move the labels in your Gating plots. In a batch figure, moving a label in one sample's plot moves it in all of them. Label moves can be undone in the Layout tab.</p>
 
 <h2 id="stats">Statistics and MFI</h2>
 <p>Tick the populations, statistics and channels you want: Count, % Parent, % Total, Median (MFI), Mean, Geometric mean, SD, CV, Robust SD and Robust CV. There are three table layouts:</p>
@@ -192,7 +196,7 @@
   <tr><td><kbd>F1</kbd></td><td>This help</td></tr>
 </table>
 
-<h2 id="limits">Known limitations of v0.3.0 (beta)</h2>
+<h2 id="limits">Known limitations of v0.4.0 (beta)</h2>
 <ul>
   <li>Gates are shared by all samples in a workspace. There are no per-sample gate adjustments yet.</li>
   <li>FlowJo <code>.wsp</code> and Gating-ML files cannot be imported. There are no derived parameters and no tSNE/UMAP.</li>
@@ -203,6 +207,7 @@
 <p>All releases are beta (0.x).</p>
 <table>
   <tr><th>Version</th><th>Name</th><th>Changes</th></tr>
+  <tr><td>0.4.0 (9 Nov 2026)</td><td>Thistle Flow</td><td>Layout: gate labels can be dragged in batch figures and histogram overlays (positions are kept per figure, so Gating plots are not affected); <b>↔ Range gate</b> on a histogram overlay draws one gate for all samples at once, with each sample’s % listed in its colour, and its ends can be adjusted in the overlay</td></tr>
   <tr><td>0.3.0 (9 Nov 2026)</td><td>Thistle Flow</td><td>BETA and version badges in the header, page title and Help; the same look as Thistle Plot (dark by default, slate colours, thistle icon, emoji buttons, tab and hint styles); the version is stored in saved workspaces and templates</td></tr>
   <tr><td>0.2.0 (9 Nov 2026)</td><td>Thistle Flow</td><td>Workspace tabs (closing asks to save); separate undo and redo for Gating, Layout, Statistics and Properties; templates (gates and settings without data); Density and Contour plots; a limit on the events shown per plot; changing several selected plots at once; movable gate labels, with the tool returning to Select after a gate is drawn; clicking an axis to change its scale; histogram overlays with quarter, half and full offset; PNG, SVG and PDF export; Properties tab with editable acquisition information; resizable panes; dark mode; save dialog with dated file names; Help page</td></tr>
   <tr><td>0.1.0 (9 Nov 2026)</td><td>FlowLite → Thistle Flow</td><td>First release: FCS 2.0–3.2 import (BD, Attune NxT, Sony, Beckman, Accuri and others), compensation from the file, biexponential, log and arcsinh scales, rectangle, polygon, ellipse, quadrant and range gates shared by all samples, statistics and MFI with CSV export, histogram and dot-plot overlays, batch layouts, workspace files, FCS export of populations, single-file build</td></tr>

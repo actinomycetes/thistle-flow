@@ -41,6 +41,6 @@ Versioning: 0.MINOR.PATCH. Fixes bump PATCH, new features bump MINOR; 1.0 only a
   after user interactions; any new state must be added to the right mode's `snapshot`.
 - `js/render.js` draws everything through the Canvas API; `js/vector.js` provides canvas-compatible SVG/PDF
   contexts, so new drawing code must use only the Canvas subset implemented there (and `drawRaster` for bitmaps).
-- `js/plotview.js` interactive gating plot · `js/properties.js` Properties tab · `js/ui.js` dialogs and saving ·
+- `js/plotview.js` interactive gating plot · `js/figureview.js` interactive Layout figure · `js/properties.js` Properties tab · `js/ui.js` dialogs and saving ·
   `js/app.js` controller.
 - `tools/build.mjs` concatenates the modules in dependency order (add new modules to `order`).

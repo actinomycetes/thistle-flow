@@ -10,6 +10,7 @@ import { demoFiles } from './demo.js';
 import { $, $$, h, uid, esc, safeName, dateStamp, toast, openModal, closeModal, modalOpen, choose, popover, closePopover, saveFile, saveDialog, pickFile } from './ui.js';
 import { Workspace } from './workspace.js';
 import { renderProperties } from './properties.js';
+import { FigureView } from './figureview.js';
 import { APP_NAME, APP_VERSION } from './version.js';
 
 const MODE_NAMES = { gating: 'Gating', layout: 'Layout', stats: 'Statistics', properties: 'Properties' };
@@ -20,6 +21,7 @@ const app = {
   ws: null,
   tool: 'select',
   views: new Map(),
+  figDrawing: null, // id of the Layout figure whose Range-gate tool is active
   theme: 'light',
   toast,
 };
@@ -545,16 +547,56 @@ function figureSpec(f, theme) {
     x: { name: f.x, label: ws.channelLabel(f.x), cfg: cfgX }, y: f.y ? { name: f.y, label: ws.channelLabel(f.y), cfg: cfgY } : null,
     series, showLegend: !(f.kind === 'overlay-hist' && f.offset > 0),
     hist: { mode: f.mode, offset: f.offset, smooth: f.smooth, fill: f.fill },
+    gates: f.kind === 'overlay-hist' && f.showGates !== false ? overlayGates(f) : [],
   };
 }
+
+// The population every series of an overlay is drawn from (range gates are created under it),
+// or undefined when the series mix populations.
+function overlayParent(f) {
+  const ws = app.ws;
+  const pops = new Set((f.series || []).filter(se => ws.sampleById(se.sampleId) && (!se.pop || ws.engine.get(se.pop))).map(se => se.pop || null));
+  return pops.size === 1 ? [...pops][0] : undefined;
+}
+
+// Range gates on an overlay: one gate, with the % of each overlaid sample listed in its colour
+function overlayGates(f) {
+  const ws = app.ws, parent = overlayParent(f);
+  if (parent === undefined) return [];
+  const series = f.series.filter(se => ws.sampleById(se.sampleId)?.hasChannel(f.x));
+  return ws.engine.children(parent).filter(g => g.type === 'interval' && g.x === f.x).map(g => ({
+    gate: g, color: g.color, text: g.name, selected: ws.selectedGate === g.id, labelPos: f.labelPos?.[g.id],
+    lines: [{ text: g.name, color: g.color }, ...series.map(se => {
+      const s = ws.sampleById(se.sampleId);
+      return { text: `${se.label || s.name.replace(/\.fcs$/i, '')}  ${fmtPct(populationStats(ws.engine, s, g.id).pctParent)}`, color: se.color };
+    })],
+  }));
+}
+
+app.createFigureGate = (f, geom) => {
+  const ws = app.ws, parent = overlayParent(f);
+  app.figDrawing = null;
+  if (parent === undefined) { toast('The series use different populations, so one gate cannot cover them all.', true); renderFigures(); return; }
+  const s = ws.activeSample() || ws.samples[0];
+  const suggestion = `${shortLabel(s, f.x)}+`;
+  const name = prompt('Name this gate (it applies to every sample)', suggestion);
+  if (name === null) { renderFigures(); return; }
+  const g = { id: uid('g'), name: name.trim() || suggestion, parent, type: 'interval', x: f.x, y: null, color: nextColor(), ...geom };
+  ws.engine.add(g);
+  ws.selectedGate = g.id;
+  renderAll();
+  toast(`Gate “${g.name}” added for all samples — it also appears in the gate tree and Statistics`);
+};
 
 function batchSpec(f, s, theme) {
   const ws = app.ws;
   const pop = f.pop && ws.engine.get(f.pop) ? f.pop : null;
-  return buildSpec(ws, s, { pop, x: f.x, y: f.y, kind: f.plotKind, maxEvents: f.maxEvents }, f.w, f.h, {
+  const spec = buildSpec(ws, s, { pop, x: f.x, y: f.y, kind: f.plotKind, maxEvents: f.maxEvents }, f.w, f.h, {
     theme, title: `${s.name.replace(/\.fcs$/i, '')} (${ws.engine.population(s, pop).count.toLocaleString()})`,
-    noGates: f.showGates === false, compactLabels: true,
+    noGates: f.showGates === false, compactLabels: true, selectedGate: ws.selectedGate,
   });
+  if (spec) for (const it of spec.gates) it.labelPos = f.labelPos?.[it.gate.id]; // positions are per figure
+  return spec;
 }
 
 // Composite (for export) of a figure, laid out as on screen
@@ -623,7 +665,18 @@ function figureCard(f) {
       ctrl.append(field('Offset', preset), h('label', {}, h('span', {}, ''), slider));
       ctrl.append(h('div', { style: 'display:flex;gap:12px' },
         h('label', {}, h('input', { type: 'checkbox', checked: f.smooth, onchange: e => { f.smooth = e.target.checked; redraw(); } }), 'Smooth'),
-        h('label', {}, h('input', { type: 'checkbox', checked: f.fill, onchange: e => { f.fill = e.target.checked; redraw(); } }), 'Fill')));
+        h('label', {}, h('input', { type: 'checkbox', checked: f.fill, onchange: e => { f.fill = e.target.checked; redraw(); } }), 'Fill'),
+        h('label', {}, h('input', { type: 'checkbox', checked: f.showGates !== false, onchange: e => { f.showGates = e.target.checked; redraw(); } }), 'Gates')));
+      const drawing = app.figDrawing === f.id;
+      const parent = overlayParent(f);
+      ctrl.append(h('div', { style: 'display:flex;gap:6px;align-items:center' },
+        h('button', {
+          class: 'btn small' + (drawing ? ' primary' : ''), disabled: parent === undefined,
+          title: 'Drag across the histogram to draw one range gate that applies to every sample',
+          onclick: () => { app.figDrawing = drawing ? null : f.id; renderFigures(); },
+        }, drawing ? '↔ Drawing… (Esc to cancel)' : '↔ Range gate'),
+        h('span', { class: 'hint' }, parent === undefined ? 'Series must share one population' : `under ${app.ws.engine.fullName(parent)}`)));
+      if (drawing) ctrl.append(h('div', { class: 'hint-box' }, 'Drag across the overlay. The gate is shared by all samples, so each sample’s % is shown in its colour. Drag the label to move it, or the gate ends to adjust.'));
     }
     const list = h('div', { class: 'series-list' });
     const renderSeries = () => {
@@ -668,21 +721,18 @@ function drawFigure(f, out) {
     const grid = h('div', { class: 'batch-grid' });
     if (f.title) out.append(h('div', { class: 'fig-title' }, f.title));
     for (const s of ws.samples) {
-      const c = h('canvas', { 'data-sample': s.id });
-      const spec = batchSpec(f, s, theme);
-      const ctx = prepareCanvas(c, f.w, f.h);
-      if (spec) renderPlot(ctx, spec); else { ctx.fillStyle = theme.bg; ctx.fillRect(0, 0, f.w, f.h); ctx.fillStyle = theme.muted; ctx.fillText(`${s.name}: channel missing`, 10, 20); }
+      const c = h('canvas', { 'data-sample': s.id, title: 'Drag a gate label to move it (in every plot of this figure)' });
       grid.append(c);
+      new FigureView(app, f, c, () => batchSpec(f, s, theme) || `${s.name}: channel missing`, { onLabelDone: () => drawFigure(f, out) }).draw();
     }
     out.append(grid);
     return;
   }
   const c = h('canvas');
-  const ctx = prepareCanvas(c, f.w, f.h);
-  const spec = figureSpec(f, theme);
-  if (!spec.series.length) { ctx.fillStyle = theme.bg; ctx.fillRect(0, 0, f.w, f.h); ctx.fillStyle = theme.muted; ctx.font = '12px system-ui'; ctx.fillText('No series with this channel', 20, 30); }
-  else renderPlot(ctx, spec);
   out.append(c);
+  const view = new FigureView(app, f, c, () => { const spec = figureSpec(f, theme); return spec.series.length ? spec : 'No series with this channel'; },
+    { editable: f.kind === 'overlay-hist' });
+  view.draw();
 }
 
 function layoutComposite() {
@@ -1078,6 +1128,7 @@ document.addEventListener('keydown', e => {
     if (modalOpen()) { closeModal(); return; }
     closePopover();
     for (const v of app.views.values()) v.cancel();
+    if (app.figDrawing) { app.figDrawing = null; renderFigures(); }
     if (app.ws.selPlots.size) { app.ws.selPlots.clear(); updateSelectionUI(); }
     return;
   }

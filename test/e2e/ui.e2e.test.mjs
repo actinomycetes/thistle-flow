@@ -243,6 +243,58 @@ test('all UI features work end to end', { timeout: 240000 }, async () => {
   const resp = await page.request.get(BASE + '/' + href);
   check('(13) Help link opens the manual', resp.ok() && (await resp.text()).includes('Thistle'), href);
 
+  // (L1) Layout: one range gate on a histogram overlay sets the gate for all samples; labels movable
+  await page.click('[data-tab=layout]');
+  await ev(() => {
+    const ws = window.thistleFlow.ws; const g = ws.engine.list().find(x => x.name === 'Lymphocytes');
+    ws.figures.push(
+      { id: 'fo', kind: 'overlay-hist', x: 'PE-Cy7-A', y: null, pop: g.id, title: '', mode: 'mode', offset: 0.5, smooth: true, fill: true, w: 460, h: 360,
+        series: ws.samples.map((s, i) => ({ sampleId: s.id, pop: g.id, color: ['#d62728', '#1f77b4', '#2ca02c'][i] })) },
+      { id: 'fb', kind: 'batch', x: 'FSC-A', y: 'SSC-A', pop: null, plotKind: 'pseudo', w: 230, h: 220, title: '' });
+    window.thistleFlow.renderAll();
+  });
+  const ofig = page.locator('.figure-card[data-fig=fo]');
+  await ofig.locator('button:has-text("Range gate")').click();
+  let oc = await ofig.locator('canvas').boundingBox();
+  const PO = (ux, uy) => [oc.x + 64 + ux * (oc.width - 78), oc.y + 24 + (1 - uy) * (oc.height - 72)];
+  prompts.push('CD69+');
+  { const [x, y] = PO(0.6, 0.92); await page.mouse.move(x, y); await page.mouse.down(); const [x2] = PO(0.99, 0.92); await page.mouse.move(x2, y, { steps: 6 }); await page.mouse.up(); }
+  await page.waitForTimeout(400);
+  const rg = await ev(() => {
+    const ws = window.thistleFlow.ws; const g = ws.engine.list().find(x => x.name === 'CD69+');
+    return g && { parent: ws.engine.get(g.parent)?.name, type: g.type, pcts: ws.samples.map(s => ws.engine.population(s, g.id).count / ws.engine.population(s, g.parent).count), drawing: window.thistleFlow.figDrawing };
+  });
+  check('(L1) Range gate drawn on overlay creates one gate for all samples', rg && rg.type === 'interval' && rg.parent === 'Lymphocytes' && rg.drawing === null, JSON.stringify(rg));
+  check('(L1) each sample gets its own % (activation increases)', rg && rg.pcts[0] < rg.pcts[1] && rg.pcts[1] < rg.pcts[2], JSON.stringify(rg?.pcts));
+  const lines = await page.evaluate(() => document.querySelector('.figure-card[data-fig=fo] canvas')._figView.spec.gates.find(i => i.gate.name === 'CD69+').lines.map(l => l.text));
+  check('(L1) overlay label lists every sample', lines.length === 4, lines.join(' | '));
+  await ofig.screenshot({ path: OUT + '/e-overlay-gate.png' });
+  // drag the overlay label
+  const ob = await page.evaluate(() => document.querySelector('.figure-card[data-fig=fo] canvas')._figView.spec.gates.find(i => i.gate.name === 'CD69+').labelBox);
+  oc = await ofig.locator('canvas').boundingBox();
+  await page.mouse.move(oc.x + ob.cx, oc.y + ob.cy); await page.mouse.down(); await page.mouse.move(oc.x + ob.cx - 150, oc.y + ob.cy + 40, { steps: 6 }); await page.mouse.up();
+  await page.waitForTimeout(200);
+  const lp = await ev(() => { const ws = window.thistleFlow.ws; const g = ws.engine.list().find(x => x.name === 'CD69+'); return { fig: ws.figures.find(f => f.id === 'fo').labelPos?.[g.id], gate: g.labelPos || null }; });
+  check('(i) overlay labels movable, kept per figure', lp.fig && lp.gate === null, JSON.stringify(lp));
+  // drag a gate end in the overlay
+  const ge = await page.evaluate(() => { const v = document.querySelector('.figure-card[data-fig=fo] canvas')._figView; const it = v.spec.gates.find(i => i.gate.name === 'CD69+'); return { x0: it.gate.x0 }; });
+  { const [x, y] = PO(0.6, 0.92); await page.mouse.move(x, y); await page.mouse.down(); await page.mouse.move(x - 30, y, { steps: 4 }); await page.mouse.up(); }
+  await page.waitForTimeout(200);
+  check('(L1) gate end adjustable in the overlay', await ev(() => window.thistleFlow.ws.engine.list().find(x => x.name === 'CD69+').x0) < ge.x0);
+  // batch figure: move a label in one plot -> all plots of the figure follow
+  const bcan = page.locator('.figure-card[data-fig=fb] canvas');
+  await bcan.first().scrollIntoViewIfNeeded();
+  const bb = await bcan.first().boundingBox();
+  const blb = await page.evaluate(() => document.querySelector('.figure-card[data-fig=fb] canvas')._figView.spec.gates[0].labelBox);
+  await page.mouse.move(bb.x + blb.cx, bb.y + blb.cy); await page.mouse.down(); await page.mouse.move(bb.x + blb.cx - 60, bb.y + blb.cy + 80, { steps: 6 }); await page.mouse.up();
+  await page.waitForTimeout(300);
+  const bx = await page.evaluate(() => [...document.querySelectorAll('.figure-card[data-fig=fb] canvas')].map(c => Math.round(c._figView.spec.gates[0].labelBox.cy)));
+  check('(i) batch labels movable (same place in every sample plot)', bx.every(v => v === bx[0]) && Math.abs(bx[0] - blb.cy - 80) < 3, `${blb.cy} -> ${bx.join(',')}`);
+  check('(i) Gating label position not changed by Layout', await ev(() => JSON.stringify(window.thistleFlow.ws.engine.list().find(x => x.name === 'Lymphocytes').labelPos)) === JSON.stringify([1, 1]));
+  await page.locator('.figure-card[data-fig=fb]').screenshot({ path: OUT + '/e-batch.png' });
+  await page.click('#btnUndo'); await page.waitForTimeout(150);
+  check('(i) Layout undo restores the label position', await ev(() => !window.thistleFlow.ws.figures.find(f => f.id === 'fb').labelPos));
+
   // reload workspace into fresh page
   await page.reload(); await page.click('#btnDemo'); await page.waitForSelector('.plot-card canvas');
   await page.setInputFiles('#wsInput', `${OUT}/ws.json`); await page.waitForTimeout(400);
