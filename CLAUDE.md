@@ -15,6 +15,10 @@ makes a single-file `dist/thistle-flow.html` for offline lab PCs. Data never lea
 - No network access at runtime. The single-file build must keep working from `file://`.
 - Never modify the user's FCS files; metadata edits live in the workspace and in exported copies.
 
+- README.md: the text between `<!-- MAINTAINER SECTION START` and `<!-- MAINTAINER SECTION END -->` belongs to the
+  maintainer. Never rewrite, reorder or "tidy" it; keep it word for word when updating the README, and pull `main`
+  before editing (the maintainer may have edited it on GitHub). Change it only when explicitly asked.
+
 ## Commands
 ```bash
 npm test                                         # unit tests (Node 18+, no install needed)
@@ -33,8 +37,9 @@ npm start                                        # http://localhost:8080
 4. Commit with a message like `v0.3.1: <summary>` and push to `main`. Do not tag by hand: after CI passes,
    `.github/workflows/release.yml` tags the last commit carrying the version and publishes a GitHub pre-release
    with `dist/thistle-flow.html` attached and notes from the help.html history row (`tools/release-notes.mjs`).
-   Keep changes to `.github/workflows/` in commits of their own: the workflow token cannot tag commits that change
-   workflow files, so such commits are never used as release targets. (Repository setting needed once:
+   The workflow token can only tag commits whose `.github/workflows/` files match `main`, so the release target is
+   the last commit of the version with the current workflow files; change workflows before (not after) bumping
+   a version you still want released. (Repository setting needed once:
    Settings → Actions → General → Workflow permissions → Read and write.)
 Versioning: 0.MINOR.PATCH. Fixes bump PATCH, new features bump MINOR; 1.0 only after validation.
 
