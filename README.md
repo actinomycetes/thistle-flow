@@ -1,4 +1,8 @@
-# FlowLite
+# Thistle Flow
+
+Sister project of [Thistle Plot](https://github.com/actinomycetes/thistle-plot).
+
+**Hosted copy:** https://actinomycetes.github.io/thistle-flow/
 
 A lightweight, browser-based alternative to FlowJo for everyday flow cytometry analysis.
 Load FCS files from any cytometer, gate hierarchically, compute statistics and MFIs for many
@@ -9,9 +13,9 @@ happens on your computer and no data is uploaded.
 
 **Option A: single file, no server.**
 ```bash
-npm run build        # writes dist/flowlite.html
+npm run build        # writes dist/thistle-flow.html
 ```
-Then double-click `dist/flowlite.html`. You can copy this one 120 KB file to any lab PC.
+Then double-click `dist/thistle-flow.html`. You can copy this one 120 KB file to any lab PC.
 
 **Option B: development server.** The app uses ES modules, so it needs `http://` instead of opening the file directly:
 ```bash
@@ -60,7 +64,7 @@ js/render.js      density / dot / histogram / overlay / gate rendering
 js/plotview.js    interactive plot: drawing and editing gates
 js/demo.js        synthetic T-cell activation dataset (written as real FCS files)
 js/app.js         UI controller: samples, gate tree, tabs, modals, workspace I/O
-tools/build.mjs   bundles everything into dist/flowlite.html
+tools/build.mjs   bundles everything into dist/thistle-flow.html
 tools/inspect.mjs CLI: node tools/inspect.mjs file.fcs → parse summary
 ```
 

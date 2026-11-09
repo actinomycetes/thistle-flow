@@ -1,4 +1,4 @@
-// FlowLite application controller.
+// Thistle Flow application controller.
 import { parseFCS, writeFCS } from './fcs.js';
 import { Sample } from './model.js';
 import { defaultTransformFor } from './transforms.js';
@@ -39,7 +39,7 @@ const app = {
   tab: 'gating',
 };
 app.engine = new GateEngine(ch => app.getCfg(ch));
-window.flowlite = app; // handy for debugging from the console
+window.thistleFlow = window.flowlite = app; // handy for debugging from the console
 
 // ---------- helpers ----------
 // Display range for a channel = largest $PnR among loaded samples (log-amplified channels: 10^decades)
@@ -513,7 +513,7 @@ function exportLayout() {
   const big = document.createElement('canvas'); big.width = W + 2 * gap; big.height = H;
   const ctx = big.getContext('2d'); ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, big.width, big.height);
   let y = gap; for (const c of outs) { ctx.drawImage(c, gap, y); y += c.height + gap; }
-  big.toBlob(b => download('FlowLite_layout.png', b));
+  big.toBlob(b => download('ThistleFlow_layout.png', b));
 }
 
 // ---------- statistics ----------
@@ -620,7 +620,7 @@ function renderStatsTable() {
 function exportStatsCSV() {
   const rows = statsTableData();
   const csv = rows.map(r => r.map(c => /[",\n]/.test(c) ? `"${String(c).replace(/"/g, '""')}"` : c).join(',')).join('\n');
-  download('FlowLite_statistics.csv', csv, 'text/csv');
+  download('ThistleFlow_statistics.csv', csv, 'text/csv');
 }
 function copyStats() {
   const tsv = statsTableData().map(r => r.join('\t')).join('\n');
@@ -746,7 +746,7 @@ function afterTransform() { app.engine.invalidate(); renderAll(); }
 function saveWorkspace() {
   const byId = id => app.sampleById(id)?.name;
   const ws = {
-    app: 'FlowLite', version: 1, saved: new Date().toISOString(),
+    app: 'ThistleFlow', version: 1, saved: new Date().toISOString(),
     transforms: app.transforms,
     gates: app.engine.toJSON(),
     plots: app.plots,
@@ -755,13 +755,13 @@ function saveWorkspace() {
     compensation: Object.fromEntries(app.samples.map(s => [s.name, { enabled: s.compEnabled, spill: s.spill }])),
     samples: app.samples.map(s => s.name),
   };
-  download('FlowLite_workspace.json', JSON.stringify(ws, null, 1), 'application/json');
+  download('ThistleFlow_workspace.json', JSON.stringify(ws, null, 1), 'application/json');
 }
 
 async function loadWorkspace(file) {
   try {
     const ws = JSON.parse(await file.text());
-    if (ws.app !== 'FlowLite') throw new Error('not a FlowLite workspace');
+    if (ws.app !== 'ThistleFlow' && ws.app !== 'FlowLite') throw new Error('not a Thistle Flow workspace');
     app.transforms = ws.transforms || {};
     app.engine.load(ws.gates || []);
     app.plots = ws.plots || [];

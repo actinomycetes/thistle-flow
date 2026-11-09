@@ -1,4 +1,4 @@
-// Bundles FlowLite into one self-contained HTML file (dist/flowlite.html) that opens
+// Bundles Thistle Flow into one self-contained HTML file (dist/thistle-flow.html) that opens
 // directly from disk (file://) without a web server. No dependencies.
 import { readFileSync, writeFileSync, mkdirSync, unlinkSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
@@ -24,5 +24,5 @@ const css = readFileSync(join(root, 'css', 'style.css'), 'utf8');
 let html = readFileSync(join(root, 'index.html'), 'utf8');
 html = html.replace(/<link rel="stylesheet" href="css\/style.css">/, () => `<style>\n${css}</style>`);
 html = html.replace(/<script type="module" src="js\/app.js"><\/script>/, () => `<script>\n${js.replace(/<\/script/gi, '<\\/script')}</script>`);
-writeFileSync(join(root, 'dist', 'flowlite.html'), html);
-console.log(`dist/flowlite.html written (${(html.length / 1024).toFixed(0)} KB)`);
+writeFileSync(join(root, 'dist', 'thistle-flow.html'), html);
+console.log(`dist/thistle-flow.html written (${(html.length / 1024).toFixed(0)} KB)`);

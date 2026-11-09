@@ -59,7 +59,7 @@ export function makeDemoFile(name, activation, seed, n = 40000) {
   const spillStr = [5, ...FL, ...SPILL.flat()].join(',');
   return writeFCS({
     names: DEMO_CHANNELS, labels: DEMO_LABELS, columns: cols,
-    extraText: { '$CYT': 'FlowLite Demo Cytometer', '$FIL': name, '$SPILLOVER': spillStr, '$DATE': '09-NOV-2026' },
+    extraText: { '$CYT': 'Thistle Flow Demo Cytometer', '$FIL': name, '$SPILLOVER': spillStr, '$DATE': '09-NOV-2026' },
   });
 }
 
