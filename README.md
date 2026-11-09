@@ -2,7 +2,7 @@
 
 Sister project of [Thistle Plot](https://github.com/actinomycetes/thistle-plot) (TP), with the same look and conventions.
 
-**Status:** beta (0.x; current v0.4.0). Check important results against an established package before publishing. Version history: [`help.html#history`](help.html#history).
+**Status:** beta (0.x; current v0.5.0). Check important results against an established package before publishing. Version history: [`help.html#history`](help.html#history).
 
 **Hosted copy:** https://actinomycetes.github.io/thistle-flow/
 
@@ -41,10 +41,10 @@ Tests:
 | **Gates** | Rectangle, Polygon, Ellipse, Quadrant (4 linked gates) and Range (on histograms). Gates form a hierarchy. After a gate is drawn the tool returns to **Select**, where you can drag a gate to move it, drag its vertices or handles to reshape it, **drag its label** anywhere inside the plot, and double-click inside a gate to open a plot of that population. Gates are **shared by all samples** (like a FlowJo group), so you gate once and get results for every sample. |
 | **Multiple plots** | Shift-click plots or drag a box around them. Then change the population, axes, type, events shown or size on one plot, and the change applies to all selected plots. |
 | **Statistics** | Count, % Parent, % Total, **Median (MFI)**, Mean, Geometric mean, SD, CV, robust SD and robust CV, for any population and channel. Choose a long, wide or transposed table. Export as CSV or copy straight into Excel/Prism. |
-| **Layout & overlays** | Histogram overlays of any mix of sample and population: normalised to mode or by count, **overlay, quarter, half or full offset** (or a custom offset), smoothing, fill and custom colours. You can also overlay dot plots coloured by series, or use **Batch** view (the same plot for every sample, with gate %). Gate labels can be dragged in figures, and **↔ Range gate** on a histogram overlay gates every sample at once, listing each sample's %. Export single figures or the whole layout as **PNG, SVG or PDF**, with vector axes, text, gates and contours. |
+| **Layout & overlays** | Histogram overlays of any mix of sample and population: normalised to mode or by count, **overlay, quarter, half or full offset** (or a custom offset), smoothing, fill and custom colours. You can also overlay dot plots coloured by series, or use **Batch** view (the same plot for every sample, with gate %). Gate labels and sample labels can be dragged in figures, placed outside the plot or hidden, and **↔ Range gate** on a histogram overlay gates every sample at once, listing each sample's %. Export single figures or the whole layout as **PNG, SVG or PDF**, with vector axes, text, gates and contours. |
 | **Workspaces** | Each **tab** is a workspace with its own samples and analysis. Click **+** for another group of samples. Closing a tab always asks whether to save. **Undo/redo** has a separate history for each mode (Gating, Layout, Statistics, Properties). |
 | **Properties** | Acquisition information from the FCS keywords: instrument, serial number, software, date and times, operator, experiment, tube or well, volume, lasers, and channel voltages, filters and lasers. Includes an editable keyword table. Edits (for example, fixing marker labels or adding the operator) are stored in the workspace and written into exported FCS files; the original files are never changed. There is also an acquisition summary CSV for all samples. |
-| **Export / save** | Save the **workspace** (gates, scales, plots, figures, compensation, label positions, metadata edits) to JSON and reload it later onto the same files. Save a **template**, which holds the same analysis with no sample data or file names, and apply it to new samples in any workspace. Saving shows a dialog with a date-stamped file name; Chrome and Edge also let you choose the folder. Export the events of any population as a new FCS 3.1 file. |
+| **Export / save** | Save the **workspace** (gates, scales, plots, figures, compensation, label positions, metadata edits), by default as **one .zip that includes the FCS files** and reopens with all its samples, or as a small .json. Opening a .json without its data asks for the folder (or the files) and matches them by name; ⇄ replaces a sample's FCS file. Save a **template**, which holds the same analysis with no sample data or file names, and apply it to new samples in any workspace. Saving shows a dialog with a date-stamped file name; Chrome and Edge also let you choose the folder. Export the events of any population as a new FCS 3.1 file. |
 
 ### Keyboard shortcuts
 `V` select · `R` rectangle · `P` polygon · `E` ellipse · `Q` quadrant · `I` range ·
@@ -72,6 +72,7 @@ js/render.js      pseudocolor / density / contour / dot / histogram / overlay / 
 js/vector.js      canvas-compatible SVG and PDF writers (vector export)
 js/plotview.js    interactive plot: drawing and editing gates and labels, event subsampling
 js/figureview.js  interactive Layout figure: label dragging, range gates on overlays
+js/zip.js         dependency-free zip writer/reader for workspace bundles
 js/workspace.js   one workspace tab: state, per-mode undo/redo, workspace files, templates
 js/properties.js  Properties tab (acquisition keywords, channel table, editing)
 js/ui.js          DOM helpers, dialogs, popovers, save-file handling

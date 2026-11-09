@@ -169,8 +169,8 @@ test('all UI features work end to end', { timeout: 240000 }, async () => {
   check('(12) save dialog pre-fills a dated name', /^Workspace 1_\d{4}-\d{2}-\d{2}_\d{4}$/.test(fname), fname);
   await page.fill('#modalBody input[type=text]', 'MyExperiment_' + fname.split('_').slice(1).join('_'));
   const [wsDl] = await Promise.all([page.waitForEvent('download'), page.click('#modalBody button.primary')]);
-  await wsDl.saveAs(`${OUT}/ws.json`);
-  check('(12) saved with the chosen name', /^MyExperiment_.*\.json$/.test(wsDl.suggestedFilename()), wsDl.suggestedFilename());
+  await wsDl.saveAs(`${OUT}/ws.zip`);
+  check('(12) saved with the chosen name (zip with FCS files by default)', /^MyExperiment_.*\.zip$/.test(wsDl.suggestedFilename()), wsDl.suggestedFilename());
   check('(12) workspace no longer marked unsaved', await ev(() => !window.thistleFlow.ws.dirty));
 
   // (14) properties: edit operator + marker label, undo
@@ -300,7 +300,7 @@ test('all UI features work end to end', { timeout: 240000 }, async () => {
 
   // reload workspace into fresh page
   await page.reload(); await page.click('#btnDemo'); await page.waitForSelector('.plot-card canvas');
-  await page.setInputFiles('#wsInput', `${OUT}/ws.json`); await page.waitForTimeout(400);
+  await page.setInputFiles('#wsInput', `${OUT}/ws.zip`); await page.waitForFunction(() => window.thistleFlow.workspaces.length === 2 && window.thistleFlow.ws.samples.length === 3, null, { timeout: 30000 });
   const re = await ev(() => ({ g: window.thistleFlow.ws.engine.list().length, f: window.thistleFlow.ws.figures.length, lp: window.thistleFlow.ws.engine.list()[0]?.labelPos, op: window.thistleFlow.ws.activeSample().text['$OP'] }));
   check('workspace round trip (gates, figures, label position)', re.g === nG && re.f === 1 && !!re.lp, JSON.stringify(re));
 
@@ -322,6 +322,104 @@ test('single-file build opens from disk and runs', { timeout: 120000 }, async ()
   await page.waitForSelector('.plot-card canvas');
   assert.equal(await page.evaluate(() => window.thistleFlow.ws.samples.length), 3);
   assert.match(await page.getAttribute('#helpLink', 'href'), /^https:\/\/actinomycetes\.github\.io\/thistle-flow\/help\.html$/);
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
+test('overlay range-gate button, sample labels, workspace bundles and locating FCS files', { timeout: 240000 }, async () => {
+  const { demoFiles } = await import('../../js/demo.js');
+  const fcsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'tf-fcs-'));
+  for (const f of demoFiles()) fs.writeFileSync(path.join(fcsDir, f.name), Buffer.from(f.buffer));
+  browser = browser || await chromium.launch();
+  const page = await browser.newPage({ viewport: { width: 1600, height: 1000 }, acceptDownloads: true });
+  const errors = [];
+  page.on('pageerror', e => errors.push(e.message));
+  await page.addInitScript(() => { try { localStorage.clear(); } catch {} window.showSaveFilePicker = undefined; });
+  const prompts = [];
+  page.on('dialog', d => d.accept(prompts.shift()));
+  const ev = f => page.evaluate(f);
+  await page.goto(BASE + '/');
+  await page.click('#btnDemo'); await page.waitForSelector('.plot-card canvas');
+  await ev(() => {
+    const ws = window.thistleFlow.ws;
+    ws.engine.add({ id: 'gS', name: 'Singlets', parent: null, type: 'rect', x: 'FSC-A', y: 'SSC-A', x0: 40000, x1: 80000, y0: 8000, y1: 38000, color: '#e6194b' });
+    window.thistleFlow.selectGate(null); window.thistleFlow.renderAll();
+  });
+  await page.click('[data-tab=layout]');
+  await page.click('[data-addfig=overlay-hist]');
+  const fig = page.locator('.figure-card').first();
+  const rangeBtn = fig.locator('button:has-text("Range gate")');
+  // series start on All Events; change one series to Singlets -> mixed -> disabled
+  await fig.locator('.series-row').nth(0).locator('select').nth(1).selectOption('gS');
+  assert.equal(await rangeBtn.isDisabled(), true, 'disabled while series mix populations');
+  // set every series to Singlets one by one (the case in the screenshot) -> enabled without re-opening
+  for (const i of [1, 2]) await fig.locator('.series-row').nth(i).locator('select').nth(1).selectOption('gS');
+  assert.equal(await rangeBtn.isDisabled(), false, 'enabled once all series share Singlets');
+  assert.match(await fig.textContent(), /gate goes under Singlets/);
+
+  // sample labels: half offset -> one label per band; drag one; outside; off
+  await fig.locator('label:has-text("Offset") select').selectOption('0.5');
+  const view = () => page.evaluate(() => document.querySelector('.figure-card canvas')._figView);
+  const box = await page.evaluate(() => document.querySelector('.figure-card canvas')._figView.spec._labelBoxes[0]);
+  const cb = await fig.locator('canvas').boundingBox();
+  await page.mouse.move(cb.x + box.cx, cb.y + box.cy); await page.mouse.down();
+  await page.mouse.move(cb.x + box.cx - 120, cb.y + box.cy - 30, { steps: 6 }); await page.mouse.up();
+  const moved = await ev(() => window.thistleFlow.ws.figures[0].series[0].labelPos);
+  assert.ok(moved, 'sample label dragged');
+  const pwInside = await page.evaluate(() => document.querySelector('.figure-card canvas')._figView.L.pw);
+  await fig.locator('label:has-text("Labels") select').selectOption('outside');
+  const out = await page.evaluate(() => { const v = document.querySelector('.figure-card canvas')._figView; return { pw: v.L.pw, right: Math.min(...v.spec._labelBoxes.map(b => b.x)) }; });
+  assert.ok(out.pw < pwInside - 40 && out.right > 64 + out.pw, `labels outside the plot: ${JSON.stringify(out)} vs ${pwInside}`);
+  await fig.screenshot({ path: OUT + '/e-labels-outside.png' });
+  await fig.locator('label:has-text("Labels") select').selectOption('off');
+  assert.equal(await page.evaluate(() => document.querySelector('.figure-card canvas')._figView.spec._labelBoxes.length), 0, 'labels off');
+  await fig.locator('label:has-text("Labels") select').selectOption('inside');
+  await fig.locator('button:has-text("Reset label positions")').click();
+  assert.equal(await ev(() => window.thistleFlow.ws.figures[0].series[0].labelPos), undefined, 'reset label positions');
+  await fig.locator('label:has-text("Gate labels") input').uncheck();
+  assert.equal(await ev(() => window.thistleFlow.ws.figures[0].gateLabels), false);
+
+  // save as a bundle (zip with FCS files) and reopen it in a fresh page
+  await page.click('#btnSaveWs');
+  assert.equal(await page.isChecked('#modalBody input[type=checkbox]'), true, 'FCS files included by default');
+  assert.equal((await page.textContent('#modalBody .row .hint')).trim(), '.zip');
+  const [zipDl] = await Promise.all([page.waitForEvent('download'), page.click('#modalBody button.primary')]);
+  const zipPath = path.join(OUT, 'bundle.zip'); await zipDl.saveAs(zipPath);
+  assert.match(zipDl.suggestedFilename(), /\.zip$/);
+  // ...and as plain JSON
+  await page.click('#btnSaveWs');
+  await page.uncheck('#modalBody input[type=checkbox]');
+  assert.equal((await page.textContent('#modalBody .row .hint')).trim(), '.json');
+  const [jsonDl] = await Promise.all([page.waitForEvent('download'), page.click('#modalBody button.primary')]);
+  const jsonPath = path.join(OUT, 'plain.json'); await jsonDl.saveAs(jsonPath);
+
+  await page.reload();
+  await page.setInputFiles('#wsInput', zipPath);
+  await page.waitForFunction(() => window.thistleFlow.ws.samples.length === 3, null, { timeout: 30000 });
+  const re = await ev(() => { const ws = window.thistleFlow.ws; return { gates: ws.engine.list().map(g => g.name), figs: ws.figures.length, series: ws.figures[0]?.series.length, counts: ws.samples.map(s => ws.engine.population(s, 'gS').count) }; });
+  assert.deepEqual(re.gates, ['Singlets']);
+  assert.equal(re.figs, 1); assert.equal(re.series, 3);
+  assert.ok(re.counts.every(c => c > 1000), 'gate applies to the reopened samples');
+
+  // JSON without data: dialog to find the files; choose the files -> matched by name
+  await page.reload();
+  await page.setInputFiles('#wsInput', jsonPath);
+  await page.waitForSelector('#modal:not([hidden])');
+  assert.match(await page.textContent('#modalTitle'), /Find the FCS files/);
+  assert.equal(await page.locator('#modalBody table tr').count(), 4, 'three missing samples listed');
+  const [chooser] = await Promise.all([page.waitForEvent('filechooser'), page.click('#modalBody button:has-text("Choose files")')]);
+  await chooser.setFiles(fs.readdirSync(fcsDir).map(f => path.join(fcsDir, f)));
+  await page.waitForFunction(() => window.thistleFlow.ws.samples.length === 3, null, { timeout: 30000 });
+  await page.waitForSelector('#modal', { state: 'hidden' });
+  assert.equal(await ev(() => window.thistleFlow.ws.figures[0]?.series.length), 3, 'figures re-linked to the found samples');
+
+  // replace a sample's file: keeps gates, swaps data
+  const before = await ev(() => window.thistleFlow.ws.samples[0].name);
+  const [ch2] = await Promise.all([page.waitForEvent('filechooser'), page.locator('.sample-list li').first().locator('button[title^="Replace"]').click()]);
+  await ch2.setFiles(path.join(fcsDir, 'Stim_24h.fcs'));
+  await page.waitForFunction(b => window.thistleFlow.ws.samples[0].name !== b, before);
+  const rep = await ev(() => { const ws = window.thistleFlow.ws; return { name: ws.samples[0].name, n: ws.samples.length, gates: ws.engine.list().length, series0: ws.figures[0].series[0].sampleId === ws.samples[0].id }; });
+  assert.deepEqual(rep, { name: 'Stim_24h.fcs', n: 3, gates: 1, series0: true });
   assert.deepEqual(errors, []);
   await page.close();
 });

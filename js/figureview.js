@@ -47,6 +47,12 @@ export class FigureView {
 
   hitTest(px, py) {
     if (!this.spec) return null;
+    const inBox = b => b && px >= b.x && px <= b.x + b.w && py >= b.y && py <= b.y + b.h;
+    // sample labels and the legend can be dragged when they are drawn inside the plot
+    if ((this.spec.labels?.mode || 'inside') === 'inside') {
+      for (const b of this.spec._labelBoxes || []) if (inBox(b)) return { mode: 'slabel', box: b, si: this.spec.series[b.i].si };
+      if (inBox(this.spec._legendBox)) return { mode: 'legend', box: this.spec._legendBox };
+    }
     for (const it of this.spec.gates || []) {
       const b = it.labelBox;
       if (b && px >= b.x && px <= b.x + b.w && py >= b.y && py <= b.y + b.h) return { item: it, mode: 'label' };
@@ -67,7 +73,7 @@ export class FigureView {
     const { px, py } = this.evt(e);
     if (this.drawingRange()) { this.canvas.style.cursor = this.inPlot(px, py) ? 'crosshair' : 'default'; return; }
     const hit = this.hitTest(px, py);
-    this.canvas.style.cursor = !hit ? 'default' : hit.mode === 'label' || hit.mode === 'move' ? 'move' : 'ew-resize';
+    this.canvas.style.cursor = !hit ? 'default' : ['label', 'slabel', 'legend', 'move'].includes(hit.mode) ? 'move' : 'ew-resize';
   }
 
   onDown(e) {
@@ -79,6 +85,11 @@ export class FigureView {
     } else {
       const hit = this.hitTest(px, py);
       if (!hit) { if (this.app.ws.selectedGate) { this.app.selectGate(null, { quiet: true }); this.draw(); } return; }
+      if (hit.mode === 'slabel' || hit.mode === 'legend') {
+        this.drag = { ...hit, startPx: [px, py], moved: false };
+        window.addEventListener('mousemove', this._move); window.addEventListener('mouseup', this._up);
+        return;
+      }
       const g = hit.item.gate;
       this.app.selectGate(g.id, { quiet: true });
       this.drag = { ...hit, gate: g, orig: JSON.parse(JSON.stringify(g)), start: u, startPx: [px, py], moved: false };
@@ -103,6 +114,12 @@ export class FigureView {
     const d = this.drag; if (!d) return;
     if (Math.abs(px - d.startPx[0]) + Math.abs(py - d.startPx[1]) > 2) d.moved = true;
     if (!d.moved) return;
+    if (d.mode === 'slabel' || d.mode === 'legend') {
+      const p = [Math.min(1, Math.max(0, this.L.px2ux(d.box.cx + px - d.startPx[0]))), Math.min(1, Math.max(0, this.L.px2uy(d.box.cy + py - d.startPx[1])))];
+      if (d.mode === 'legend') this.f.legendPos = p; else this.f.series[d.si].labelPos = p;
+      this.draw();
+      return;
+    }
     if (d.mode === 'label') {
       const b = d.item.labelBox;
       const cx = b.cx + (px - d.startPx[0]), cy = b.cy + (py - d.startPx[1]);
@@ -140,13 +157,13 @@ export class FigureView {
     }
     const d = this.drag; this.drag = null;
     if (!d) return;
-    if (d.mode === 'label') { if (d.moved && this.onLabelDone) this.onLabelDone(); return; }
+    if (d.mode === 'label' || d.mode === 'slabel' || d.mode === 'legend') { if (d.moved && this.onLabelDone) this.onLabelDone(); return; }
     if (d.moved) this.app.gateChanged(this.app.ws.engine.get(d.gate.id));
   }
 
   onDbl(e) {
     const { px, py } = this.evt(e);
     const hit = this.hitTest(px, py);
-    if (hit) this.app.renameGate(hit.item.gate);
+    if (hit?.item) this.app.renameGate(hit.item.gate);
   }
 }

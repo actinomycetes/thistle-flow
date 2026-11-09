@@ -47,6 +47,9 @@ export class Sample {
     this.textOrig = { ...ds.text };
     this.labelsOrig = ds.params.map(p => p.label);
     this.edits = { name: null, kw: {}, labels: {} };
+    // Original file bytes { name, data: Uint8Array } (shared by datasets of one file), so a
+    // workspace can be saved together with its FCS files
+    this.source = null;
   }
 
   // Keywords that define the file layout; editing them would corrupt exported files.

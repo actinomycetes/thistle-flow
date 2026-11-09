@@ -140,9 +140,18 @@ export class Workspace {
       transforms: this.transforms, gates: this.engine.toJSON(), plots: this.plots, displayMax: this.displayMax,
       figures: this.figures.map(f => ({ ...f, series: f.series?.map(se => ({ ...se, sampleKey: keyOf(se.sampleId), sampleId: undefined })) })),
       statsCfg: this.statsCfg,
-      samples: this.samples.map(s => ({ key: s.key, compEnabled: s.compEnabled, spill: s.spill, edits: s.edits })),
+      samples: this.samples.map(s => ({ key: s.key, file: s.source?.name || s.fileName, compEnabled: s.compEnabled, spill: s.spill, edits: s.edits })),
     };
   }
+
+  // Unique original files of the samples, for bundling: [{ name, data }]
+  sourceFiles() {
+    const seen = new Map();
+    for (const s of this.samples) if (s.source && !seen.has(s.source)) seen.set(s.source, s.source);
+    return [...seen.values()];
+  }
+  // Keys of the samples a saved workspace refers to
+  static savedKeys(data) { return data.version >= 2 ? (data.samples || []).map(e => e.key) : (data.samples || []); }
   // Returns the list of sample keys referenced by the file but not loaded in this workspace
   deserialize(ws) {
     if (ws.app !== 'ThistleFlow' && ws.app !== 'FlowLite') throw new Error('not a Thistle Flow workspace');

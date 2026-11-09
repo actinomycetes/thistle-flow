@@ -30,8 +30,9 @@ export const LUT = (() => {
 
 export const SERIES_COLORS = ['#d62728', '#1f77b4', '#2ca02c', '#ff7f0e', '#9467bd', '#8c564b', '#e377c2', '#17becf', '#7f7f7f', '#bcbd22', '#000000'];
 
-export function layout(w, h) {
-  const pw = w - MARGIN.l - MARGIN.r, ph = h - MARGIN.t - MARGIN.b;
+// extraRight: room reserved right of the plot (series labels placed outside)
+export function layout(w, h, extraRight = 0) {
+  const pw = w - MARGIN.l - MARGIN.r - extraRight, ph = h - MARGIN.t - MARGIN.b;
   return {
     w, h, pw, ph,
     ux2px: u => MARGIN.l + u * pw,
@@ -83,13 +84,14 @@ function drawRaster(ctx, img, x, y, w, h, smooth) {
  *   contour: { step: 0.1, outliers: true },
  *   gates: [{ gate, text, lines?, labelPos?, selected, color }], // lines = [{text, color}] for a multi-line label;
  *                                                  // labelPos overrides gate.labelPos; render sets item.labelBox
- *   showLegend
+ *   labels: { mode: 'inside'|'outside'|'off', legendPos },  // series labels / legend (series may carry labelPos)
+ *   gateLabels: false to hide gate labels
  * }
  */
 export function renderPlot(ctx, spec) {
   const T = spec.theme || THEMES.light;
-  const L = layout(spec.w, spec.h);
   const kind = spec.kind === 'histogram' ? 'histogram' : normalizeKind(spec.kind);
+  const L = layout(spec.w, spec.h, outsideLabelWidth(ctx, spec));
   ctx.save();
   ctx.fillStyle = T.bg;
   ctx.fillRect(0, 0, spec.w, spec.h);
@@ -103,7 +105,7 @@ export function renderPlot(ctx, spec) {
   ctx.restore();
   drawAxes(ctx, L, spec, T);
   if (spec.gates) for (const g of spec.gates) drawGate(ctx, L, spec, g, T);
-  if (spec.showLegend && spec.series.length > 1) drawLegend(ctx, L, spec.series, T);
+  drawSeriesLabels(ctx, L, spec, T);
   if (spec.title) {
     ctx.fillStyle = T.title; ctx.font = '600 12px Helvetica, Arial, sans-serif'; ctx.textAlign = 'left'; ctx.textBaseline = 'top';
     ctx.fillText(truncate(ctx, spec.title, spec.w - 12), 6, 5);
@@ -342,11 +344,9 @@ function drawHistograms(ctx, L, spec, T) {
       ctx.fill();
     }
     ctx.strokeStyle = color; ctx.lineWidth = 1.4; ctx.stroke();
-    if (n > 1 && offset > 0 && s.label) {
-      ctx.fillStyle = color; ctx.font = '11px Helvetica, Arial, sans-serif'; ctx.textAlign = 'right'; ctx.textBaseline = 'bottom';
-      ctx.fillText(s.label, L.ux2px(1) - 4, L.uy2px(base + bandH * Math.min(0.35, 0.9)));
-    }
   }
+  // stacked bands get one label each (drawn later by drawSeriesLabels)
+  spec._bands = n > 1 && offset > 0 ? spec.series.map((_, si) => ({ base: si * offset * bandH, bandH })) : null;
 }
 
 function drawAxes(ctx, L, spec, T) {
@@ -405,17 +405,62 @@ function niceCountTicks(max) {
   return out;
 }
 
-function drawLegend(ctx, L, series, T) {
-  ctx.font = '11px Helvetica, Arial, sans-serif';
-  const lineH = 15;
-  const w = Math.min(L.pw * 0.6, Math.max(...series.map(s => ctx.measureText(s.label || '').width)) + 26);
-  const x = MARGIN.l + L.pw - w - 6, y = MARGIN.t + 6;
-  ctx.fillStyle = T.legendBg; ctx.fillRect(x, y, w, series.length * lineH + 6);
-  series.forEach((s, i) => {
-    ctx.fillStyle = s.color; ctx.fillRect(x + 6, y + 6 + i * lineH, 10, 10);
-    ctx.fillStyle = T.text; ctx.textAlign = 'left'; ctx.textBaseline = 'top';
-    ctx.fillText(truncate(ctx, s.label || '', w - 26), x + 20, y + 4 + i * lineH);
-  });
+const SERIES_FONT = '11px Helvetica, Arial, sans-serif';
+const isBanded = spec => spec.kind === 'histogram' && spec.series.length > 1 && (spec.hist?.offset || 0) > 0;
+
+function outsideLabelWidth(ctx, spec) {
+  if (spec.labels?.mode !== 'outside' || spec.series.length < 2) return 0;
+  ctx.save(); ctx.font = SERIES_FONT;
+  const w = Math.max(...spec.series.map(s => ctx.measureText(s.label || '').width));
+  ctx.restore();
+  return Math.min(spec.w * 0.45, w + (isBanded(spec) ? 14 : 32));
+}
+
+// Series labels: one per band on offset histograms, otherwise a legend.
+// mode 'inside' (default, movable), 'outside' (right of the plot) or 'off'. Records hit boxes for dragging.
+function drawSeriesLabels(ctx, L, spec, T) {
+  spec._labelBoxes = []; spec._legendBox = null;
+  const mode = spec.labels?.mode || 'inside';
+  if (mode === 'off' || spec.series.length < 2) return;
+  const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+  ctx.save();
+  ctx.font = SERIES_FONT; ctx.textBaseline = 'middle';
+  if (isBanded(spec) && spec._bands) {
+    spec.series.forEach((s, i) => {
+      if (!s.label) return;
+      const tw = ctx.measureText(s.label).width, b = spec._bands[i];
+      let cx, cy;
+      if (mode === 'outside') { cx = MARGIN.l + L.pw + 8 + tw / 2; cy = clamp(L.uy2px(b.base + b.bandH * 0.3), MARGIN.t + 7, MARGIN.t + L.ph - 7); }
+      else {
+        [cx, cy] = s.labelPos ? [L.ux2px(s.labelPos[0]), L.uy2px(s.labelPos[1])] : [L.ux2px(1) - 6 - tw / 2, L.uy2px(b.base + b.bandH * 0.35) - 7];
+        cx = clamp(cx, MARGIN.l + tw / 2 + 4, MARGIN.l + L.pw - tw / 2 - 4); cy = clamp(cy, MARGIN.t + 9, MARGIN.t + L.ph - 9);
+        ctx.fillStyle = T.labelBg; ctx.fillRect(cx - tw / 2 - 3, cy - 8, tw + 6, 16);
+      }
+      ctx.fillStyle = s.color; ctx.textAlign = 'center';
+      ctx.fillText(s.label, cx, cy);
+      spec._labelBoxes.push({ i, x: cx - tw / 2 - 3, y: cy - 8, w: tw + 6, h: 16, cx, cy });
+    });
+  } else {
+    const lineH = 15, n = spec.series.length;
+    const avail = mode === 'outside' ? spec.w - (MARGIN.l + L.pw) - 8 : L.pw * 0.6;
+    const w = Math.min(avail, Math.max(...spec.series.map(s => ctx.measureText(s.label || '').width)) + 26);
+    const hgt = n * lineH + 6;
+    let x, y;
+    if (mode === 'outside') { x = MARGIN.l + L.pw + 6; y = MARGIN.t; }
+    else {
+      const p = spec.labels?.legendPos;
+      [x, y] = p ? [L.ux2px(p[0]) - w / 2, L.uy2px(p[1]) - hgt / 2] : [MARGIN.l + L.pw - w - 6, MARGIN.t + 6];
+      x = clamp(x, MARGIN.l + 2, MARGIN.l + L.pw - w - 2); y = clamp(y, MARGIN.t + 2, MARGIN.t + L.ph - hgt - 2);
+      ctx.fillStyle = T.legendBg; ctx.fillRect(x, y, w, hgt);
+    }
+    spec.series.forEach((s, i) => {
+      ctx.fillStyle = s.color; ctx.fillRect(x + 6, y + 6 + i * lineH, 10, 10);
+      ctx.fillStyle = T.text; ctx.textAlign = 'left';
+      ctx.fillText(truncate(ctx, s.label || '', w - 26), x + 20, y + 11 + i * lineH);
+    });
+    spec._legendBox = { x, y, w, h: hgt, cx: x + w / 2, cy: y + hgt / 2 };
+  }
+  ctx.restore();
 }
 
 // ---- gates ----
@@ -481,6 +526,7 @@ function drawGate(ctx, L, spec, item, T) {
     def = [(cx(geo.x0) + cx(geo.x1)) / 2, geo.y - 6 - bh / 2];
   }
   ctx.restore();
+  if (spec.gateLabels === false) { item.labelBox = null; ctx.restore(); return; }
   // Label: user-dragged position (stored in plot units) or the default, kept inside the plot
   const pos = item.labelPos || g.labelPos;
   let [lx, ly] = pos ? [L.ux2px(pos[0]), L.uy2px(pos[1])] : def;

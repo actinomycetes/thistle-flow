@@ -85,6 +85,7 @@ export const canPickLocation = () => typeof window.showSaveFilePicker === 'funct
 const MIME = {
   json: ['application/json', 'Workspace / template (JSON)'], csv: ['text/csv', 'CSV table'], png: ['image/png', 'PNG image'],
   svg: ['image/svg+xml', 'SVG vector image'], pdf: ['application/pdf', 'PDF document'], fcs: ['application/octet-stream', 'FCS file'],
+  zip: ['application/zip', 'Workspace with FCS files (zip)'],
 };
 
 function downloadBlob(name, blob) {
@@ -96,13 +97,16 @@ function downloadBlob(name, blob) {
 // Save a file. Where the browser supports it (Chrome/Edge), a native dialog lets the user pick
 // the folder and name; elsewhere the browser's download handling applies.
 // Returns the saved file name, or null if the user cancelled.
+// data may be a function (sync or async) so slow content (e.g. a zip) is built after the
+// location is chosen: browsers only allow the picker shortly after a click.
 export async function saveFile(name, data, ext) {
   ext = ext || (name.split('.').pop() || '').toLowerCase();
   const [mime, desc] = MIME[ext] || ['application/octet-stream', 'File'];
-  const blob = data instanceof Blob ? data : new Blob([data], { type: mime });
+  const toBlob = async () => { const d = typeof data === 'function' ? await data() : data; return d instanceof Blob ? d : new Blob([d], { type: mime }); };
   if (canPickLocation()) {
     try {
       const handle = await window.showSaveFilePicker({ suggestedName: name, types: [{ description: desc, accept: { [mime]: ['.' + ext] } }] });
+      const blob = await toBlob();
       const w = await handle.createWritable(); await w.write(blob); await w.close();
       return handle.name;
     } catch (err) {
@@ -110,31 +114,36 @@ export async function saveFile(name, data, ext) {
       console.warn('Save picker unavailable, falling back to download:', err);
     }
   }
-  downloadBlob(name, blob);
+  downloadBlob(name, await toBlob());
   return name;
 }
 
 // Save dialog with an editable, date-stamped file name (workspaces, templates).
 // makeData() is called after the user confirms. Resolves with the saved name or null.
+// ext may be a function (e.g. .zip or .json depending on a checkbox in `extra`); makeData may be async.
 export function saveDialog({ title, baseName, ext = 'json', note, extra, makeData }) {
   return new Promise(resolve => {
     let done = false;
     const finish = v => { if (done) return; done = true; resolve(v); };
-    const suffix = `.${ext}`;
+    const extOf = () => (typeof ext === 'function' ? ext() : ext);
+    const suffixEl = h('span', { class: 'hint' }, `.${extOf()}`);
     const input = h('input', { type: 'text', value: `${safeName(baseName)}_${dateStamp()}`, style: 'flex:1;min-width:280px' });
     let saving = false;
     const go = async () => {
-      const name = safeName(input.value.replace(new RegExp(`\\${suffix}$`, 'i'), '')) + suffix;
+      const e = extOf();
+      const name = safeName(input.value.replace(/\.(json|zip)$/i, '')) + '.' + e;
       saving = true;
       closeModal();
-      const saved = await saveFile(name, makeData(), ext);
-      if (saved) toast(`Saved ${saved}`);
-      finish(saved);
+      try {
+        const saved = await saveFile(name, makeData, e);
+        if (saved) toast(`Saved ${saved}`);
+        finish(saved);
+      } catch (err) { toast('Could not save: ' + err.message, true); finish(null); }
     };
     input.addEventListener('keydown', e => { if (e.key === 'Enter') go(); });
     const body = h('div', {},
       note ? h('div', { class: 'hint-box', style: 'margin:0 0 8px;max-width:520px' }, note) : null,
-      h('div', { class: 'row' }, h('label', {}, 'File name'), input, h('span', { class: 'hint' }, suffix)),
+      h('div', { class: 'row' }, h('label', {}, 'File name'), input, suffixEl),
       extra || null,
       h('p', { class: 'hint' }, canPickLocation()
         ? 'Next, choose the folder to save in. The date and time are added so earlier saves are not overwritten.'
@@ -142,8 +151,19 @@ export function saveDialog({ title, baseName, ext = 'json', note, extra, makeDat
       h('div', { class: 'row', style: 'justify-content:flex-end' },
         h('button', { class: 'btn', onclick: () => { closeModal(); } }, 'Cancel'),
         h('button', { class: 'btn primary', onclick: go }, canPickLocation() ? 'Choose location…' : 'Save')));
+    body.addEventListener('change', () => { suffixEl.textContent = `.${extOf()}`; });
     openModal(title, body, { onClose: () => { if (!saving) finish(null); } });
     setTimeout(() => { input.focus(); input.select(); }, 0);
+  });
+}
+
+// Pick several files, or a whole folder (folder=true; works in Chrome, Edge, Firefox and Safari)
+export function pickFiles({ accept = '', folder = false } = {}) {
+  return new Promise(resolve => {
+    const inp = h('input', { type: 'file', accept, multiple: true, hidden: true, onchange: () => { resolve([...inp.files]); inp.remove(); } });
+    if (folder) inp.setAttribute('webkitdirectory', '');
+    inp.addEventListener('cancel', () => { resolve([]); inp.remove(); });
+    document.body.append(inp); inp.click();
   });
 }
 

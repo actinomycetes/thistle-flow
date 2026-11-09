@@ -7,7 +7,8 @@ import { PlotView, buildSpec, shortLabel, fmtPct, subsampleIdx, PLOT_SIZES, EVEN
 import { renderPlot, prepareCanvas, SERIES_COLORS, THEMES, PLOT_KINDS, HIST_OFFSETS, normalizeKind } from './render.js';
 import { renderSVG, renderPDF } from './vector.js';
 import { demoFiles } from './demo.js';
-import { $, $$, h, uid, esc, safeName, dateStamp, toast, openModal, closeModal, modalOpen, choose, popover, closePopover, saveFile, saveDialog, pickFile } from './ui.js';
+import { $, $$, h, uid, esc, safeName, dateStamp, toast, openModal, closeModal, modalOpen, choose, popover, closePopover, saveFile, saveDialog, pickFile, pickFiles } from './ui.js';
+import { createZip, readZip, isZip } from './zip.js';
 import { Workspace } from './workspace.js';
 import { renderProperties } from './properties.js';
 import { FigureView } from './figureview.js';
@@ -113,34 +114,51 @@ function redo() {
 }
 
 // ---------- loading ----------
-async function loadBuffers(items) {
-  const ws = app.ws;
-  const errors = [];
-  let n = 0;
+// Parse FCS files into a workspace (no rendering). keyFor(name) can force the sample key
+// (used when a missing file is located under a different name). Returns { added, errors }.
+function addSamples(ws, items, keyFor) {
+  const errors = [], added = [];
   for (const { name, buffer } of items) {
     try {
+      const source = { name, data: new Uint8Array(buffer) };
       for (const ds of parseFCS(buffer, name)) {
         if (!ds.events) { errors.push(`${name}: no events`); continue; }
-        ws.samples.push(new Sample(ds)); n++;
+        const s = new Sample(ds);
+        s.source = source;
+        const k = keyFor?.(ds.name);
+        if (k) s.key = k;
+        ws.samples.push(s); added.push(s);
       }
     } catch (err) { console.error(err); errors.push(`${name}: ${err.message}`); }
   }
   if (!ws.activeId && ws.samples.length) ws.activeId = ws.samples[0].id;
   ws.refreshAutoTransforms();
   ws.engine.invalidate();
-  if (!ws.plots.length && ws.samples.length) defaultPlots(ws);
   ws.rebase(); ws.dirty = true; // loading data is not an undoable step
+  return { added, errors };
+}
+
+const bufferOf = u8 => (u8.byteOffset === 0 && u8.byteLength === u8.buffer.byteLength ? u8.buffer : u8.slice().buffer);
+
+async function loadBuffers(items) {
+  const ws = app.ws;
+  const { added, errors } = addSamples(ws, items);
+  if (!ws.plots.length && ws.samples.length) defaultPlots(ws);
+  ws.rebase();
   if (errors.length) toast('Could not load: ' + errors.join('; '), true);
-  else toast(`Loaded ${n} sample(s) into “${ws.name}”`);
+  else toast(`Loaded ${added.length} sample(s) into “${ws.name}”`);
   renderAll();
+}
+
+async function readFiles(files) {
+  return Promise.all([...files].map(async f => ({ name: f.name, buffer: await f.arrayBuffer() })));
 }
 
 async function loadFiles(fileList) {
   const files = [...fileList];
   if (!files.length) return;
   toast(`Reading ${files.length} file(s)…`);
-  const items = await Promise.all(files.map(async f => ({ name: f.name, buffer: await f.arrayBuffer() })));
-  await loadBuffers(items);
+  await loadBuffers(await readFiles(files));
 }
 
 function defaultPlots(ws) {
@@ -170,6 +188,11 @@ function renderSamples() {
         h('div', { class: 'sub' }, `${s.events.toLocaleString()} events · ${s.params.length} par · ${s.version}`, compTag),
         h('div', { class: 'sub', title: s.instrument }, s.instrument)),
       h('button', { class: 'icon', title: 'Properties', onclick: e => { e.stopPropagation(); ws.activeId = s.id; switchTab('properties'); } }, 'ⓘ'),
+      h('button', { class: 'icon', title: 'Replace this sample’s FCS file (keeps gates and settings)', onclick: async e => {
+        e.stopPropagation();
+        const f = await pickFile('.fcs,.FCS,.lmd,.LMD');
+        if (f) { await replaceSampleFile(ws, s, f); renderAll(); }
+      } }, '⇄'),
       h('button', { class: 'icon', title: 'Remove sample', onclick: e => { e.stopPropagation(); removeSample(s.id); } }, '×')));
   }
 }
@@ -534,18 +557,18 @@ function figureSpec(f, theme) {
   const cfgX = ws.getCfg(f.x), cfgY = f.y ? ws.getCfg(f.y) : null;
   const series = [];
   const max = f.maxEvents ?? ws.displayMax;
-  for (const se of f.series) {
+  f.series.forEach((se, si) => {
     const s = ws.sampleById(se.sampleId);
-    if (!s || !s.hasChannel(f.x) || (f.y && !s.hasChannel(f.y))) continue;
-    if (se.pop && !ws.engine.get(se.pop)) continue;
+    if (!s || !s.hasChannel(f.x) || (f.y && !s.hasChannel(f.y))) return;
+    if (se.pop && !ws.engine.get(se.pop)) return;
     const pop = ws.engine.population(s, se.pop);
     const idx = f.kind === 'overlay-hist' ? pop.idx : subsampleIdx(pop.idx, max);
-    series.push({ ux: s.unit(f.x, cfgX), uy: f.y ? s.unit(f.y, cfgY) : null, idx, color: se.color, label: seriesLabel(se) });
-  }
+    series.push({ ux: s.unit(f.x, cfgX), uy: f.y ? s.unit(f.y, cfgY) : null, idx, color: se.color, label: seriesLabel(se), labelPos: se.labelPos, si });
+  });
   return {
     w: f.w, h: f.h, theme, kind: f.kind === 'overlay-hist' ? 'histogram' : 'dot', title: f.title,
     x: { name: f.x, label: ws.channelLabel(f.x), cfg: cfgX }, y: f.y ? { name: f.y, label: ws.channelLabel(f.y), cfg: cfgY } : null,
-    series, showLegend: !(f.kind === 'overlay-hist' && f.offset > 0),
+    series, labels: { mode: f.labelMode || 'inside', legendPos: f.legendPos }, gateLabels: f.gateLabels !== false,
     hist: { mode: f.mode, offset: f.offset, smooth: f.smooth, fill: f.fill },
     gates: f.kind === 'overlay-hist' && f.showGates !== false ? overlayGates(f) : [],
   };
@@ -595,7 +618,10 @@ function batchSpec(f, s, theme) {
     theme, title: `${s.name.replace(/\.fcs$/i, '')} (${ws.engine.population(s, pop).count.toLocaleString()})`,
     noGates: f.showGates === false, compactLabels: true, selectedGate: ws.selectedGate,
   });
-  if (spec) for (const it of spec.gates) it.labelPos = f.labelPos?.[it.gate.id]; // positions are per figure
+  if (spec) {
+    for (const it of spec.gates) it.labelPos = f.labelPos?.[it.gate.id]; // positions are per figure
+    spec.gateLabels = f.gateLabels !== false;
+  }
   return spec;
 }
 
@@ -638,8 +664,12 @@ function figureCard(f) {
   const ws = app.ws;
   const ctrl = h('div', { class: 'fig-controls' });
   const out = h('div', { class: 'fig-out' });
-  const redraw = () => drawFigure(f, out);
+  const rangeRow = h('div');
+  const redraw = () => { drawFigure(f, out); if (f.kind === 'overlay-hist') updateRangeRow(f, rangeRow); };
   const field = (label, el) => h('label', {}, h('span', {}, label), el);
+  const resetLabelsBtn = () => h('button', { class: 'btn small', title: 'Put all labels of this figure back in their default places', onclick: () => {
+    delete f.labelPos; delete f.legendPos; (f.series || []).forEach(se => delete se.labelPos); redraw();
+  } }, 'Reset label positions');
   const kindName = { 'overlay-hist': 'Histogram overlay', 'overlay-dot': 'Dot-plot overlay', batch: 'Batch' }[f.kind];
   const btnExport = h('button', { class: 'btn small' }, 'Export ▾');
   btnExport.addEventListener('click', () => exportMenu(btnExport, f.title || kindName, () => figureComposite(f, out)));
@@ -652,7 +682,10 @@ function figureCard(f) {
   if (f.kind === 'batch') {
     ctrl.append(field('Population', h('select', { onchange: e => { f.pop = e.target.value || null; redraw(); } }, popOptions(f.pop))));
     ctrl.append(field('Style', h('select', { onchange: e => { f.plotKind = e.target.value; redraw(); } }, kindOptions(f.plotKind))));
-    ctrl.append(field('Show gates', h('input', { type: 'checkbox', checked: f.showGates !== false, onchange: e => { f.showGates = e.target.checked; redraw(); } })));
+    ctrl.append(h('div', { style: 'display:flex;gap:12px' },
+      h('label', {}, h('input', { type: 'checkbox', checked: f.showGates !== false, onchange: e => { f.showGates = e.target.checked; redraw(); } }), 'Gates'),
+      h('label', {}, h('input', { type: 'checkbox', checked: f.gateLabels !== false, onchange: e => { f.gateLabels = e.target.checked; redraw(); } }), 'Gate labels'),
+      resetLabelsBtn()));
   } else {
     if (f.kind === 'overlay-hist') {
       ctrl.append(field('Y scale', h('select', { onchange: e => { f.mode = e.target.value; redraw(); } },
@@ -666,18 +699,14 @@ function figureCard(f) {
       ctrl.append(h('div', { style: 'display:flex;gap:12px' },
         h('label', {}, h('input', { type: 'checkbox', checked: f.smooth, onchange: e => { f.smooth = e.target.checked; redraw(); } }), 'Smooth'),
         h('label', {}, h('input', { type: 'checkbox', checked: f.fill, onchange: e => { f.fill = e.target.checked; redraw(); } }), 'Fill'),
-        h('label', {}, h('input', { type: 'checkbox', checked: f.showGates !== false, onchange: e => { f.showGates = e.target.checked; redraw(); } }), 'Gates')));
-      const drawing = app.figDrawing === f.id;
-      const parent = overlayParent(f);
-      ctrl.append(h('div', { style: 'display:flex;gap:6px;align-items:center' },
-        h('button', {
-          class: 'btn small' + (drawing ? ' primary' : ''), disabled: parent === undefined,
-          title: 'Drag across the histogram to draw one range gate that applies to every sample',
-          onclick: () => { app.figDrawing = drawing ? null : f.id; renderFigures(); },
-        }, drawing ? '↔ Drawing… (Esc to cancel)' : '↔ Range gate'),
-        h('span', { class: 'hint' }, parent === undefined ? 'Series must share one population' : `under ${app.ws.engine.fullName(parent)}`)));
-      if (drawing) ctrl.append(h('div', { class: 'hint-box' }, 'Drag across the overlay. The gate is shared by all samples, so each sample’s % is shown in its colour. Drag the label to move it, or the gate ends to adjust.'));
+        h('label', {}, h('input', { type: 'checkbox', checked: f.showGates !== false, onchange: e => { f.showGates = e.target.checked; redraw(); } }), 'Gates'),
+        h('label', {}, h('input', { type: 'checkbox', checked: f.gateLabels !== false, onchange: e => { f.gateLabels = e.target.checked; redraw(); } }), 'Gate labels')));
+      // refreshed on every redraw, so it follows changes to the series' populations
+      ctrl.append(rangeRow);
     }
+    ctrl.append(field('Labels', h('select', { title: 'Sample labels / legend', onchange: e => { f.labelMode = e.target.value; redraw(); } },
+      [['inside', 'In the plot (drag to move)'], ['outside', 'Outside, right'], ['off', 'Off']].map(([v, l]) => h('option', { value: v, selected: (f.labelMode || 'inside') === v }, l)))),
+      h('div', { style: 'display:flex;justify-content:flex-end' }, resetLabelsBtn()));
     const list = h('div', { class: 'series-list' });
     const renderSeries = () => {
       list.innerHTML = '';
@@ -712,6 +741,21 @@ function figureCard(f) {
   const card = h('div', { class: 'figure-card', 'data-fig': f.id }, ctrl, out);
   redraw();
   return card;
+}
+
+function updateRangeRow(f, row) {
+  const drawing = app.figDrawing === f.id;
+  const parent = overlayParent(f);
+  const why = !f.series?.length ? 'Add series first' : 'The series use different populations; set them all to one (e.g. with “Set all to”)';
+  row.replaceChildren(
+    h('div', { style: 'display:flex;gap:6px;align-items:center;flex-wrap:wrap' },
+      h('button', {
+        class: 'btn small' + (drawing ? ' primary' : ''), disabled: parent === undefined,
+        title: parent === undefined ? why : 'Drag across the histogram to draw one range gate that applies to every sample',
+        onclick: () => { app.figDrawing = drawing ? null : f.id; renderFigures(); },
+      }, drawing ? '↔ Drawing… (Esc to cancel)' : '↔ Range gate'),
+      h('span', { class: 'hint' }, parent === undefined ? why : `gate goes under ${app.ws.engine.fullName(parent)}`)),
+    drawing ? h('div', { class: 'hint-box' }, 'Drag across the overlay. The gate is shared by all samples, so each sample’s % is shown in its colour. Drag the label to move it, or the gate ends to adjust.') : '');
 }
 
 function drawFigure(f, out) {
@@ -968,28 +1012,156 @@ function openTransforms(initial, axis) {
 function afterTransform() { app.ws.engine.invalidate(); app.scheduleCommit(); renderAll(); }
 
 // ---------- workspace files & templates ----------
+const fmtMB = n => (n >= 1e6 ? `${(n / 1e6).toFixed(n >= 1e8 ? 0 : 1)} MB` : `${Math.max(1, Math.round(n / 1e3))} KB`);
+
+// Workspace + original FCS files in one zip: workspace.json, fcs/<file>
+async function workspaceBundle(ws) {
+  const files = ws.sourceFiles();
+  const used = new Set(), entryOf = new Map();
+  for (const f of files) {
+    let name = `fcs/${f.name}`, k = 2;
+    while (used.has(name.toLowerCase())) name = `fcs/${f.name.replace(/(\.[^.]*)?$/, m => ` (${k++})${m}`)}`;
+    used.add(name.toLowerCase()); entryOf.set(f, name);
+  }
+  const data = ws.serialize();
+  data.files = files.map(f => ({ entry: entryOf.get(f), name: f.name }));
+  return createZip([{ name: 'workspace.json', data: JSON.stringify(data, null, 1) }, ...files.map(f => ({ name: entryOf.get(f), data: f.data }))]);
+}
+
 app.saveWorkspace = async (ws = app.ws) => {
   ws.commit();
+  const files = ws.sourceFiles();
+  const canBundle = ws.samples.length > 0 && ws.samples.every(s => s.source);
+  const size = files.reduce((t, f) => t + f.data.length, 0);
+  const include = h('input', { type: 'checkbox', checked: canBundle, disabled: !canBundle });
   const name = await saveDialog({
-    title: 'Save workspace', baseName: `${ws.name}`, ext: 'json',
-    note: 'A workspace stores gates, scales, plots, layouts, statistics settings, compensation and metadata edits — not the FCS data. To reopen it, load the same FCS files, then the workspace.',
-    makeData: () => JSON.stringify(ws.serialize(), null, 1),
+    title: 'Save workspace', baseName: `${ws.name}`, ext: () => (include.checked ? 'zip' : 'json'),
+    note: 'A workspace stores gates, scales, plots, layouts, statistics settings, compensation and metadata edits. With the FCS files included it is one .zip that reopens with all its samples; without them it is a small .json that needs the FCS files next to it.',
+    extra: h('label', { class: 'row' }, include, canBundle
+      ? ` Include the ${files.length} FCS file${files.length === 1 ? '' : 's'} (${fmtMB(size)} before compression)`
+      : ' Include the FCS files (not available: no samples loaded)'),
+    makeData: async () => (include.checked ? new Blob([await workspaceBundle(ws)], { type: 'application/zip' }) : JSON.stringify(ws.serialize(), null, 1)),
   });
   if (name) { ws.dirty = false; renderWsTabs(); }
   return name;
 };
 
-async function loadWorkspaceFile(file) {
+// Pick the tab to load a workspace into: the current one if it is empty or already holds
+// these samples, otherwise a new tab.
+function targetWorkspace(data) {
   const ws = app.ws;
+  const keys = Workspace.savedKeys(data);
+  const matches = keys.filter(k => ws.samples.some(s => s.key === k || s.name === k));
+  if (!ws.samples.length || matches.length) return ws;
+  return newWorkspace(data.name);
+}
+
+async function loadWorkspaceFile(file) {
   try {
-    const data = JSON.parse(await file.text());
+    const u8 = new Uint8Array(await file.arrayBuffer());
+    if (isZip(u8)) return await loadBundle(u8);
+    const data = JSON.parse(new TextDecoder().decode(u8));
     if (data.kind === 'template') return applyTemplateData(data);
-    if (!ws.samples.length) toast('Tip: load the FCS files first, then the workspace, so samples can be matched.');
+    const ws = targetWorkspace(data);
     const missing = ws.deserialize(data);
-    app.scheduleCommit();
+    ws.rebase(); ws.dirty = false;
     renderAll();
-    toast(missing.length ? `Workspace loaded. Not loaded yet: ${missing.join(', ')} — open those FCS files and reload the workspace.` : 'Workspace loaded');
-  } catch (err) { toast('Could not load workspace: ' + err.message, true); }
+    if (missing.length) locateDialog(ws, data, missing);
+    else toast('Workspace loaded');
+  } catch (err) { console.error(err); toast('Could not load workspace: ' + err.message, true); }
+}
+
+async function loadBundle(u8) {
+  toast('Opening workspace bundle…');
+  const entries = await readZip(u8);
+  const wsEntry = entries.find(e => e.name === 'workspace.json');
+  if (!wsEntry) throw new Error('this zip is not a Thistle Flow workspace (no workspace.json)');
+  const data = JSON.parse(new TextDecoder().decode(wsEntry.data));
+  const ws = app.ws.samples.length ? newWorkspace(data.name) : app.ws;
+  const names = new Map((data.files || []).map(f => [f.entry, f.name]));
+  const items = entries.filter(e => e.name.startsWith('fcs/')).map(e => ({ name: names.get(e.name) || e.name.slice(4), buffer: bufferOf(e.data) }));
+  const { errors } = addSamples(ws, items);
+  const missing = ws.deserialize(data);
+  ws.rebase(); ws.dirty = false;
+  renderAll();
+  if (errors.length) toast('Could not read: ' + errors.join('; '), true);
+  else if (missing.length) locateDialog(ws, data, missing);
+  else toast(`Workspace “${ws.name}” opened with ${ws.samples.length} sample(s)`);
+}
+
+// Missing FCS files: browsers cannot open files next to the workspace on their own, so the user
+// picks the folder (all matching file names are loaded) or each file (any name).
+function locateDialog(ws, data, missingKeys) {
+  const want = new Set(missingKeys);
+  const fileOf = new Map((data.version >= 2 ? data.samples || [] : []).map(e => [e.key, e.file || e.key.replace(/ \[\d+\]$/, '')]));
+  const baseOf = k => (fileOf.get(k) || k.replace(/ \[\d+\]$/, '')).toLowerCase();
+  const body = h('div');
+  const finish = msg => {
+    const still = ws.deserialize(data);
+    ws.rebase(); ws.dirty = false;
+    want.clear(); still.forEach(k => want.add(k));
+    renderAll();
+    draw();
+    if (msg) toast(msg);
+    if (!want.size) { closeModal(); toast('All samples found — workspace complete'); }
+  };
+  const loadMatching = async files => {
+    const fcs = files.filter(f => /\.(fcs|lmd)$/i.test(f.name));
+    const byName = new Map(fcs.map(f => [f.name.toLowerCase(), f]));
+    const pick = new Set();
+    for (const k of want) { const f = byName.get(baseOf(k)); if (f) pick.add(f); }
+    if (!pick.size) { toast(`None of the ${fcs.length} FCS file(s) there has a matching name`, true); return; }
+    const { errors } = addSamples(ws, await readFiles([...pick]));
+    if (errors.length) toast('Could not load: ' + errors.join('; '), true);
+    finish(`Loaded ${pick.size} file(s)`);
+  };
+  const draw = () => {
+    body.replaceChildren(
+      h('div', { class: 'hint-box', style: 'margin:0 0 10px;max-width:560px' },
+        'This workspace was saved without its FCS files, and a browser cannot open files next to it by itself. ',
+        h('b', {}, 'Choose the folder'), ' that holds the FCS files (every file with a matching name is loaded), or choose each file. A file with a different name can be assigned with ', h('b', {}, 'Choose…'), '.'),
+      want.size ? h('table', { class: 'prop-table', style: 'max-width:560px' },
+        h('tr', {}, h('th', {}, 'Missing sample'), h('th', {}, 'Expected file'), h('th', {})),
+        [...want].map(k => h('tr', {}, h('td', {}, k), h('td', { class: 'hint' }, fileOf.get(k) || k.replace(/ \[\d+\]$/, '')),
+          h('td', {}, h('button', { class: 'btn small', onclick: async () => {
+            const f = await pickFile('.fcs,.FCS,.lmd,.LMD');
+            if (!f) return;
+            const { errors } = addSamples(ws, await readFiles([f]), name => {
+              const m = / \[(\d+)\]$/.exec(k), dm = / \[(\d+)\]$/.exec(name);
+              return (m ? m[1] : '1') === (dm ? dm[1] : '1') ? k : null; // assign the matching dataset to this key
+            });
+            if (errors.length) toast('Could not load: ' + errors.join('; '), true);
+            finish(`Assigned ${f.name} to ${k}`);
+          } }, 'Choose…'))))) : h('p', {}, 'All samples found.'),
+      h('div', { class: 'row', style: 'justify-content:flex-end;margin-top:10px' },
+        h('button', { class: 'btn primary', onclick: async () => loadMatching(await pickFiles({ folder: true })) }, '📂 Choose folder…'),
+        h('button', { class: 'btn', onclick: async () => loadMatching(await pickFiles({ accept: '.fcs,.FCS,.lmd,.LMD' })) }, 'Choose files…'),
+        h('button', { class: 'btn', onclick: closeModal }, want.size ? 'Later' : 'Done')));
+  };
+  draw();
+  openModal(`Find the FCS files for “${ws.name}”`, body, { wide: true });
+}
+
+// Swap a sample's data file, keeping its identity (gates, figures, edits) where the channels allow
+async function replaceSampleFile(ws, old, file, key) {
+  try {
+    const buffer = await file.arrayBuffer();
+    const sets = parseFCS(buffer, file.name);
+    const m = / \[(\d+)\]$/.exec(old.key);
+    const ds = sets[m ? Math.min(sets.length, +m[1]) - 1 : 0];
+    const ns = new Sample(ds);
+    ns.id = old.id;
+    ns.source = { name: file.name, data: new Uint8Array(buffer) };
+    if (key) ns.key = key;
+    if (old.spill && old.spill.names.every(c => ns.hasChannel(c))) { ns.setSpill(old.spill); ns.setCompEnabled(old.compEnabled); }
+    ns.applyEdits({ ...old.edits, name: null });
+    const missingCh = old.channelNames.filter(c => !ns.hasChannel(c));
+    ws.samples[ws.samples.indexOf(old)] = ns;
+    ws.engine.invalidate(old.id);
+    ws.refreshAutoTransforms();
+    ws.rebase(); ws.dirty = true;
+    toast(missingCh.length ? `Replaced with ${file.name}. Channels not in the new file: ${missingCh.join(', ')}` : `Replaced ${old.name} with ${file.name}`, missingCh.length > 0);
+  } catch (err) { toast('Could not replace the file: ' + err.message, true); }
 }
 
 async function saveTemplate() {
@@ -1162,8 +1334,9 @@ window.addEventListener('dragover', e => e.preventDefault());
 window.addEventListener('drop', e => {
   e.preventDefault(); dragDepth = 0; document.body.classList.remove('dragging');
   const files = [...e.dataTransfer.files];
-  const wsFile = files.find(f => f.name.endsWith('.json'));
-  loadFiles(files.filter(f => !f.name.endsWith('.json'))).then(() => wsFile && loadWorkspaceFile(wsFile));
+  const isWs = f => /\.(json|zip)$/i.test(f.name);
+  const wsFile = files.find(isWs);
+  loadFiles(files.filter(f => !isWs(f))).then(() => wsFile && loadWorkspaceFile(wsFile));
 });
 
 applyTheme(pref.get('theme', 'dark'));
