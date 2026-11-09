@@ -10,6 +10,7 @@ import { demoFiles } from './demo.js';
 import { $, $$, h, uid, esc, safeName, dateStamp, toast, openModal, closeModal, modalOpen, choose, popover, closePopover, saveFile, saveDialog, pickFile } from './ui.js';
 import { Workspace } from './workspace.js';
 import { renderProperties } from './properties.js';
+import { APP_NAME, APP_VERSION } from './version.js';
 
 const MODE_NAMES = { gating: 'Gating', layout: 'Layout', stats: 'Statistics', properties: 'Properties' };
 const fmtEvents = n => (n ? n.toLocaleString() : 'All');
@@ -22,6 +23,7 @@ const app = {
   theme: 'light',
   toast,
 };
+app.version = APP_VERSION;
 window.thistleFlow = app; // handy for debugging from the console
 
 app.activeSample = () => app.ws.activeSample();
@@ -33,10 +35,11 @@ const pref = {
 };
 
 // ---------- theme ----------
+// Same convention as Thistle Plot: dark by default, 🌙 shown in dark mode and ☀️ in light mode
 function applyTheme(t) {
   app.theme = t;
   document.documentElement.dataset.theme = t;
-  $('#btnTheme').textContent = t === 'dark' ? '☀ Light' : '☾ Dark';
+  $('#btnTheme').textContent = t === 'dark' ? '🌙' : '☀️';
   $('#btnTheme').title = `Switch to ${t === 'dark' ? 'light' : 'dark'} mode (exports always use a white background)`;
   pref.set('theme', t);
 }
@@ -354,7 +357,7 @@ function plotSettings(p, anchor) {
     h('div', { class: 'row' },
       h('button', { class: 'btn small', onclick: () => { closePopover(); app.openScale(p.x, 'x'); } }, 'X axis scale…'),
       p.y ? h('button', { class: 'btn small', onclick: () => { closePopover(); app.openScale(p.y, 'y'); } }, 'Y axis scale…') : null),
-    h('p', { class: 'hint' }, n > 1 ? 'Changes apply to all selected plots.' : 'Tip: shift-click plots or drag a box around them to change several at once.'));
+    h('div', { class: 'hint-box' }, n > 1 ? 'Changes apply to all selected plots.' : 'Tip: shift-click plots or drag a box around them to change several at once.'));
   popover(anchor, body);
 }
 
@@ -764,7 +767,7 @@ function renderStatsControls() {
       h('label', {}, 'Layout ', h('select', { onchange: e => { cfg.layout = e.target.value; renderStatsTable(); } },
         [['long', 'Long: row per sample × population'], ['wide', 'Wide: row per sample'], ['transposed', 'Transposed: column per sample']]
           .map(([v, l]) => h('option', { value: v, selected: (cfg.layout || 'long') === v }, l)))),
-      h('span', { class: 'hint', style: 'max-width:220px' }, 'MFI values are computed on compensated data (when compensation is on). Geo. mean uses positive events only.')));
+      h('div', { class: 'hint-box', style: 'max-width:240px' }, 'MFI values are computed on compensated data (when compensation is on). Geo. mean uses positive events only.')));
 }
 
 function statsTableData() {
@@ -1112,7 +1115,9 @@ window.addEventListener('drop', e => {
   loadFiles(files.filter(f => !f.name.endsWith('.json'))).then(() => wsFile && loadWorkspaceFile(wsFile));
 });
 
-applyTheme(pref.get('theme', null) || (window.matchMedia?.('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'));
+applyTheme(pref.get('theme', 'dark'));
+$('#app-version').textContent = `v${APP_VERSION}`;
+document.title = `${APP_NAME} v${APP_VERSION} (Beta)`;
 setupSplitters();
 setupRubberBand();
 newWorkspace('Workspace 1');

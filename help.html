@@ -3,31 +3,49 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Thistle Flow Help</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2024%2026%22%3E%3Cg%20stroke%3D%22%23a855f7%22%20stroke-width%3D%221.6%22%20stroke-linecap%3D%22round%22%3E%3Cpath%20d%3D%22M12%2010V2%22%2F%3E%3Cpath%20d%3D%22M12%2010L7%203%22%2F%3E%3Cpath%20d%3D%22M12%2010L17%203%22%2F%3E%3Cpath%20d%3D%22M12%2010L4.5%206%22%2F%3E%3Cpath%20d%3D%22M12%2010L19.5%206%22%2F%3E%3Cpath%20d%3D%22M12%2010L9.5%202.3%22%2F%3E%3Cpath%20d%3D%22M12%2010L14.5%202.3%22%2F%3E%3C%2Fg%3E%3Cellipse%20cx%3D%2212%22%20cy%3D%2213.5%22%20rx%3D%225%22%20ry%3D%224.2%22%20fill%3D%22%2322c55e%22%2F%3E%3Cg%20fill%3D%22%2315803d%22%3E%3Ccircle%20cx%3D%229.7%22%20cy%3D%2212.7%22%20r%3D%22.95%22%2F%3E%3Ccircle%20cx%3D%2212.3%22%20cy%3D%2211.9%22%20r%3D%22.95%22%2F%3E%3Ccircle%20cx%3D%2214.7%22%20cy%3D%2213.3%22%20r%3D%22.95%22%2F%3E%3Ccircle%20cx%3D%2210.8%22%20cy%3D%2215.3%22%20r%3D%22.95%22%2F%3E%3Ccircle%20cx%3D%2213.5%22%20cy%3D%2215.5%22%20r%3D%22.95%22%2F%3E%3C%2Fg%3E%3Cpath%20d%3D%22M12%2017.5V25%22%20stroke%3D%22%2316a34a%22%20stroke-width%3D%221.8%22%20stroke-linecap%3D%22round%22%2F%3E%3Cpath%20d%3D%22M12%2021.5c-2.5-.5-4.5-2-5.5-4M12%2021c2.5-.5%204.3-1.8%205.3-3.8%22%20stroke%3D%22%2316a34a%22%20stroke-width%3D%221.4%22%20fill%3D%22none%22%20stroke-linecap%3D%22round%22%2F%3E%3C%2Fsvg%3E">
+<title>Thistle Flow v0.3.0 (Beta) — Help</title>
 <style>
-  :root { --bg: #ffffff; --text: #1d2330; --muted: #5b6474; --border: #d9dce1; --accent: #2f6fde; --code: #f0f2f5; color-scheme: light; }
-  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg: #12161c; --text: #e3e7ee; --muted: #98a1b0; --border: #2d3440; --accent: #7aa5f5; --code: #1d222b; color-scheme: dark; } }
-  :root[data-theme="dark"] { --bg: #12161c; --text: #e3e7ee; --muted: #98a1b0; --border: #2d3440; --accent: #7aa5f5; --code: #1d222b; color-scheme: dark; }
-  body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.6 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
-  main { max-width: 860px; margin: 0 auto; padding: 24px 16px 64px; }
-  h1 { font-size: 26px; margin: 0 0 4px; } h1 span { color: #9b6fd0; }
-  h2 { font-size: 19px; margin: 34px 0 8px; padding-top: 10px; border-top: 1px solid var(--border); }
-  h3 { font-size: 15px; margin: 18px 0 4px; }
+  /* Thistle Plot palette: dark by default, light when the system asks for it */
+  :root { --bg: #0f172a; --surf: #1e293b; --surf2: #263347; --text: #e2e8f0; --muted: #94a3b8; --border: #334155; --accent: #3b82f6; --code: #263347; --badge-bg: #1d3461; --note-bg: #1a2744; --note-bd: #2a4080; --note-tx: #93c5fd; color-scheme: dark; }
+  @media (prefers-color-scheme: light) { :root:not([data-theme="dark"]) { --bg: #f8fafc; --surf: #ffffff; --surf2: #f1f5f9; --text: #0f172a; --muted: #475569; --border: #e2e8f0; --accent: #2563eb; --code: #f1f5f9; --badge-bg: #dbeafe; --note-bg: #eff6ff; --note-bd: #bfdbfe; --note-tx: #1e40af; color-scheme: light; } }
+  :root[data-theme="light"] { --bg: #f8fafc; --surf: #ffffff; --surf2: #f1f5f9; --text: #0f172a; --muted: #475569; --border: #e2e8f0; --accent: #2563eb; --code: #f1f5f9; --badge-bg: #dbeafe; --note-bg: #eff6ff; --note-bd: #bfdbfe; --note-tx: #1e40af; color-scheme: light; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 13.5px/1.6 system-ui, sans-serif; }
+  header { display: flex; align-items: center; gap: 10px; padding: 8px 14px; background: var(--surf); border-bottom: 1px solid var(--border); position: sticky; top: 0; }
+  header .title { font-size: 17px; font-weight: 700; }
+  .badge { font-size: 10px; color: var(--accent); background: var(--badge-bg); padding: 2px 7px; border-radius: 4px; font-weight: 600; }
+  .badge.beta { background: #7c2d12; color: #fed7aa; }
+  header a.app { margin-left: auto; font-size: 12px; background: var(--surf2); border: 1px solid var(--border); color: var(--text); padding: 5px 11px; border-radius: 5px; text-decoration: none; }
+  main { max-width: 980px; margin: 0 auto; padding: 10px 26px 60px; background: var(--surf); border-left: 1px solid var(--border); border-right: 1px solid var(--border); min-height: calc(100vh - 43px); }
+  h1 { font-size: 20px; margin: 18px 0 4px; }
+  h2 { font-size: 18px; margin: 30px 0 8px; padding-top: 10px; border-top: 1px solid var(--border); }
+  h3 { font-size: 15px; margin: 18px 0 6px; color: var(--accent); }
   p, li { color: var(--text); } .muted { color: var(--muted); }
+  ul, ol { padding-left: 22px; } li { margin: 3px 0; }
   a { color: var(--accent); }
-  kbd, code { background: var(--code); border: 1px solid var(--border); border-radius: 4px; padding: 0 5px; font-size: 13px; font-family: ui-monospace, monospace; }
-  nav.toc { columns: 2; column-gap: 24px; padding: 10px 14px; border: 1px solid var(--border); border-radius: 8px; margin: 16px 0; }
+  kbd, code { background: var(--code); border: 1px solid var(--border); border-radius: 4px; padding: 0 5px; font-size: 12px; font-family: ui-monospace, monospace; }
+  nav.toc { columns: 2; column-gap: 24px; padding: 10px 14px; border: 1px solid var(--border); border-radius: 8px; margin: 16px 0; background: var(--surf2); }
   nav.toc a { display: block; }
-  table { border-collapse: collapse; width: 100%; margin: 8px 0; font-size: 14px; }
-  th, td { border-bottom: 1px solid var(--border); padding: 5px 8px; text-align: left; vertical-align: top; }
-  .note { border-left: 3px solid var(--accent); padding: 4px 12px; margin: 10px 0; color: var(--muted); }
-  @media (max-width: 600px) { nav.toc { columns: 1; } }
+  table { border-collapse: collapse; width: 100%; margin: 10px 0; font-size: 12.5px; }
+  th, td { border: 1px solid var(--border); padding: 5px 8px; text-align: left; vertical-align: top; }
+  th { background: var(--surf2); }
+  .note { background: var(--note-bg); border: 1px solid var(--note-bd); border-radius: 5px; padding: 7px 9px; color: var(--note-tx); margin: 10px 0; font-size: 12.5px; }
+  @media (max-width: 600px) { nav.toc { columns: 1; } main { padding: 10px 16px 40px; } }
 </style>
 </head>
 <body>
+<header>
+  <svg width="24" height="26" viewBox="0 0 24 26" aria-hidden="true" style="flex:none"><g stroke="#a855f7" stroke-width="1.6" stroke-linecap="round"><path d="M12 10V2"/><path d="M12 10L7 3"/><path d="M12 10L17 3"/><path d="M12 10L4.5 6"/><path d="M12 10L19.5 6"/><path d="M12 10L9.5 2.3"/><path d="M12 10L14.5 2.3"/></g><ellipse cx="12" cy="13.5" rx="5" ry="4.2" fill="#22c55e"/><g fill="#15803d"><circle cx="9.7" cy="12.7" r=".95"/><circle cx="12.3" cy="11.9" r=".95"/><circle cx="14.7" cy="13.3" r=".95"/><circle cx="10.8" cy="15.3" r=".95"/><circle cx="13.5" cy="15.5" r=".95"/></g><path d="M12 17.5V25" stroke="#16a34a" stroke-width="1.8" stroke-linecap="round"/><path d="M12 21.5c-2.5-.5-4.5-2-5.5-4M12 21c2.5-.5 4.3-1.8 5.3-3.8" stroke="#16a34a" stroke-width="1.4" fill="none" stroke-linecap="round"/></svg>
+  <span class="title">Thistle Flow</span>
+  <span class="badge beta">BETA</span>
+  <span class="badge">v0.3.0</span>
+  <a class="app" href="./">Open the app</a>
+</header>
 <main>
-<h1>Thistle <span>Flow</span> help</h1>
-<p class="muted">Lightweight flow cytometry analysis in your browser. Your data never leaves your computer. <a href="./">Open the app</a> · <a href="https://github.com/actinomycetes/thistle-flow">Source on GitHub</a></p>
+<h1>Help and manual</h1>
+<p class="muted">Lightweight flow cytometry analysis in your browser; your data never leaves your computer. Sister app of <a href="https://actinomycetes.github.io/thistle-plot/">Thistle Plot</a> (statistics and figures). <a href="https://github.com/actinomycetes/thistle-flow">Source on GitHub</a>.</p>
+<div class="note">Thistle Flow is a <b>beta (v0.3.0)</b>. Check important results against an established package before you rely on them in a publication.</div>
 
 <nav class="toc">
   <a href="#start">Getting started</a>
@@ -44,16 +62,17 @@
   <a href="#export">Exporting PNG, SVG and PDF</a>
   <a href="#undo">Undo and redo</a>
   <a href="#keys">Keyboard shortcuts</a>
-  <a href="#limits">Limitations</a>
+  <a href="#limits">Known limitations</a>
+  <a href="#history">Version history</a>
 </nav>
 
 <h2 id="start">Getting started</h2>
 <ol>
-  <li>Click <b>Open FCS…</b> or drag <code>.fcs</code> files onto the window. Files from BD FACSDiva, Attune NxT, Sony, Cytek, CytoFLEX and others are supported (FCS 2.0 to 3.2). Click <b>Load demo data</b> to try the app without your own files.</li>
+  <li>Click <b>⬆ Open FCS…</b> or drag <code>.fcs</code> files onto the window. Files from BD FACSDiva, Attune NxT, Sony, Cytek, CytoFLEX and others are supported (FCS 2.0 to 3.2). Click <b>🧪 Demo data</b> to try the app without your own files.</li>
   <li>Three starting plots appear: scatter, two fluorescence channels and a histogram. Click a sample in the left pane to make it the <i>active sample</i> that the plots show.</li>
   <li>Draw gates (see <a href="#gating">Gating</a>). Gates apply to <b>every sample in the workspace</b>, so you gate once and read the results for all samples in the <b>Statistics</b> tab.</li>
 </ol>
-<p>You can resize the left pane by dragging its edge, and resize the Samples and Gates lists by dragging the bar between them. Double-click a divider to reset it. Use <b>☾ Dark</b> / <b>☀ Light</b> to switch colour mode. Exports always use a white background.</p>
+<p>You can resize the left pane by dragging its edge, and resize the Samples and Gates lists by dragging the bar between them. Double-click a divider to reset it. Use <b>🌙</b> / <b>☀️</b> in the header to switch between dark and light mode (dark is the default, as in Thistle Plot). Exports always use a white background.</p>
 
 <h2 id="workspaces">Workspaces and tabs</h2>
 <p>Each tab above the main area is a separate <b>workspace</b>: its own group of samples with its own gates, plots, layouts and statistics. Click <b>+</b> to start a new workspace, for example for another experiment or panel. Double-click a tab to rename it. A dot (●) on a tab means it has unsaved changes.</p>
@@ -98,11 +117,11 @@
 </ul>
 
 <h2 id="scales">Axis scales</h2>
-<p>Click an <b>axis</b> (the tick labels or axis title) to change the scale of that axis's channel. You can also use ⚙ → <i>X axis scale…</i> / <i>Y axis scale…</i>, or <b>Axis scales</b> in the top bar. The choices are Linear, Log, Biexponential (Logicle) and Arcsinh.</p>
+<p>Click an <b>axis</b> (the tick labels or axis title) to change the scale of that axis's channel. You can also use ⚙ → <i>X axis scale…</i> / <i>Y axis scale…</i>, or <b>📏 Axis scales</b> in the header. The choices are Linear, Log, Biexponential (Logicle) and Arcsinh.</p>
 <p>Scales belong to a <b>channel</b>, not to one plot, so a gate always means the same events wherever it is shown. For the biexponential scale, <b>Auto W</b> estimates the width from the negative events of the active sample. Increase W if compensated negatives look squashed against zero.</p>
 
 <h2 id="comp">Compensation</h2>
-<p>The spillover matrix stored in each file (<code>$SPILLOVER</code>, <code>SPILL</code>) is read and applied automatically. Open <b>Compensation</b> to view or edit it, apply it to all samples, or import or export it as CSV. Spectral instruments (Sony ID7000/SA3800, Cytek) usually export data that is already unmixed. Thistle Flow cannot unmix raw spectral data.</p>
+<p>The spillover matrix stored in each file (<code>$SPILLOVER</code>, <code>SPILL</code>) is read and applied automatically. Open <b>🎛 Compensation</b> to view or edit it, apply it to all samples, or import or export it as CSV. Spectral instruments (Sony ID7000/SA3800, Cytek) usually export data that is already unmixed. Thistle Flow cannot unmix raw spectral data.</p>
 
 <h2 id="layout">Layouts and overlays</h2>
 <ul>
@@ -143,10 +162,10 @@
 <p><b>Export summary CSV</b> writes one row per sample with the acquisition fields, which is useful for lab records.</p>
 
 <h2 id="saving">Saving: workspaces and templates</h2>
-<p><b>Save workspace…</b> <kbd>Ctrl</kbd>+<kbd>S</kbd> opens a dialog where you can choose the file name. The name starts with the workspace name plus the date and time, so earlier saves are not overwritten. In Chrome and Edge you then choose the folder. Other browsers save to the Downloads folder, or ask where, depending on their settings.</p>
+<p><b>💾 Save</b> <kbd>Ctrl</kbd>+<kbd>S</kbd> opens a dialog where you can choose the file name. The name starts with the workspace name plus the date and time, so earlier saves are not overwritten. In Chrome and Edge you then choose the folder. Other browsers save to the Downloads folder, or ask where, depending on their settings.</p>
 <ul>
-  <li>A <b>workspace</b> file stores gates, scales, plots, layouts, statistics settings, compensation and metadata edits, together with the names of the FCS files. It does <i>not</i> contain the event data. To reopen it, load the same FCS files, then use <b>Load workspace…</b> (or drop the files and the workspace together onto the window).</li>
-  <li>A <b>template</b> (<b>Save template…</b>) stores the same analysis settings with <b>no sample data and no file names</b>. You can optionally include a compensation matrix and marker labels. Use <b>Apply template…</b> in any workspace to reuse a gating strategy on new samples. You can undo it.</li>
+  <li>A <b>workspace</b> file stores gates, scales, plots, layouts, statistics settings, compensation and metadata edits, together with the names of the FCS files. It does <i>not</i> contain the event data. To reopen it, load the same FCS files, then use <b>📂 Load</b> (or drop the files and the workspace together onto the window).</li>
+  <li>A <b>template</b> (<b>📋 Save template</b>) stores the same analysis settings with <b>no sample data and no file names</b>. You can optionally include a compensation matrix and marker labels. Use <b>📥 Apply template</b> in any workspace to reuse a gating strategy on new samples. You can undo it.</li>
 </ul>
 
 <h2 id="export">Exporting PNG, SVG and PDF</h2>
@@ -173,13 +192,21 @@
   <tr><td><kbd>F1</kbd></td><td>This help</td></tr>
 </table>
 
-<h2 id="limits">Limitations</h2>
+<h2 id="limits">Known limitations of v0.3.0 (beta)</h2>
 <ul>
   <li>Gates are shared by all samples in a workspace. There are no per-sample gate adjustments yet.</li>
   <li>FlowJo <code>.wsp</code> and Gating-ML files cannot be imported. There are no derived parameters and no tSNE/UMAP.</li>
   <li>Raw spectral data cannot be unmixed.</li>
   <li>Thistle Flow is beta software. Check important results against an established package before publishing.</li>
 </ul>
+<h2 id="history">Version history</h2>
+<p>All releases are beta (0.x).</p>
+<table>
+  <tr><th>Version</th><th>Name</th><th>Changes</th></tr>
+  <tr><td>0.3.0 (9 Nov 2026)</td><td>Thistle Flow</td><td>BETA and version badges in the header, page title and Help; the same look as Thistle Plot (dark by default, slate colours, thistle icon, emoji buttons, tab and hint styles); the version is stored in saved workspaces and templates</td></tr>
+  <tr><td>0.2.0 (9 Nov 2026)</td><td>Thistle Flow</td><td>Workspace tabs (closing asks to save); separate undo and redo for Gating, Layout, Statistics and Properties; templates (gates and settings without data); Density and Contour plots; a limit on the events shown per plot; changing several selected plots at once; movable gate labels, with the tool returning to Select after a gate is drawn; clicking an axis to change its scale; histogram overlays with quarter, half and full offset; PNG, SVG and PDF export; Properties tab with editable acquisition information; resizable panes; dark mode; save dialog with dated file names; Help page</td></tr>
+  <tr><td>0.1.0 (9 Nov 2026)</td><td>FlowLite → Thistle Flow</td><td>First release: FCS 2.0–3.2 import (BD, Attune NxT, Sony, Beckman, Accuri and others), compensation from the file, biexponential, log and arcsinh scales, rectangle, polygon, ellipse, quadrant and range gates shared by all samples, statistics and MFI with CSV export, histogram and dot-plot overlays, batch layouts, workspace files, FCS export of populations, single-file build</td></tr>
+</table>
 <p class="muted">Thistle Flow is MIT-licensed. © 2026 Takanobu Tagawa (The University of Edinburgh). The biexponential scale follows Parks, Roederer &amp; Moore, <i>Cytometry A</i> 2006, and Moore &amp; Parks, <i>Cytometry A</i> 2012.</p>
 </main>
 </body>

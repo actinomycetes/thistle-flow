@@ -5,8 +5,9 @@ import { makeTransform } from './transforms.js';
 export const MARGIN = { l: 64, r: 14, t: 24, b: 48 };
 
 export const THEMES = {
-  light: { name: 'light', bg: '#ffffff', axis: '#444444', text: '#333333', title: '#222222', dot: '#222222', hist: '#4a5568', contour: '#1d2330', labelBg: 'rgba(255,255,255,0.85)', legendBg: 'rgba(255,255,255,0.85)', muted: '#888888' },
-  dark: { name: 'dark', bg: '#161a21', axis: '#9aa3b2', text: '#cfd5df', title: '#e6e9ef', dot: '#d0d5de', hist: '#9aa8bd', contour: '#e6e9ef', labelBg: 'rgba(22,26,33,0.85)', legendBg: 'rgba(22,26,33,0.85)', muted: '#7d8696' },
+  light: { name: 'light', bg: '#ffffff', axis: '#475569', text: '#334155', title: '#0f172a', dot: '#1e293b', hist: '#475569', contour: '#0f172a', labelBg: 'rgba(255,255,255,0.85)', legendBg: 'rgba(255,255,255,0.85)', muted: '#94a3b8' },
+  // matches Thistle Plot's dark surface (#1e293b) and text colours
+  dark: { name: 'dark', bg: '#1e293b', axis: '#94a3b8', text: '#cbd5e1', title: '#e2e8f0', dot: '#cbd5e1', hist: '#94a3b8', contour: '#e2e8f0', labelBg: 'rgba(15,23,42,0.85)', legendBg: 'rgba(15,23,42,0.85)', muted: '#64748b' },
 };
 
 // Plot kinds. 'density' was the pseudocolor kind in early workspaces.

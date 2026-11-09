@@ -3,6 +3,7 @@
 // with per-mode undo/redo and (de)serialisation to workspace files and data-free templates.
 import { GateEngine } from './gates.js';
 import { defaultTransformFor } from './transforms.js';
+import { APP_VERSION } from './version.js';
 
 export const MODES = ['gating', 'layout', 'stats', 'properties'];
 const UNDO_LIMIT = 100;
@@ -135,7 +136,7 @@ export class Workspace {
   serialize() {
     const keyOf = id => this.sampleById(id)?.key;
     return {
-      app: 'ThistleFlow', kind: 'workspace', version: 2, name: this.name, saved: new Date().toISOString(),
+      app: 'ThistleFlow', appVersion: APP_VERSION, kind: 'workspace', version: 2, name: this.name, saved: new Date().toISOString(),
       transforms: this.transforms, gates: this.engine.toJSON(), plots: this.plots, displayMax: this.displayMax,
       figures: this.figures.map(f => ({ ...f, series: f.series?.map(se => ({ ...se, sampleKey: keyOf(se.sampleId), sampleId: undefined })) })),
       statsCfg: this.statsCfg,
@@ -181,7 +182,7 @@ export class Workspace {
     const labels = {};
     for (const smp of this.samples) for (const [ch, l] of Object.entries(smp.edits.labels)) labels[ch] = l;
     return {
-      app: 'ThistleFlow', kind: 'template', version: 1, name: this.name, saved: new Date().toISOString(),
+      app: 'ThistleFlow', appVersion: APP_VERSION, kind: 'template', version: 1, name: this.name, saved: new Date().toISOString(),
       transforms: Object.fromEntries(Object.entries(this.transforms).filter(([, c]) => !c.auto)),
       gates: this.engine.toJSON(), plots: this.plots, displayMax: this.displayMax, statsCfg: this.statsCfg,
       // overlay series are stored by position; a series set that covered every sample re-expands to all samples

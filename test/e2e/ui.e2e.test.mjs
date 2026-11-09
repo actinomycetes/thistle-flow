@@ -14,7 +14,7 @@ const require = createRequire(import.meta.url);
 const ENGINE = process.env.TF_BROWSER || 'chromium';
 const chromium = require('playwright')[ENGINE];
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
-const OUT = fs.mkdtempSync(path.join(os.tmpdir(), 'thistle-flow-e2e-'));
+const OUT = process.env.TF_E2E_OUT || fs.mkdtempSync(path.join(os.tmpdir(), 'thistle-flow-e2e-'));
 const TYPES = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json' };
 
 const server = http.createServer((req, res) => {
@@ -227,12 +227,16 @@ test('all UI features work end to end', { timeout: 240000 }, async () => {
   check('(4) samples/gates panes resizable', Math.abs(sh1 - sh0 - 100) < 4, `${sh0} -> ${sh1}`);
 
   // (10) dark mode
+  const theme0 = await ev(() => document.documentElement.dataset.theme);
+  check('dark is the default theme (as in Thistle Plot)', theme0 === 'dark' && (await page.textContent('#btnTheme')) === '🌙');
+  check('BETA and version badges', (await page.textContent('#app-version')) === 'v' + (await ev(() => window.thistleFlow.version)) && (await page.textContent('.badge-hdr.beta')) === 'BETA');
   await page.click('#btnTheme'); await page.waitForTimeout(300);
-  check('(10) dark mode toggle', await ev(() => document.documentElement.dataset.theme) === 'dark');
+  check('(10) theme toggle switches to light', await ev(() => document.documentElement.dataset.theme) === 'light' && (await page.textContent('#btnTheme')) === '☀️');
+  await page.screenshot({ path: OUT + '/e-light.png' });
+  await page.click('#btnTheme'); await page.waitForTimeout(300);
   await page.screenshot({ path: OUT + '/e-dark.png' });
   await page.click('[data-tab=layout]'); await page.waitForTimeout(200);
   await page.screenshot({ path: OUT + '/e-dark-layout.png' });
-  await page.click('#btnTheme');
 
   // (13) help
   const href = await page.getAttribute('#helpLink', 'href');

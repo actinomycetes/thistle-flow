@@ -1,6 +1,8 @@
-# Thistle Flow
+# Thistle Flow (TF) — beta
 
-Sister project of [Thistle Plot](https://github.com/actinomycetes/thistle-plot).
+Sister project of [Thistle Plot](https://github.com/actinomycetes/thistle-plot) (TP), with the same look and conventions.
+
+**Status:** beta (0.x; current v0.3.0). Check important results against an established package before publishing. Version history: [`help.html#history`](help.html#history).
 
 **Hosted copy:** https://actinomycetes.github.io/thistle-flow/
 
@@ -21,7 +23,7 @@ Then double-click `dist/thistle-flow.html`. You can copy this one file (about 20
 ```bash
 npm start            # python3 -m http.server 8080
 ```
-Then open http://localhost:8080. Click **Load demo data** to try it without your own files. The manual is [`help.html`](help.html) (the **? Help** button, or F1).
+Then open http://localhost:8080. Click **🧪 Demo data** to try it without your own files. The manual is [`help.html`](help.html) (the **❓ Help** button, or F1).
 
 Tests:
 * `npm test` runs the unit tests in Node 18+ with no dependencies: parser, Logicle, compensation, gating, contours, SVG/PDF writers, undo/redo, workspaces and templates.
@@ -35,7 +37,7 @@ Tests:
 | **Verified to parse** | BD FACSDiva (Aria/Fortessa-class), BD Accuri C6+, FACSCalibur, FACScan, Thermo **Attune NxT**, **Sony** S1400EXi, Bio-Rad S3, Beckman Navios and FC500, plus the synthetic demo files |
 | **Compensation** | Reads the embedded `$SPILLOVER` / `SPILL` / `$COMP` matrix. Channel names are matched by `$PnN`, then by `$PnS`. Sony `APPLY_COMPENSATION=FALSE` is respected. You can edit the matrix, apply it to all samples, and import or export it as CSV. Spectral files (Sony ID7000/SA3800, Cytek) are usually already unmixed. |
 | **Axis scales** | Linear, Log, **Biexponential (Logicle**, Parks/Moore reference algorithm) and Arcsinh (with cofactor). Scales are set per channel. The top of the scale defaults to the instrument's `$PnR` range. The Logicle dialog has an **Auto W** button. |
-| **Plots** | **Pseudocolor**, **Density** (smoothed), **Contour** (equal-probability, with optional outlier dots), **Dot** and histograms. Off-scale events pile up on the axes, as in FlowJo. A workspace-wide or per-plot **limit on events shown** (default 10,000) keeps plots readable; statistics always use every event. Plot sizes S to XL. Light and **dark mode**. |
+| **Plots** | **Pseudocolor**, **Density** (smoothed), **Contour** (equal-probability, with optional outlier dots), **Dot** and histograms. Off-scale events pile up on the axes, as in FlowJo. A workspace-wide or per-plot **limit on events shown** (default 10,000) keeps plots readable; statistics always use every event. Plot sizes S to XL. **Dark** (default, as in Thistle Plot) and light mode. |
 | **Gates** | Rectangle, Polygon, Ellipse, Quadrant (4 linked gates) and Range (on histograms). Gates form a hierarchy. After a gate is drawn the tool returns to **Select**, where you can drag a gate to move it, drag its vertices or handles to reshape it, **drag its label** anywhere inside the plot, and double-click inside a gate to open a plot of that population. Gates are **shared by all samples** (like a FlowJo group), so you gate once and get results for every sample. |
 | **Multiple plots** | Shift-click plots or drag a box around them. Then change the population, axes, type, events shown or size on one plot, and the change applies to all selected plots. |
 | **Statistics** | Count, % Parent, % Total, **Median (MFI)**, Mean, Geometric mean, SD, CV, robust SD and robust CV, for any population and channel. Choose a long, wide or transposed table. Export as CSV or copy straight into Excel/Prism. |
@@ -74,6 +76,7 @@ js/properties.js  Properties tab (acquisition keywords, channel table, editing)
 js/ui.js          DOM helpers, dialogs, popovers, save-file handling
 js/demo.js        synthetic T-cell activation dataset (written as real FCS files)
 js/app.js         UI controller: workspace tabs, samples, gate tree, modes, export
+js/version.js     APP_VERSION (single source; see CLAUDE.md for the release checklist)
 help.html         user manual (served next to the app on GitHub Pages)
 tools/build.mjs   bundles everything into dist/thistle-flow.html
 tools/inspect.mjs CLI: node tools/inspect.mjs file.fcs → parse summary

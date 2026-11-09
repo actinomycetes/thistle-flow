@@ -127,7 +127,7 @@ export function renderProperties(app, root) {
             try { s.setKeyword(newKey.value, newVal.value); app.metaChanged(); } catch (err) { toast(err.message, true); }
           } }, 'Add')),
         h('div', { class: 'kw-wrap' }, kwTable))),
-    h('p', { class: 'hint' }, 'Edits are kept in the workspace (save it to keep them) and written into FCS files exported from the gate tree. The original files are never changed. Keywords that describe the data layout are read-only.'));
+    h('div', { class: 'hint-box', style: 'margin-top:12px' }, 'Edits are kept in the workspace (save it to keep them) and written into FCS files exported from the gate tree. The original files are never changed. Keywords that describe the data layout are read-only.'));
 }
 
 function exportAcquisitionCSV(ws) {

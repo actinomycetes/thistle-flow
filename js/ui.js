@@ -133,7 +133,7 @@ export function saveDialog({ title, baseName, ext = 'json', note, extra, makeDat
     };
     input.addEventListener('keydown', e => { if (e.key === 'Enter') go(); });
     const body = h('div', {},
-      note ? h('p', { class: 'hint', style: 'margin-top:0' }, note) : null,
+      note ? h('div', { class: 'hint-box', style: 'margin:0 0 8px;max-width:520px' }, note) : null,
       h('div', { class: 'row' }, h('label', {}, 'File name'), input, h('span', { class: 'hint' }, suffix)),
       extra || null,
       h('p', { class: 'hint' }, canPickLocation()
