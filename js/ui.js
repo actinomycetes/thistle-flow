@@ -162,7 +162,7 @@ export function pickFiles({ accept = '', folder = false } = {}) {
   return new Promise(resolve => {
     const inp = h('input', { type: 'file', accept, multiple: true, hidden: true, onchange: () => { resolve([...inp.files]); inp.remove(); } });
     if (folder) inp.setAttribute('webkitdirectory', '');
-    inp.addEventListener('cancel', () => { resolve([]); inp.remove(); });
+    // no 'cancel' handler: Firefox may report cancel before the chosen files arrive
     document.body.append(inp); inp.click();
   });
 }
