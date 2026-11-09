@@ -3,7 +3,7 @@ import { parseFCS, writeFCS } from './fcs.js';
 import { Sample } from './model.js';
 import { defaultTransformFor } from './transforms.js';
 import { GATE_COLORS, STAT_DEFS, channelStats, populationStats } from './gates.js';
-import { PlotView, buildSpec, shortLabel, fmtPct, subsampleIdx, PLOT_SIZES, EVENT_LIMITS } from './plotview.js';
+import { PlotView, buildSpec, shortLabel, fmtPct, subsampleIdx, overlayColor, PLOT_SIZES, EVENT_LIMITS } from './plotview.js';
 import { renderPlot, prepareCanvas, SERIES_COLORS, THEMES, PLOT_KINDS, HIST_OFFSETS, DOT_SIZES, DEFAULT_DOT, normalizeKind } from './render.js';
 import { renderSVG, renderPDF } from './vector.js';
 import { demoFiles } from './demo.js';
@@ -30,6 +30,30 @@ app.version = APP_VERSION;
 window.thistleFlow = app; // handy for debugging from the console
 
 app.activeSample = () => app.ws.activeSample();
+// Samples picked with Ctrl/⌘- or Shift-click for a quick overlay in the Gating plots (null if fewer than 2)
+app.overlaySamples = () => {
+  const ws = app.ws, ids = new Set(ws.selSamples || []);
+  const list = ws.samples.filter(s => ids.has(s.id));
+  return list.length > 1 ? list : null;
+};
+
+function sampleClicked(s, e) {
+  const ws = app.ws;
+  const cur = new Set(ws.selSamples?.length ? ws.selSamples : [ws.activeId].filter(Boolean));
+  if (e.shiftKey && ws.activeId) {
+    const a = ws.samples.findIndex(x => x.id === ws.activeId), b = ws.samples.indexOf(s);
+    ws.selSamples = ws.samples.slice(Math.min(a, b), Math.max(a, b) + 1).map(x => x.id);
+  } else if (e.ctrlKey || e.metaKey) {
+    if (cur.has(s.id)) cur.delete(s.id); else cur.add(s.id);
+    if (!cur.size) cur.add(s.id);
+    if (!cur.has(ws.activeId)) ws.activeId = [...cur][0];
+    ws.selSamples = ws.samples.filter(x => cur.has(x.id)).map(x => x.id);
+  } else {
+    ws.activeId = s.id;
+    ws.selSamples = [];
+  }
+  renderAll();
+}
 
 // ---------- persistence of per-viewer UI preferences (best effort) ----------
 const pref = {
@@ -215,11 +239,18 @@ function renderSamples() {
   ul.innerHTML = '';
   $('#sampleCount').textContent = ws.samples.length ? `(${ws.samples.length})` : '';
   $('#dropHint').style.display = ws.samples.length ? 'none' : '';
+  const overlay = app.overlaySamples();
   for (const s of ws.samples) {
     const compTag = s.spill ? h('span', { class: 'badge' + (s.compEnabled ? '' : ' off'), title: 'Compensation' }, s.compEnabled ? 'comp' : 'uncomp') : null;
-    ul.append(h('li', { class: s.id === ws.activeId ? 'active' : '', onclick: () => { ws.activeId = s.id; renderAll(); } },
+    const oi = overlay ? overlay.indexOf(s) : -1;
+    ul.append(h('li', {
+      class: (s.id === ws.activeId ? 'active' : '') + (oi >= 0 ? ' in-overlay' : ''),
+      title: 'Click: show this sample · Ctrl/⌘-click or Shift-click: overlay several samples in the Gating plots',
+      onclick: e => sampleClicked(s, e),
+      onmousedown: e => { if (e.shiftKey) e.preventDefault(); }, // no text selection on Shift-click
+    },
       h('div', { class: 'meta' },
-        h('div', { class: 'name', title: s.name }, s.name),
+        h('div', { class: 'name', title: s.name }, oi >= 0 ? h('span', { class: 'ov-swatch', style: `background:${overlayColor(oi)}` }) : null, s.name),
         h('div', { class: 'sub' }, `${s.events.toLocaleString()} events · ${s.params.length} par · ${s.version}`, compTag),
         h('div', { class: 'sub', title: s.instrument }, s.instrument)),
       h('button', { class: 'icon', title: 'Properties', onclick: e => { e.stopPropagation(); ws.activeId = s.id; switchTab('properties'); } }, 'ⓘ'),
@@ -235,6 +266,7 @@ function renderSamples() {
 function removeSample(id) {
   const ws = app.ws;
   ws.samples = ws.samples.filter(s => s.id !== id);
+  if (ws.selSamples) ws.selSamples = ws.selSamples.filter(x => x !== id);
   ws.engine.invalidate(id);
   for (const f of ws.figures) if (f.series) f.series = f.series.filter(se => se.sampleId !== id);
   if (ws.activeId === id) ws.activeId = ws.samples[0]?.id || null;
@@ -362,7 +394,11 @@ function renderGating() {
   grid.innerHTML = '';
   app.views.clear();
   const s = ws.activeSample();
-  $('#activeSampleInfo').textContent = s ? `Active sample: ${s.name}` : '';
+  const ov = app.overlaySamples();
+  $('#activeSampleInfo').replaceChildren(...(ov
+    ? [h('span', { class: 'sel-info' }, `Overlay of ${ov.length} samples (Ctrl/⌘- or Shift-click in the sample list) `,
+      h('button', { class: 'btn small', onclick: () => { ws.selSamples = []; renderAll(); } }, 'Show one sample'))]
+    : [s ? `Active sample: ${s.name}` : '']));
   $('#displayMax').replaceChildren(...eventLimitOptions(ws.displayMax));
   if (!ws.samples.length) {
     grid.append(h('div', { class: 'empty-state' },
@@ -610,7 +646,7 @@ function exportMenu(anchor, baseName, makeComposite) {
 }
 function plotComposite(p) {
   const v = app.views.get(p.id);
-  const spec = buildSpec(app.ws, app.ws.activeSample(), p, v.w, v.h, { selectedGate: null });
+  const spec = buildSpec(app.ws, app.ws.activeSample(), p, v.w, v.h, { selectedGate: null, overlay: app.overlaySamples() });
   return spec ? { w: v.w, h: v.h, items: [{ spec, x: 0, y: 0 }] } : null;
 }
 
@@ -796,26 +832,40 @@ function figureCard(f) {
       f.series.forEach((se, i) => list.append(h('div', { class: 'series-row' },
         h('input', { type: 'color', value: se.color, oninput: e => { se.color = e.target.value; redraw(); } }),
         h('select', { onchange: e => { se.sampleId = e.target.value; redraw(); } }, ws.samples.map(s => h('option', { value: s.id, selected: s.id === se.sampleId }, s.name))),
-        h('select', { onchange: e => { se.pop = e.target.value || null; redraw(); } }, popOptions(se.pop)),
+        h('select', { onchange: e => { se.pop = e.target.value || null; syncAllPop(); redraw(); } }, popOptions(se.pop)),
         h('button', { class: 'icon', title: 'Move up', onclick: () => { if (i) { [f.series[i - 1], f.series[i]] = [f.series[i], f.series[i - 1]]; renderSeries(); redraw(); } } }, '↑'),
-        h('button', { class: 'icon', onclick: () => { f.series.splice(i, 1); renderSeries(); redraw(); } }, '×'))));
+        h('button', { class: 'icon', onclick: () => { f.series.splice(i, 1); renderSeries(); syncAllPop(); redraw(); } }, '×'))));
     };
+    // one menu that sets the population of every series at once (e.g. Singlets for all samples)
+    const allPop = h('select', { title: 'Set the population of every series at once', onchange: e => {
+      if (e.target.value === '__mixed') return;
+      f.series.forEach(se => { se.pop = e.target.value || null; });
+      renderSeries(); redraw();
+    } });
+    const commonPop = () => { const pops = new Set(f.series.map(se => se.pop || null)); return pops.size === 1 ? [...pops][0] : undefined; };
+    const syncAllPop = () => {
+      const common = commonPop();
+      allPop.replaceChildren(...(common === undefined ? [h('option', { value: '__mixed', selected: true, disabled: true }, '— different per series —')] : []),
+        ...popOptions(common === undefined ? '__none' : common));
+    };
+    const popSel = { get value() { return allPop.value === '__mixed' ? (f.series[0]?.pop || '') : allPop.value; } };
     renderSeries();
-    const popSel = h('select', {}, popOptions(f.series[0]?.pop ?? null));
+    syncAllPop();
+    ctrl.append(h('label', {}, h('span', {}, 'Population'), allPop),
+      h('div', { class: 'hint' }, 'Sets the gate for every series in one go; each series can still be changed below.'));
     ctrl.append(h('div', {}, h('b', {}, 'Series'), ' ', h('small', { class: 'hint' }, '(sample · population)')), list,
       h('div', { style: 'display:flex;gap:4px;flex-wrap:wrap' },
         h('button', { class: 'btn small', onclick: () => {
           const s = ws.activeSample() || ws.samples[0];
           f.series.push({ sampleId: s.id, pop: f.series.at(-1)?.pop ?? null, color: SERIES_COLORS[f.series.length % SERIES_COLORS.length] });
-          renderSeries(); redraw();
+          renderSeries(); syncAllPop(); redraw();
         } }, '+ Series'),
-        h('span', { class: 'hint' }, 'Set all to'), popSel,
-        h('button', { class: 'btn small', onclick: () => { f.series = ws.samples.map((s, i) => ({ sampleId: s.id, pop: popSel.value || null, color: SERIES_COLORS[i % SERIES_COLORS.length] })); renderSeries(); redraw(); } }, 'All samples'),
+        h('button', { class: 'btn small', title: 'One series per sample, using the population above', onclick: () => { f.series = ws.samples.map((s, i) => ({ sampleId: s.id, pop: popSel.value || null, color: SERIES_COLORS[i % SERIES_COLORS.length] })); renderSeries(); syncAllPop(); redraw(); } }, 'All samples'),
         h('button', { class: 'btn small', title: 'One series per child gate of the chosen population (active sample)', onclick: () => {
           const s = ws.activeSample() || ws.samples[0];
           const gates = ws.engine.list().filter(g => !popSel.value || g.parent === popSel.value);
           f.series = gates.map((g, i) => ({ sampleId: s.id, pop: g.id, color: g.color || SERIES_COLORS[i % SERIES_COLORS.length] }));
-          renderSeries(); redraw();
+          renderSeries(); syncAllPop(); redraw();
         } }, 'Child gates')));
   }
   ctrl.append(h('div', { class: 'wh', style: 'display:flex;gap:12px' },

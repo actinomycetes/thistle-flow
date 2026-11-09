@@ -1,5 +1,5 @@
 // Interactive plot (gating) component.
-import { renderPlot, prepareCanvas, gateGeometry, MARGIN, THEMES, normalizeKind } from './render.js';
+import { renderPlot, prepareCanvas, gateGeometry, MARGIN, THEMES, SERIES_COLORS, normalizeKind } from './render.js';
 import { makeTransform } from './transforms.js';
 import { populationStats, pointInPolygon } from './gates.js';
 
@@ -35,7 +35,11 @@ export function subsampleIdx(idx, max) {
   return arr;
 }
 
+// Colour of a sample in a quick overlay (same in the plots and the sample list)
+export const overlayColor = i => SERIES_COLORS[i % SERIES_COLORS.length];
+
 export function buildSpec(ws, sample, def, w, h, opts = {}) {
+  if (opts.overlay && opts.overlay.length > 1) return buildOverlaySpec(ws, opts.overlay, def, w, h, opts);
   const x = def.x, y = def.y || null;
   if (!sample || !x || !sample.hasChannel(x) || (y && !sample.hasChannel(y))) return null;
   const eng = ws.engine;
@@ -73,6 +77,42 @@ export function buildSpec(ws, sample, def, w, h, opts = {}) {
   };
 }
 
+// Quick overlay of several samples in a gating plot: one coloured series per sample
+// (dots for 2-D plots, histograms normalised to mode); gate labels list every sample's %.
+function buildOverlaySpec(ws, samples, def, w, h, opts) {
+  const x = def.x, y = def.y || null;
+  const isHist = !y;
+  const eng = ws.engine;
+  const popId = def.pop && eng.get(def.pop) ? def.pop : null;
+  const list = samples.map((s, i) => ({ s, color: overlayColor(i) })).filter(({ s }) => x && s.hasChannel(x) && (!y || s.hasChannel(y)));
+  if (!list.length) return null;
+  const cfgX = ws.getCfg(x), cfgY = y ? ws.getCfg(y) : null;
+  const max = isHist ? 0 : (def.maxEvents ?? ws.displayMax ?? 0);
+  const name = s => s.name.replace(/\.fcs$/i, '');
+  const series = list.map(({ s, color }) => {
+    const pop = eng.population(s, popId);
+    return { ux: s.unit(x, cfgX), uy: y ? s.unit(y, cfgY) : null, idx: isHist ? pop.idx : subsampleIdx(pop.idx, max), fullIdx: pop.idx, color, label: name(s) };
+  });
+  const sel = opts.selectedGate ? eng.get(opts.selectedGate) : null;
+  const gates = opts.noGates ? [] : eng.children(popId)
+    .filter(g => (isHist ? g.type === 'interval' && g.x === x : g.type !== 'interval' && g.x === x && g.y === y))
+    .map(g => ({
+      gate: g, color: g.color, text: g.name,
+      lines: [{ text: g.name, color: g.color }, ...list.map(({ s, color }) => ({ text: `${name(s)}  ${fmtPct(populationStats(eng, s, g.id).pctParent)}`, color }))],
+      selected: !!sel && (sel.id === g.id || (g.group && sel.group === g.group)),
+    }));
+  const first = list[0].s;
+  return {
+    w, h, theme: opts.theme || THEMES.light, kind: isHist ? 'histogram' : 'dot',
+    title: opts.title ?? `Overlay of ${list.length} samples · ${popId ? eng.get(popId).name : 'All Events'}`,
+    x: { name: x, label: first.label(x), cfg: cfgX },
+    y: y ? { name: y, label: first.label(y), cfg: cfgY } : null,
+    series, gates, labels: { mode: 'inside' },
+    hist: { mode: 'mode', smooth: def.smooth !== false, fill: true },
+    dotSize: def.dotSize,
+  };
+}
+
 const HANDLE = 6;
 
 export class PlotView {
@@ -94,7 +134,7 @@ export class PlotView {
   draw() {
     const s = this.sample();
     const theme = THEMES[this.app.theme] || THEMES.light;
-    this.spec = buildSpec(this.app.ws, s, this.def, this.w, this.h, { theme, selectedGate: this.app.ws.selectedGate });
+    this.spec = buildSpec(this.app.ws, s, this.def, this.w, this.h, { theme, selectedGate: this.app.ws.selectedGate, overlay: this.app.overlaySamples() });
     const ctx = prepareCanvas(this.canvas, this.w, this.h);
     if (!this.spec) {
       ctx.fillStyle = theme.bg; ctx.fillRect(0, 0, this.w, this.h);

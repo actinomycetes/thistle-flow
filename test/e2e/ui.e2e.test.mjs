@@ -449,3 +449,64 @@ test('overlay range-gate button, sample labels, workspace bundles and locating F
   assert.deepEqual(errors, []);
   await page.close();
 });
+
+test('quick overlay of several samples in Gating; one population for all series in Layout', { timeout: 180000 }, async () => {
+  browser = browser || await chromium.launch();
+  const page = await browser.newPage({ viewport: { width: 1600, height: 1000 } });
+  const errors = [];
+  page.on('pageerror', e => errors.push(e.message));
+  await page.addInitScript(() => { try { localStorage.clear(); } catch {} });
+  const ev = f => page.evaluate(f);
+  await page.goto(BASE + '/');
+  await page.click('#btnDemo'); await page.waitForSelector('.plot-card canvas');
+  await ev(() => {
+    const ws = window.thistleFlow.ws;
+    ws.engine.add({ id: 'gS', name: 'Singlets', parent: null, type: 'rect', x: 'FSC-A', y: 'SSC-A', x0: 40000, x1: 80000, y0: 8000, y1: 38000, color: '#e6194b' });
+    ws.plots[2].x = 'PE-Cy7-A'; ws.plots[2].y = null; ws.plots[2].pop = 'gS';
+    window.thistleFlow.renderAll();
+  });
+  const items = page.locator('.sample-list li');
+  const specs = () => page.evaluate(() => [...window.thistleFlow.views.values()].map(v => ({ n: v.spec.series.length, kind: v.spec.kind, title: v.spec.title, lines: v.spec.gates[0]?.lines?.length || 0 })));
+  // Ctrl/⌘-click adds a sample to the overlay
+  await items.nth(0).click();
+  await items.nth(2).click({ modifiers: [process.platform === 'darwin' ? 'Meta' : 'Control'] });
+  let sp = await specs();
+  assert.deepEqual(sp.map(x => x.n), [2, 2, 2], 'two samples overlaid in every plot');
+  assert.equal(sp[0].kind, 'dot'); assert.equal(sp[2].kind, 'histogram');
+  assert.match(sp[0].title, /Overlay of 2 samples/);
+  assert.equal(sp[0].lines, 3, 'gate label lists each overlaid sample');
+  assert.equal(await page.locator('.sample-list li.in-overlay').count(), 2);
+  assert.match(await page.textContent('#activeSampleInfo'), /Overlay of 2 samples/);
+  await page.locator('.plot-card').nth(2).screenshot({ path: OUT + '/e-quick-overlay-hist.png' });
+  await page.locator('.plot-card').nth(0).screenshot({ path: OUT + '/e-quick-overlay-dots.png' });
+  // Shift-click selects a range from the active sample
+  await items.nth(1).click(); await items.nth(2).click({ modifiers: ['Shift'] });
+  assert.deepEqual((await specs()).map(x => x.n), [2, 2, 2]);
+  await items.nth(0).click({ modifiers: ['Shift'] });
+  assert.deepEqual((await specs()).map(x => x.n), [2, 2, 2], 'range 0..1 from the active sample');
+  await page.click('#activeSampleInfo button:has-text("Show one sample")');
+  assert.deepEqual((await specs()).map(x => x.n), [1, 1, 1], 'back to a single sample');
+  await items.nth(0).click(); await items.nth(1).click({ modifiers: ['Shift'] }); await items.nth(2).click();
+  assert.deepEqual((await specs()).map(x => x.n), [1, 1, 1], 'a plain click shows one sample');
+
+  // Layout: Population menu sets every series at once
+  await page.click('[data-tab=layout]');
+  await page.click('[data-addfig=overlay-hist]');
+  const fig = page.locator('.figure-card').first();
+  const allPop = fig.locator('label:has-text("Population") select').first();
+  await allPop.selectOption('gS');
+  assert.deepEqual(await ev(() => window.thistleFlow.ws.figures[0].series.map(se => se.pop)), ['gS', 'gS', 'gS']);
+  assert.equal(await fig.locator('button:has-text("Range gate")').isDisabled(), false);
+  await fig.locator('.series-row').nth(1).locator('select').nth(1).selectOption('');
+  assert.equal(await allPop.inputValue(), '__mixed', 'shows that the series differ');
+  await allPop.selectOption('');
+  assert.deepEqual(await ev(() => window.thistleFlow.ws.figures[0].series.map(se => se.pop)), [null, null, null]);
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
+test('README describes the functionality without naming other software', () => {
+  const readme = fs.readFileSync(path.join(ROOT, 'README.md'), 'utf8');
+  assert.ok(!/flowjo/i.test(readme));
+  assert.match(readme, /Part of the Thistle suite/);
+});

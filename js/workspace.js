@@ -25,6 +25,7 @@ export class Workspace {
     this.selectedGate = null;
     this.focusedPlot = null;
     this.selPlots = new Set();
+    this.selSamples = [];   // quick overlay in Gating (Ctrl/Shift-click in the sample list)
     this.tab = 'gating';
     this.engine = new GateEngine(ch => this.getCfg(ch));
     this.undo = Object.fromEntries(MODES.map(m => [m, []]));

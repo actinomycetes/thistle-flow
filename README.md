@@ -1,15 +1,14 @@
 # Thistle Flow (TF) — beta
 
-Sister project of [Thistle Plot](https://github.com/actinomycetes/thistle-plot) (TP), with the same look and conventions.
+Part of the Thistle suite, together with [Thistle Plot](https://github.com/actinomycetes/thistle-plot) (TP).
 
-**Status:** beta (0.x; current v0.6.1). Check important results against an established package before publishing. Version history: [`help.html#history`](help.html#history).
+**Status:** beta (0.x; current v0.7.0). Check important results against an established package before publishing. Version history: [`help.html#history`](help.html#history).
 
 **Hosted copy:** https://actinomycetes.github.io/thistle-flow/
 
-A lightweight, browser-based alternative to FlowJo for everyday flow cytometry analysis.
-Load FCS files from any cytometer, gate hierarchically, compute statistics and MFIs for many
-samples at once, and build overlay figures. Nothing to install and no build step. All processing
-happens on your computer and no data is uploaded.
+Flow cytometry analysis in the browser. Load FCS files from any cytometer, gate hierarchically,
+compute statistics and MFIs for many samples at once, and build overlay figures. Nothing to
+install. All processing happens on your computer and no data is uploaded.
 
 <!-- MAINTAINER SECTION START: written by the maintainer; kept word for word in every version. Edit freely. -->
 
@@ -41,11 +40,12 @@ Tests:
 | **Verified to parse** | BD FACSDiva (Aria/Fortessa-class), BD Accuri C6+, FACSCalibur, FACScan, Thermo **Attune NxT**, **Sony** S1400EXi, Bio-Rad S3, Beckman Navios and FC500, plus the synthetic demo files |
 | **Compensation** | Reads the embedded `$SPILLOVER` / `SPILL` / `$COMP` matrix. Channel names are matched by `$PnN`, then by `$PnS`. Sony `APPLY_COMPENSATION=FALSE` is respected. You can edit the matrix, apply it to all samples, and import or export it as CSV. Spectral files (Sony ID7000/SA3800, Cytek) are usually already unmixed. |
 | **Axis scales** | Linear, Log, **Biexponential (Logicle**, Parks/Moore reference algorithm) and Arcsinh (with cofactor). Scales are set per channel. The top of the scale defaults to the instrument's `$PnR` range. The Logicle dialog has an **Auto W** button. |
-| **Plots** | **Pseudocolor** (event dots coloured by density, adjustable dot size), **Density** (smoothed), **Contour** (equal-probability, with optional outlier dots), **Dot** and histograms. Off-scale events pile up on the axes, as in FlowJo. Clicking an axis opens a quick menu for that axis (channel and scale). A workspace-wide or per-plot **limit on events shown** (default 10,000) keeps plots readable; statistics always use every event. Plot sizes S to XL. **Dark** (default, as in Thistle Plot) and light mode. |
-| **Gates** | Rectangle, Polygon, Ellipse, Quadrant (4 linked gates) and Range (on histograms). Gates form a hierarchy. After a gate is drawn the tool returns to **Select**, where you can drag a gate to move it, drag its vertices or handles to reshape it, **drag its label** anywhere inside the plot, and double-click inside a gate to open a plot of that population. Gates are **shared by all samples** (like a FlowJo group), so you gate once and get results for every sample. |
+| **Plots** | **Pseudocolor** (event dots coloured by density, adjustable dot size), **Density** (smoothed), **Contour** (equal-probability, with optional outlier dots), **Dot** and histograms. Off-scale events pile up on the axes. Clicking an axis opens a quick menu for that axis (channel and scale). A workspace-wide or per-plot **limit on events shown** (default 10,000) keeps plots readable; statistics always use every event. Plot sizes S to XL. **Dark** (default) and light mode. |
+| **Gates** | Rectangle, Polygon, Ellipse, Quadrant (4 linked gates) and Range (on histograms). Gates form a hierarchy. After a gate is drawn the tool returns to **Select**, where you can drag a gate to move it, drag its vertices or handles to reshape it, **drag its label** anywhere inside the plot, and double-click inside a gate to open a plot of that population. Gates are **shared by all samples** in a workspace, so you gate once and get results for every sample. |
+| **Quick overlay** | Ctrl/⌘- or Shift-click samples to overlay them in every Gating plot, with each sample's % in the gate labels. |
 | **Multiple plots** | Shift-click plots or drag a box around them. Then change the population, axes, type, events shown or size on one plot, and the change applies to all selected plots. |
 | **Statistics** | Count, % Parent, % Total, **Median (MFI)**, Mean, Geometric mean, SD, CV, robust SD and robust CV, for any population and channel. Choose a long, wide or transposed table. Export as CSV or copy straight into Excel/Prism. |
-| **Layout & overlays** | Histogram overlays of any mix of sample and population: normalised to mode or by count, **overlay, quarter, half or full offset** (or a custom offset), smoothing, fill and custom colours. You can also overlay dot plots coloured by series, or use **Batch** view (the same plot for every sample, with gate %). Gate labels and sample labels can be dragged in figures, placed outside the plot or hidden, and **↔ Range gate** on a histogram overlay gates every sample at once, listing each sample's %. Export single figures or the whole layout as **PNG, SVG or PDF**, with vector axes, text, gates and contours. |
+| **Layout & overlays** | Histogram overlays of any mix of sample and population: normalised to mode or by count, **overlay, quarter, half or full offset** (or a custom offset), smoothing, fill and custom colours. You can also overlay dot plots coloured by series, or use **Batch** view (the same plot for every sample, with gate %). **Population** sets the gate of every series at once (e.g. Singlets for all samples). Gate labels and sample labels can be dragged in figures, placed outside the plot or hidden, and **↔ Range gate** on a histogram overlay gates every sample at once, listing each sample's %. Export single figures or the whole layout as **PNG, SVG or PDF**, with vector axes, text, gates and contours. |
 | **Workspaces** | Each **tab** is a workspace with its own samples and analysis. Click **+** for another group of samples. Closing a tab always asks whether to save. **Undo/redo** has a separate history for each mode (Gating, Layout, Statistics, Properties). |
 | **Properties** | Acquisition information from the FCS keywords: instrument, serial number, software, date and times, operator, experiment, tube or well, volume, lasers, and channel voltages, filters and lasers. Includes an editable keyword table. Edits (for example, fixing marker labels or adding the operator) are stored in the workspace and written into exported FCS files; the original files are never changed. There is also an acquisition summary CSV for all samples. |
 | **Export / save** | Save the **workspace** (gates, scales, plots, figures, compensation, label positions, metadata edits), by default as **one .zip that includes the FCS files** and reopens with all its samples, or as a small .json. Opening a .json without its data asks for the folder (or the files) and matches them by name; ⇄ replaces a sample's FCS file. Save a **template**, which holds the same analysis with no sample data or file names, and apply it to new samples in any workspace. Saving shows a dialog with a date-stamped file name; Chrome and Edge also let you choose the folder. Export the events of any population as a new FCS 3.1 file. |
@@ -57,7 +57,7 @@ Tests:
 To close a polygon, double-click or click its first point. Click an axis to change that channel's scale.
 
 ## Notes on accuracy
-* MFIs and other statistics use **compensated, untransformed** values, matching FlowJo's defaults.
+* MFIs and other statistics use **compensated, untransformed** values.
   The geometric mean ignores events ≤ 0. For populations that contain many negative values, use the median.
 * Gate membership is tested in the displayed (transformed) coordinate space. This means a polygon
   covers the same region you drew. If you later change a channel's scale, straight polygon edges
@@ -93,7 +93,7 @@ Logicle transform about 80 ms per channel, polygon gate about 70 ms. All of thes
 
 ## Not (yet) included
 * Per-sample gate adjustments (gates are currently global to all samples)
-* FlowJo `.wsp` and Gating-ML import or export
+* Import or export of gating files from other software (e.g. Gating-ML)
 * Derived parameters, ratios, and dimensionality reduction (tSNE/UMAP)
 * Unmixing raw spectral data (load files already unmixed by the instrument software)
 * Running the work in a Web Worker for multi-million-event files

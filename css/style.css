@@ -208,3 +208,6 @@ body.dragging::after { content: 'Drop FCS files to load into this workspace'; po
 .axis-menu .seg { display: flex; gap: 2px; }
 .axis-menu .seg .btn { flex: 1; }
 .axis-menu input[type=number] { padding: 3px 6px; }
+.sample-list li { user-select: none; }
+.sample-list li.in-overlay { border-color: var(--accent-line); }
+.ov-swatch { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 5px; vertical-align: 0; }
