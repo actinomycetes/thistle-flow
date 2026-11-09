@@ -2,7 +2,7 @@
 
 Sister project of [Thistle Plot](https://github.com/actinomycetes/thistle-plot) (TP), with the same look and conventions.
 
-**Status:** beta (0.x; current v0.6.0). Check important results against an established package before publishing. Version history: [`help.html#history`](help.html#history).
+**Status:** beta (0.x; current v0.6.1). Check important results against an established package before publishing. Version history: [`help.html#history`](help.html#history).
 
 **Hosted copy:** https://actinomycetes.github.io/thistle-flow/
 
@@ -10,6 +10,10 @@ A lightweight, browser-based alternative to FlowJo for everyday flow cytometry a
 Load FCS files from any cytometer, gate hierarchically, compute statistics and MFIs for many
 samples at once, and build overlay figures. Nothing to install and no build step. All processing
 happens on your computer and no data is uploaded.
+
+<!-- MAINTAINER SECTION START: written by the maintainer; kept word for word in every version. Edit freely. -->
+
+<!-- MAINTAINER SECTION END -->
 
 ## Running it
 

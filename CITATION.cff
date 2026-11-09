@@ -6,7 +6,7 @@ authors:
   - given-names: Takanobu
     family-names: Tagawa
     affiliation: "The University of Edinburgh"
-version: 0.6.0
+version: 0.6.1
 license: MIT
 repository-code: "https://github.com/actinomycetes/thistle-flow"
 url: "https://actinomycetes.github.io/thistle-flow/"

@@ -39,12 +39,14 @@ const pref = {
 
 // ---------- theme ----------
 // Same convention as Thistle Plot: dark by default, 🌙 shown in dark mode and ☀️ in light mode
-function applyTheme(t) {
+// Only an explicit click is remembered ('themeChoice'); the old 'theme' key also stored the
+// automatic choice of earlier versions, which kept some viewers in light mode, so it is ignored.
+function applyTheme(t, { remember = false } = {}) {
   app.theme = t;
   document.documentElement.dataset.theme = t;
   $('#btnTheme').textContent = t === 'dark' ? '🌙' : '☀️';
   $('#btnTheme').title = `Switch to ${t === 'dark' ? 'light' : 'dark'} mode (exports always use a white background)`;
-  pref.set('theme', t);
+  if (remember) pref.set('themeChoice', t);
 }
 
 // ---------- workspaces (tabs) ----------
@@ -1345,7 +1347,7 @@ $('#btnSaveWs').addEventListener('click', () => app.saveWorkspace());
 $('#btnSaveTpl').addEventListener('click', saveTemplate);
 $('#btnApplyTpl').addEventListener('click', applyTemplate);
 $('#btnClear').addEventListener('click', clearSamples);
-$('#btnTheme').addEventListener('click', () => { applyTheme(app.theme === 'dark' ? 'light' : 'dark'); renderTab(); });
+$('#btnTheme').addEventListener('click', () => { applyTheme(app.theme === 'dark' ? 'light' : 'dark', { remember: true }); renderTab(); });
 $('#btnUndo').addEventListener('click', undo);
 $('#btnRedo').addEventListener('click', redo);
 $('#displayMax').addEventListener('change', e => { app.ws.displayMax = +e.target.value; renderGating(); });
@@ -1422,7 +1424,7 @@ window.addEventListener('drop', e => {
   loadFiles(files.filter(f => !isWs(f))).then(() => wsFile && loadWorkspaceFile(wsFile));
 });
 
-applyTheme(pref.get('theme', 'dark'));
+applyTheme(pref.get('themeChoice', 'dark') === 'light' ? 'light' : 'dark');
 $('#app-version').textContent = `v${APP_VERSION}`;
 document.title = `${APP_NAME} v${APP_VERSION} (Beta)`;
 setupSplitters();
