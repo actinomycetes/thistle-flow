@@ -42,7 +42,46 @@ export class Sample {
     this.compEnabled = !!this.spill && applyFlag && this.spillMissing().length === 0;
     this._comp = null;     // Map name -> Float32Array (compensated)
     this._unit = new Map(); // key -> Float32Array
-    this.keywordsDisplayed = false;
+    // Editable metadata. Originals are kept so edits can be reset/undone; files on disk are never modified.
+    this.key = ds.name;     // stable identity used by saved workspaces
+    this.textOrig = { ...ds.text };
+    this.labelsOrig = ds.params.map(p => p.label);
+    this.edits = { name: null, kw: {}, labels: {} };
+  }
+
+  // Keywords that define the file layout; editing them would corrupt exported files.
+  static isStructural(k) {
+    return /^\$(BEGIN|END)(DATA|STEXT|ANALYSIS)$|^\$(BYTEORD|DATATYPE|MODE|NEXTDATA|PAR|TOT)$|^\$P\d+[BENRG]$/.test(k);
+  }
+
+  rename(name) { this.edits.name = name && name !== this.key ? name : null; this.name = name || this.key; }
+
+  setKeyword(k, v) {
+    k = k.trim().toUpperCase();
+    if (Sample.isStructural(k)) throw new Error(`${k} describes the file layout and cannot be edited`);
+    const m = /^\$P(\d+)S$/.exec(k);
+    if (m) return this.setLabel(this.channelNames[+m[1] - 1], v);
+    if (v === this.textOrig[k]) delete this.edits.kw[k]; else this.edits.kw[k] = v;
+    if (v === null || v === undefined) delete this.text[k]; else this.text[k] = v;
+  }
+
+  setLabel(ch, label) {
+    const i = this.channelIndex(ch);
+    if (i < 0) return;
+    label = (label || '').trim();
+    this.params[i].label = label;
+    if (label) this.text[`$P${i + 1}S`] = label; else delete this.text[`$P${i + 1}S`];
+    if (label === (this.labelsOrig[i] || '')) delete this.edits.labels[ch]; else this.edits.labels[ch] = label;
+  }
+
+  // Replace all metadata edits (used by undo and workspace loading)
+  applyEdits(e = {}) {
+    this.text = { ...this.textOrig };
+    this.params.forEach((p, i) => { p.label = this.labelsOrig[i]; });
+    this.edits = { name: null, kw: {}, labels: {} };
+    this.rename(e.name || null);
+    for (const [k, v] of Object.entries(e.kw || {})) { try { this.setKeyword(k, v); } catch { /* structural: ignore */ } }
+    for (const [ch, l] of Object.entries(e.labels || {})) this.setLabel(ch, l);
   }
 
   channelIndex(name) { return this.channelNames.indexOf(name); }

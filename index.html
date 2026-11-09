@@ -10,42 +10,55 @@
 <header class="topbar">
   <div class="brand">Thistle <span>Flow</span></div>
   <div class="actions">
-    <label class="btn primary">Open FCS…<input id="fileInput" type="file" accept=".fcs,.FCS,.lmd,application/octet-stream" multiple hidden></label>
+    <label class="btn primary">Open FCS…<input id="fileInput" type="file" accept=".fcs,.FCS,.lmd,.LMD,application/octet-stream" multiple hidden></label>
     <button class="btn" id="btnDemo">Load demo data</button>
     <span class="sep"></span>
     <button class="btn" id="btnComp">Compensation</button>
     <button class="btn" id="btnTransforms">Axis scales</button>
     <span class="sep"></span>
-    <button class="btn" id="btnSaveWs">Save workspace</button>
-    <label class="btn">Load workspace<input id="wsInput" type="file" accept=".json" hidden></label>
+    <button class="btn" id="btnSaveWs" title="Save workspace (Ctrl+S)">Save workspace…</button>
+    <label class="btn">Load workspace…<input id="wsInput" type="file" accept=".json" hidden></label>
+    <button class="btn" id="btnSaveTpl" title="Save gates and settings without data, to reuse on other samples">Save template…</button>
+    <button class="btn" id="btnApplyTpl" title="Apply saved gates and settings to the samples in this workspace">Apply template…</button>
+  </div>
+  <div class="actions right">
+    <button class="btn" id="btnTheme">☾ Dark</button>
+    <a class="btn" id="helpLink" href="help.html" target="_blank" rel="noopener" title="Open the manual (F1)">? Help</a>
   </div>
 </header>
+<nav class="ws-tabs" id="wsTabs" aria-label="Workspaces"></nav>
 
 <div class="main">
-  <aside class="sidebar">
-    <section>
+  <aside class="sidebar" id="sidebar">
+    <section id="secSamples" class="side-sec">
       <h3>Samples <small id="sampleCount"></small></h3>
       <ul id="sampleList" class="sample-list"></ul>
       <div id="dropHint" class="drop-hint">Drop .fcs files anywhere<br><small>BD FACSDiva, Attune NxT, Sony, Cytek, CytoFLEX… FCS 2.0–3.2</small></div>
     </section>
-    <section>
-      <h3>Gates <small>(shared by all samples)</small></h3>
+    <div class="hsplit" id="sideSplit" title="Drag to resize · double-click to reset"></div>
+    <section id="secGates" class="side-sec grow">
+      <h3>Gates <small>(shared by all samples in this workspace)</small></h3>
       <div id="gateTree" class="gate-tree"></div>
       <p class="hint">Click a population to select. <b>＋</b> opens a plot of it. Double-click to rename. Gates are applied to every sample.</p>
     </section>
   </aside>
+  <div class="vsplit" id="mainSplit" title="Drag to resize · double-click to reset"></div>
 
   <section class="workspace">
     <nav class="tabs">
       <button data-tab="gating" class="active">Gating</button>
       <button data-tab="layout">Layout &amp; Overlays</button>
       <button data-tab="stats">Statistics</button>
+      <button data-tab="properties">Properties</button>
+      <span class="grow"></span>
+      <button class="btn small" id="btnUndo" title="Undo (Ctrl+Z)">↶ Undo</button>
+      <button class="btn small" id="btnRedo" title="Redo (Ctrl+Shift+Z)">↷ Redo</button>
     </nav>
 
     <div id="tab-gating" class="tab active">
       <div class="toolbar">
         <div class="tools" id="tools">
-          <button data-tool="select" class="active" title="Select / move / reshape gates (V)">↖ Select</button>
+          <button data-tool="select" class="active" title="Select / move / reshape gates and labels (V)">↖ Select</button>
           <button data-tool="rect" title="Rectangle gate (R)">▭ Rectangle</button>
           <button data-tool="polygon" title="Polygon gate: click vertices, double-click or click first point to close (P)">⬠ Polygon</button>
           <button data-tool="ellipse" title="Ellipse gate: drag a bounding box (E)">◯ Ellipse</button>
@@ -55,6 +68,8 @@
         <span class="sep"></span>
         <button class="btn" id="btnAddPlot">＋ Add plot</button>
         <button class="btn" id="btnDeleteGate" disabled>Delete gate</button>
+        <label class="inline" title="Maximum number of events drawn in each 2-D plot (statistics always use every event)">Show <select id="displayMax"></select> events/plot</label>
+        <span id="selInfo" class="sel-info" hidden></span>
         <span class="toolbar-info" id="activeSampleInfo"></span>
       </div>
       <div id="plotGrid" class="plot-grid"></div>
@@ -66,7 +81,7 @@
         <button class="btn" data-addfig="overlay-dot">＋ Dot-plot overlay</button>
         <button class="btn" data-addfig="batch">＋ Batch (one plot per sample)</button>
         <span class="sep"></span>
-        <button class="btn" id="btnExportLayout">Export layout PNG</button>
+        <button class="btn" id="btnExportLayout">Export layout ▾</button>
       </div>
       <div id="figures" class="figures"></div>
     </div>
@@ -74,6 +89,10 @@
     <div id="tab-stats" class="tab">
       <div class="toolbar stats-controls" id="statsControls"></div>
       <div class="table-wrap"><table id="statsTable" class="stats-table"></table></div>
+    </div>
+
+    <div id="tab-properties" class="tab">
+      <div id="propsRoot" class="props"></div>
     </div>
   </section>
 </div>

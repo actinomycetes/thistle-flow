@@ -1,0 +1,186 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Thistle Flow Help</title>
+<style>
+  :root { --bg: #ffffff; --text: #1d2330; --muted: #5b6474; --border: #d9dce1; --accent: #2f6fde; --code: #f0f2f5; color-scheme: light; }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg: #12161c; --text: #e3e7ee; --muted: #98a1b0; --border: #2d3440; --accent: #7aa5f5; --code: #1d222b; color-scheme: dark; } }
+  :root[data-theme="dark"] { --bg: #12161c; --text: #e3e7ee; --muted: #98a1b0; --border: #2d3440; --accent: #7aa5f5; --code: #1d222b; color-scheme: dark; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.6 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  main { max-width: 860px; margin: 0 auto; padding: 24px 16px 64px; }
+  h1 { font-size: 26px; margin: 0 0 4px; } h1 span { color: #9b6fd0; }
+  h2 { font-size: 19px; margin: 34px 0 8px; padding-top: 10px; border-top: 1px solid var(--border); }
+  h3 { font-size: 15px; margin: 18px 0 4px; }
+  p, li { color: var(--text); } .muted { color: var(--muted); }
+  a { color: var(--accent); }
+  kbd, code { background: var(--code); border: 1px solid var(--border); border-radius: 4px; padding: 0 5px; font-size: 13px; font-family: ui-monospace, monospace; }
+  nav.toc { columns: 2; column-gap: 24px; padding: 10px 14px; border: 1px solid var(--border); border-radius: 8px; margin: 16px 0; }
+  nav.toc a { display: block; }
+  table { border-collapse: collapse; width: 100%; margin: 8px 0; font-size: 14px; }
+  th, td { border-bottom: 1px solid var(--border); padding: 5px 8px; text-align: left; vertical-align: top; }
+  .note { border-left: 3px solid var(--accent); padding: 4px 12px; margin: 10px 0; color: var(--muted); }
+  @media (max-width: 600px) { nav.toc { columns: 1; } }
+</style>
+</head>
+<body>
+<main>
+<h1>Thistle <span>Flow</span> help</h1>
+<p class="muted">Lightweight flow cytometry analysis in your browser. Your data never leaves your computer. <a href="./">Open the app</a> · <a href="https://github.com/actinomycetes/thistle-flow">Source on GitHub</a></p>
+
+<nav class="toc">
+  <a href="#start">Getting started</a>
+  <a href="#workspaces">Workspaces and tabs</a>
+  <a href="#gating">Gating</a>
+  <a href="#plots">Plot types and settings</a>
+  <a href="#multi">Changing several plots at once</a>
+  <a href="#scales">Axis scales</a>
+  <a href="#comp">Compensation</a>
+  <a href="#layout">Layouts and overlays</a>
+  <a href="#stats">Statistics and MFI</a>
+  <a href="#props">Properties (acquisition info)</a>
+  <a href="#saving">Saving: workspaces and templates</a>
+  <a href="#export">Exporting PNG, SVG and PDF</a>
+  <a href="#undo">Undo and redo</a>
+  <a href="#keys">Keyboard shortcuts</a>
+  <a href="#limits">Limitations</a>
+</nav>
+
+<h2 id="start">Getting started</h2>
+<ol>
+  <li>Click <b>Open FCS…</b> or drag <code>.fcs</code> files onto the window. Files from BD FACSDiva, Attune NxT, Sony, Cytek, CytoFLEX and others are supported (FCS 2.0 to 3.2). Click <b>Load demo data</b> to try the app without your own files.</li>
+  <li>Three starting plots appear: scatter, two fluorescence channels and a histogram. Click a sample in the left pane to make it the <i>active sample</i> that the plots show.</li>
+  <li>Draw gates (see <a href="#gating">Gating</a>). Gates apply to <b>every sample in the workspace</b>, so you gate once and read the results for all samples in the <b>Statistics</b> tab.</li>
+</ol>
+<p>You can resize the left pane by dragging its edge, and resize the Samples and Gates lists by dragging the bar between them. Double-click a divider to reset it. Use <b>☾ Dark</b> / <b>☀ Light</b> to switch colour mode. Exports always use a white background.</p>
+
+<h2 id="workspaces">Workspaces and tabs</h2>
+<p>Each tab above the main area is a separate <b>workspace</b>: its own group of samples with its own gates, plots, layouts and statistics. Click <b>+</b> to start a new workspace, for example for another experiment or panel. Double-click a tab to rename it. A dot (●) on a tab means it has unsaved changes.</p>
+<p>When you close a tab, you are always asked whether to save the workspace first.</p>
+
+<h2 id="gating">Gating</h2>
+<table>
+  <tr><th>Tool</th><th>How to draw</th></tr>
+  <tr><td>Rectangle <kbd>R</kbd></td><td>Drag a box.</td></tr>
+  <tr><td>Polygon <kbd>P</kbd></td><td>Click each corner. Double-click, or click the first point, to close. Right-click cancels.</td></tr>
+  <tr><td>Ellipse <kbd>E</kbd></td><td>Drag the bounding box. It becomes an editable polygon.</td></tr>
+  <tr><td>Quadrant <kbd>Q</kbd></td><td>Click the centre. Four linked gates are created.</td></tr>
+  <tr><td>Range <kbd>I</kbd></td><td>On a histogram, drag across the range.</td></tr>
+</table>
+<p>After you name a gate, the tool switches back to <b>Select</b> <kbd>V</kbd>. In Select mode you can:</p>
+<ul>
+  <li><b>move</b> a gate by dragging inside it, and <b>reshape</b> it by dragging a corner or handle;</li>
+  <li><b>move a gate's label</b> by dragging the label. Labels stay inside the plot, and their position is saved with the workspace;</li>
+  <li><b>double-click inside a gate</b> to open a plot of that population, or <b>double-click a label</b> to rename the gate;</li>
+  <li>delete the selected gate with <kbd>Delete</kbd>.</li>
+</ul>
+<p>Dragging a gate edge onto an axis extends the gate past the axis, so off-scale events piled on that axis are included.</p>
+
+<h2 id="plots">Plot types and settings</h2>
+<p>Choose the type in the plot header or in the plot's <b>⚙</b> settings:</p>
+<ul>
+  <li><b>Pseudocolor</b>: every displayed event, coloured by local density (blue = sparse, red = dense).</li>
+  <li><b>Density</b>: a smoothed density map.</li>
+  <li><b>Contour</b>: equal-probability contour lines. With the 10% step, each line encloses 10% fewer events. Events outside the outermost line are shown as dots, which you can turn off under <i>Outliers</i>.</li>
+  <li><b>Dot</b>: plain dots.</li>
+  <li><b>Histogram</b>: set Y to “— Histogram —”.</li>
+</ul>
+<p><b>Events shown.</b> Busy plots can be thinned out. The <b>Show … events/plot</b> menu in the toolbar sets the default for the workspace (10,000 at first). Any plot can override it in <b>⚙ → Events shown</b>. The same subset of events is always shown, so a child population shows a subset of its parent's dots. <b>Statistics and gate percentages always use every event.</b></p>
+<p><b>Size.</b> Choose S, M, L or XL in ⚙.</p>
+
+<h2 id="multi">Changing several plots at once</h2>
+<p>Select several plots, then change any setting in one of them (population, axes, type, events shown, size). The change applies to every selected plot.</p>
+<ul>
+  <li><b>Shift-click</b> a plot (its header or an empty part of the plot) to add or remove it from the selection.</li>
+  <li><b>Drag a box</b> on the empty background around plots to select them. Hold <kbd>Shift</kbd> to add to the current selection.</li>
+  <li><kbd>Ctrl</kbd>+<kbd>A</kbd> selects all plots. <kbd>Esc</kbd> clears the selection. <kbd>Delete</kbd> closes the selected plots when no gate is selected.</li>
+</ul>
+
+<h2 id="scales">Axis scales</h2>
+<p>Click an <b>axis</b> (the tick labels or axis title) to change the scale of that axis's channel. You can also use ⚙ → <i>X axis scale…</i> / <i>Y axis scale…</i>, or <b>Axis scales</b> in the top bar. The choices are Linear, Log, Biexponential (Logicle) and Arcsinh.</p>
+<p>Scales belong to a <b>channel</b>, not to one plot, so a gate always means the same events wherever it is shown. For the biexponential scale, <b>Auto W</b> estimates the width from the negative events of the active sample. Increase W if compensated negatives look squashed against zero.</p>
+
+<h2 id="comp">Compensation</h2>
+<p>The spillover matrix stored in each file (<code>$SPILLOVER</code>, <code>SPILL</code>) is read and applied automatically. Open <b>Compensation</b> to view or edit it, apply it to all samples, or import or export it as CSV. Spectral instruments (Sony ID7000/SA3800, Cytek) usually export data that is already unmixed. Thistle Flow cannot unmix raw spectral data.</p>
+
+<h2 id="layout">Layouts and overlays</h2>
+<ul>
+  <li><b>Histogram overlay</b>: any combination of sample and population. The Y scale can be <i>normalised to mode</i> or <i>count</i>. <b>Offset</b> options:
+    <ul>
+      <li><i>Overlay</i>: histograms on top of each other;</li>
+      <li><i>Quarter</i> and <i>Half offset</i>: staggered, partly overlapping;</li>
+      <li><i>Full offset</i>: stacked with no overlap;</li>
+      <li><i>Custom</i>: set the offset with a slider.</li>
+    </ul></li>
+  <li><b>Dot-plot overlay</b>: series coloured by sample or population.</li>
+  <li><b>Batch</b>: the same plot for every sample, with gate percentages.</li>
+</ul>
+<p><b>All samples</b> resets the series list to every sample. <b>Child gates</b> makes one series per subpopulation.</p>
+
+<h2 id="stats">Statistics and MFI</h2>
+<p>Tick the populations, statistics and channels you want: Count, % Parent, % Total, Median (MFI), Mean, Geometric mean, SD, CV, Robust SD and Robust CV. There are three table layouts:</p>
+<ul>
+  <li><i>long</i>: one row per sample and population, best for R and Prism;</li>
+  <li><i>wide</i>: one row per sample;</li>
+  <li><i>transposed</i>: one column per sample.</li>
+</ul>
+<p>Use <b>Export CSV…</b> or <b>Copy</b>. Values are computed on compensated data, without the display transform. The geometric mean uses positive events only.</p>
+
+<h2 id="props">Properties (acquisition info)</h2>
+<p>The <b>Properties</b> tab, also opened from the ⓘ button next to a sample, shows:</p>
+<ul>
+  <li>information read from the file: instrument, serial number, software, date, start and end times, duration, operator, experiment, specimen or tube, plate or well, volume, lasers and compensation;</li>
+  <li>a channel table: marker labels, voltages, filters and lasers;</li>
+  <li>every keyword in the file, with a search box.</li>
+</ul>
+<p><b>Editing:</b> click a value to change it. You can also rename the sample, fix marker labels (and copy them to all samples with <i>Apply labels to all samples</i>), and add keywords. Edited values are highlighted.</p>
+<ul>
+  <li>Edits are stored in the workspace and can be undone. They are also written into FCS files you export from the gate tree.</li>
+  <li><b>The original files are never modified.</b></li>
+  <li>Keywords that describe the data layout (byte order, data type, bits, range and so on) are read-only.</li>
+</ul>
+<p><b>Export summary CSV</b> writes one row per sample with the acquisition fields, which is useful for lab records.</p>
+
+<h2 id="saving">Saving: workspaces and templates</h2>
+<p><b>Save workspace…</b> <kbd>Ctrl</kbd>+<kbd>S</kbd> opens a dialog where you can choose the file name. The name starts with the workspace name plus the date and time, so earlier saves are not overwritten. In Chrome and Edge you then choose the folder. Other browsers save to the Downloads folder, or ask where, depending on their settings.</p>
+<ul>
+  <li>A <b>workspace</b> file stores gates, scales, plots, layouts, statistics settings, compensation and metadata edits, together with the names of the FCS files. It does <i>not</i> contain the event data. To reopen it, load the same FCS files, then use <b>Load workspace…</b> (or drop the files and the workspace together onto the window).</li>
+  <li>A <b>template</b> (<b>Save template…</b>) stores the same analysis settings with <b>no sample data and no file names</b>. You can optionally include a compensation matrix and marker labels. Use <b>Apply template…</b> in any workspace to reuse a gating strategy on new samples. You can undo it.</li>
+</ul>
+
+<h2 id="export">Exporting PNG, SVG and PDF</h2>
+<p>Each plot's <b>⤓</b> menu and each figure's <b>Export ▾</b> menu offer:</p>
+<ul>
+  <li><b>PNG</b>: high resolution, about 300 dpi;</li>
+  <li><b>SVG</b>: vector, for Illustrator or Inkscape;</li>
+  <li><b>PDF</b>: vector.</li>
+</ul>
+<p><b>Export layout ▾</b> exports all figures in the Layout tab as one file.</p>
+<p>In SVG and PDF, the axes, text, gates, contours, histograms and dots are vector shapes. Pseudocolor and density shading is embedded as an image. <b>⤓</b> in the gate tree exports the events of a population as a new FCS file.</p>
+
+<h2 id="undo">Undo and redo</h2>
+<p>Each mode (Gating, Layout, Statistics, Properties) has its <b>own</b> undo history, so undoing a layout change never undoes a gate. Use <b>↶ Undo</b> / <b>↷ Redo</b> at the right of the mode tabs, or <kbd>Ctrl</kbd>+<kbd>Z</kbd> / <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Z</kbd> (<kbd>Ctrl</kbd>+<kbd>Y</kbd>). Gating covers gates, plots, axis scales and compensation. Loading or removing samples is not undoable.</p>
+
+<h2 id="keys">Keyboard shortcuts</h2>
+<table>
+  <tr><td><kbd>V</kbd> <kbd>R</kbd> <kbd>P</kbd> <kbd>E</kbd> <kbd>Q</kbd> <kbd>I</kbd></td><td>Select, Rectangle, Polygon, Ellipse, Quadrant, Range tools</td></tr>
+  <tr><td><kbd>Ctrl</kbd>+<kbd>Z</kbd> / <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Z</kbd></td><td>Undo / redo in the current mode</td></tr>
+  <tr><td><kbd>Ctrl</kbd>+<kbd>S</kbd></td><td>Save workspace</td></tr>
+  <tr><td><kbd>Ctrl</kbd>+<kbd>A</kbd></td><td>Select all plots</td></tr>
+  <tr><td><kbd>Delete</kbd></td><td>Delete the selected gate, or close the selected plots</td></tr>
+  <tr><td><kbd>Esc</kbd></td><td>Cancel drawing, close dialogs, clear the plot selection</td></tr>
+  <tr><td><kbd>F1</kbd></td><td>This help</td></tr>
+</table>
+
+<h2 id="limits">Limitations</h2>
+<ul>
+  <li>Gates are shared by all samples in a workspace. There are no per-sample gate adjustments yet.</li>
+  <li>FlowJo <code>.wsp</code> and Gating-ML files cannot be imported. There are no derived parameters and no tSNE/UMAP.</li>
+  <li>Raw spectral data cannot be unmixed.</li>
+  <li>Thistle Flow is beta software. Check important results against an established package before publishing.</li>
+</ul>
+<p class="muted">Thistle Flow is MIT-licensed. © 2026 Takanobu Tagawa (The University of Edinburgh). The biexponential scale follows Parks, Roederer &amp; Moore, <i>Cytometry A</i> 2006, and Moore &amp; Parks, <i>Cytometry A</i> 2012.</p>
+</main>
+</body>
+</html>

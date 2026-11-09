@@ -6,7 +6,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
-const order = ['transforms', 'fcs', 'model', 'gates', 'render', 'plotview', 'demo', 'app'];
+const order = ['transforms', 'fcs', 'model', 'gates', 'render', 'vector', 'plotview', 'demo', 'ui', 'workspace', 'properties', 'app'];
 let js = '';
 for (const m of order) {
   let src = readFileSync(join(root, 'js', m + '.js'), 'utf8');
@@ -24,5 +24,7 @@ const css = readFileSync(join(root, 'css', 'style.css'), 'utf8');
 let html = readFileSync(join(root, 'index.html'), 'utf8');
 html = html.replace(/<link rel="stylesheet" href="css\/style.css">/, () => `<style>\n${css}</style>`);
 html = html.replace(/<script type="module" src="js\/app.js"><\/script>/, () => `<script>\n${js.replace(/<\/script/gi, '<\\/script')}</script>`);
+// a single file has no help.html next to it: link to the hosted manual
+html = html.replace('href="help.html"', 'href="https://actinomycetes.github.io/thistle-flow/help.html"');
 writeFileSync(join(root, 'dist', 'thistle-flow.html'), html);
 console.log(`dist/thistle-flow.html written (${(html.length / 1024).toFixed(0)} KB)`);
