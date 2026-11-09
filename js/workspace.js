@@ -60,6 +60,12 @@ export class Workspace {
     if (!this.transforms[ch]) {
       const { range, logAmp } = this.channelRange(ch);
       this.transforms[ch] = logAmp ? { kind: 'log', min: 1, max: range, auto: true } : defaultTransformFor(ch, range);
+      // Time units differ a lot between instruments: scale to the acquisition actually recorded
+      if (/time/i.test(ch) && !logAmp) {
+        let max = 0;
+        for (const s of this.samples) { const c = s.hasChannel(ch) ? s.raw[s.channelIndex(ch)] : null; if (c) for (let i = 0; i < c.length; i++) if (c[i] > max) max = c[i]; }
+        if (max > 0) this.transforms[ch] = { kind: 'linear', min: 0, max: +(max * 1.02).toPrecision(3), auto: true };
+      }
     }
     return this.transforms[ch];
   }

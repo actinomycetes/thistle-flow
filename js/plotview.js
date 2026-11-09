@@ -69,6 +69,7 @@ export function buildSpec(ws, sample, def, w, h, opts = {}) {
     series, gates,
     hist: { mode: 'count', smooth: def.smooth !== false, fill: true },
     contour: { step: def.contourStep || 0.1, outliers: def.outliers !== false },
+    dotSize: def.dotSize,
   };
 }
 
@@ -154,7 +155,7 @@ export class PlotView {
   axisAt(px, py) {
     if (!this.L) return null;
     if (py > MARGIN.t + this.L.ph + 2 && px >= MARGIN.l && px <= MARGIN.l + this.L.pw) return 'x';
-    if (px < MARGIN.l - 2 && py >= MARGIN.t && py <= MARGIN.t + this.L.ph && this.def.y) return 'y';
+    if (px < MARGIN.l - 2 && py >= MARGIN.t && py <= MARGIN.t + this.L.ph) return 'y';
     return null;
   }
 
@@ -201,7 +202,7 @@ export class PlotView {
   hover(e) {
     if (!this.L) return;
     const { px, py } = this.evtUnit(e);
-    if (this.axisAt(px, py)) { this.canvas.style.cursor = 'pointer'; this.canvas.title = 'Click to change this axis scale'; return; }
+    if (this.axisAt(px, py)) { this.canvas.style.cursor = 'pointer'; this.canvas.title = 'Click for this axis: channel and scale'; return; }
     this.canvas.title = '';
     if (this.app.tool !== 'select') { this.canvas.style.cursor = 'crosshair'; return; }
     const h = this.hitTest(px, py);
@@ -213,7 +214,7 @@ export class PlotView {
     if (!this.spec) { this.app.plotClicked(this.def.id, e); return; }
     const { px, py, u } = this.evtUnit(e);
     const axis = this.axisAt(px, py);
-    if (axis && !this.drawing) { this.app.plotClicked(this.def.id, e); this.app.openScale(axis === 'x' ? this.def.x : this.def.y, axis); return; }
+    if (axis && !this.drawing) { this.app.plotClicked(this.def.id, e, { keepSelection: true }); this.app.axisMenu(this.def, axis, e.clientX, e.clientY); return; }
     const tool = this.app.tool;
     const isHist = !this.def.y;
     if (tool === 'select') {

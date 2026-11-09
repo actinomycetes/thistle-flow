@@ -86,7 +86,7 @@ label.inline select { font: inherit; font-size: 12px; border: 1px solid var(--bo
 .sample-list li.active { background: var(--accent-soft); border-color: var(--accent-line); }
 .sample-list .meta { flex: 1; min-width: 0; }
 .sample-list .name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.sample-list .sub { color: var(--muted); font-size: 11px; }
+.sample-list .sub { color: var(--muted); font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .badge { display: inline-block; font-size: 10px; padding: 0 5px; border-radius: 8px; background: #14361f; color: #86efac; margin-left: 4px; }
 .badge.off { background: var(--panel-2); color: var(--muted); }
 :root[data-theme="light"] .badge { background: #dcfce7; color: #166534; }
@@ -205,3 +205,6 @@ body.dragging::after { content: 'Drop FCS files to load into this workspace'; po
 
 .toast { position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%); background: var(--panel-2); color: var(--text); border: 1px solid var(--border); box-shadow: 0 8px 24px rgba(0,0,0,.3); padding: 8px 14px; border-radius: 6px; z-index: 60; max-width: 80vw; }
 .toast.error { background: var(--danger); color: #fff; border-color: var(--danger); }
+.axis-menu .seg { display: flex; gap: 2px; }
+.axis-menu .seg .btn { flex: 1; }
+.axis-menu input[type=number] { padding: 3px 6px; }

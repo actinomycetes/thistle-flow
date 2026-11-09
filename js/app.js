@@ -4,7 +4,7 @@ import { Sample } from './model.js';
 import { defaultTransformFor } from './transforms.js';
 import { GATE_COLORS, STAT_DEFS, channelStats, populationStats } from './gates.js';
 import { PlotView, buildSpec, shortLabel, fmtPct, subsampleIdx, PLOT_SIZES, EVENT_LIMITS } from './plotview.js';
-import { renderPlot, prepareCanvas, SERIES_COLORS, THEMES, PLOT_KINDS, HIST_OFFSETS, normalizeKind } from './render.js';
+import { renderPlot, prepareCanvas, SERIES_COLORS, THEMES, PLOT_KINDS, HIST_OFFSETS, DOT_SIZES, DEFAULT_DOT, normalizeKind } from './render.js';
 import { renderSVG, renderPDF } from './vector.js';
 import { demoFiles } from './demo.js';
 import { $, $$, h, uid, esc, safeName, dateStamp, toast, openModal, closeModal, modalOpen, choose, popover, closePopover, saveFile, saveDialog, pickFile, pickFiles } from './ui.js';
@@ -161,16 +161,49 @@ async function loadFiles(fileList) {
   await loadBuffers(await readFiles(files));
 }
 
+// Starting plots: FSC-A vs SSC-A (cells), FSC-A vs FSC-H (singlets) and, if there is a time
+// channel, Time vs SSC-A (acquisition stability)
 function defaultPlots(ws) {
   const s = ws.samples[0];
   const chans = s.channelNames;
   const find = re => chans.find(c => re.test(c));
   const fsc = find(/^FSC.*-A$/i) || find(/^FSC/i) || find(/^FS/i) || chans[0];
   const ssc = find(/^SSC.*-A$/i) || find(/^SSC/i) || find(/^(BSC|SS)/i) || chans[1] || chans[0];
-  const fl = ws.fluorChannels().filter(c => s.hasChannel(c));
-  ws.plots.push({ id: uid('p'), pop: null, x: fsc, y: ssc, kind: 'pseudo' });
-  if (fl.length >= 2) ws.plots.push({ id: uid('p'), pop: null, x: fl[0], y: fl[1], kind: 'pseudo' });
-  if (fl.length) ws.plots.push({ id: uid('p'), pop: null, x: fl[0], y: null, kind: 'pseudo' });
+  const add = (x, y) => ws.plots.push({ id: uid('p'), pop: null, x, y, kind: 'pseudo' });
+  add(fsc, ssc);
+  const fscH = find(/^FSC.*-H$/i) || find(/^FSC.*HEIGHT/i) || find(/^FS.*H$/i);
+  const sscH = find(/^SSC.*-H$/i) || find(/^SSC.*HEIGHT/i);
+  const fscW = find(/^FSC.*-W$/i) || find(/^FSC.*WIDTH/i);
+  if (fscH && fscH !== fsc) add(fsc, fscH);
+  else if (sscH && sscH !== ssc) add(ssc, sscH);
+  else if (fscW) add(fsc, fscW);
+  const time = chans.find(c => /^time$/i.test(c)) || find(/^time|time$/i);
+  if (time) add(time, ssc);
+}
+
+// ---------- clear ----------
+async function clearSamples() {
+  const ws = app.ws;
+  if (!ws.samples.length) return toast('No samples to clear');
+  const choice = await choose('Clear samples', `Remove all ${ws.samples.length} sample(s) from “${ws.name}”? The FCS files on your computer are not affected.`, [
+    { label: 'Cancel', value: null },
+    { label: 'Start fresh (also remove gates and plots)', value: 'all' },
+    { label: 'Remove samples, keep gates and plots', value: 'samples', primary: true }]);
+  if (!choice) return;
+  if (choice === 'all') {
+    const fresh = new Workspace(ws.name);
+    app.workspaces[app.workspaces.indexOf(ws)] = fresh;
+    app.ws = fresh;
+  } else {
+    ws.samples = [];
+    ws.activeId = null;
+    ws.engine.invalidate();
+    ws.figures.forEach(f => { if (f.series) f.series = []; });
+    ws.refreshAutoTransforms();
+    ws.rebase(); ws.dirty = true;
+  }
+  renderAll();
+  toast(choice === 'all' ? 'Workspace cleared' : 'Samples removed — gates and plots are kept for the next files you load');
 }
 
 // ---------- sample list ----------
@@ -302,6 +335,7 @@ function popOptions(sel) {
   walk(null, 1);
   return out;
 }
+function dotSizeOptions(sel) { return DOT_SIZES.map(([v, l]) => h('option', { value: v, selected: (sel || DEFAULT_DOT) === v }, `${l} (${v} px)`)); }
 function kindOptions(sel) { return PLOT_KINDS.map(([v, l]) => h('option', { value: v, selected: normalizeKind(sel) === v }, l)); }
 function eventLimitOptions(sel, { withDefault = false } = {}) {
   const out = withDefault ? [h('option', { value: 'default', selected: sel === undefined || sel === null }, `Workspace default (${fmtEvents(app.ws.displayMax)})`)] : [];
@@ -378,12 +412,58 @@ function plotSettings(p, anchor) {
     p.y ? h('label', {}, h('span', {}, 'Contour step'), h('select', { onchange: e => set(q => { q.contourStep = +e.target.value; }) },
       [[0.05, '5% of events'], [0.1, '10%'], [0.2, '20%']].map(([v, l]) => h('option', { value: v, selected: (p.contourStep || 0.1) === v }, l)))) : null,
     p.y ? h('label', {}, h('span', {}, 'Outliers'), h('input', { type: 'checkbox', checked: p.outliers !== false, onchange: e => set(q => { q.outliers = e.target.checked; }) }), h('small', { class: 'hint' }, 'dots outside contours')) : null,
+    p.y ? h('label', {}, h('span', {}, 'Dot size'), h('select', { onchange: e => set(q => { q.dotSize = +e.target.value; }) }, dotSizeOptions(p.dotSize))) : null,
     !p.y ? h('label', {}, h('span', {}, 'Smooth'), h('input', { type: 'checkbox', checked: p.smooth !== false, onchange: e => set(q => { q.smooth = e.target.checked; }) })) : null,
     h('div', { class: 'row' },
-      h('button', { class: 'btn small', onclick: () => { closePopover(); app.openScale(p.x, 'x'); } }, 'X axis scale…'),
-      p.y ? h('button', { class: 'btn small', onclick: () => { closePopover(); app.openScale(p.y, 'y'); } }, 'Y axis scale…') : null),
+      h('button', { class: 'btn small', onclick: () => axisMenu(p, 'x', anchor) }, 'X axis…'),
+      h('button', { class: 'btn small', onclick: () => axisMenu(p, 'y', anchor) }, p.y ? 'Y axis…' : 'Y: histogram…')),
     h('div', { class: 'hint-box' }, n > 1 ? 'Changes apply to all selected plots.' : 'Tip: shift-click plots or drag a box around them to change several at once.'));
   popover(anchor, body);
+}
+
+// ---- quick axis menu: channel and scale of one axis of this plot (or of the selected plots) ----
+const SCALE_KINDS = [['linear', 'Linear'], ['log', 'Log'], ['logicle', 'Biex'], ['arcsinh', 'Arcsinh']];
+function axisMenu(p, axis, anchor) {
+  const ws = app.ws;
+  const body = h('div', { class: 'pop-form axis-menu' });
+  const draw = () => {
+    const n = targetsFor(p).length;
+    const ch = axis === 'x' ? p.x : p.y;
+    const label = ch ? ws.channelLabel(ch) : '';
+    const cfg = ch ? { ...ws.getCfg(ch) } : null;
+    if (cfg) delete cfg.auto;
+    const apply = () => { ws.transforms[ch] = { ...cfg }; ws.engine.invalidate(); renderGating(); renderGateTree(); draw(); };
+    const num = (key, text, step = 'any') => h('label', {}, h('span', {}, text), h('input', { type: 'number', step, value: cfg[key], style: 'width:100px', onchange: e => { const v = parseFloat(e.target.value); if (Number.isFinite(v)) { cfg[key] = v; apply(); } } }));
+    const setKind = kind => {
+      const { range } = ws.channelRange(ch);
+      if (kind === cfg.kind) return;
+      Object.keys(cfg).forEach(k => delete cfg[k]);
+      Object.assign(cfg, kind === 'logicle' ? (({ auto, ...c }) => c)(defaultTransformFor('FL', range)) : kind === 'arcsinh' ? { kind, cofactor: 150, min: -1000, max: range } : kind === 'log' ? { kind, min: 10, max: range } : { kind, min: 0, max: range });
+      apply();
+    };
+    body.replaceChildren(...[
+      h('div', { class: 'pop-title' }, `${axis.toUpperCase()} axis${n > 1 ? ` · ${n} selected plots` : ''}`),
+      h('label', {}, h('span', {}, 'Channel'), h('select', { onchange: e => { applyPlots(p, q => { q[axis] = e.target.value || null; }, { full: true }); draw(); } }, channelOptions(ch, { allowHist: axis === 'y' }))),
+      cfg ? h('div', { class: 'seg', role: 'group', 'aria-label': 'Scale' }, SCALE_KINDS.map(([k, l]) => h('button', { class: 'btn small' + (cfg.kind === k ? ' primary' : ''), onclick: () => setKind(k) }, l))) : null,
+      cfg && (cfg.kind === 'linear' || cfg.kind === 'log') ? [num('min', 'Minimum'), num('max', 'Maximum')] : null,
+      cfg && cfg.kind === 'arcsinh' ? [num('cofactor', 'Cofactor'), num('min', 'Minimum'), num('max', 'Maximum')] : null,
+      cfg && cfg.kind === 'logicle' ? h('label', {}, h('span', {}, 'Width (W)'), h('input', { type: 'number', step: 0.05, min: 0, value: cfg.W, style: 'width:70px', onchange: e => { const v = parseFloat(e.target.value); if (Number.isFinite(v)) { cfg.W = v; apply(); } } }),
+        h('button', { class: 'btn small', title: 'Estimate W from the negative events of the active sample', onclick: () => { const W = autoW(ch, cfg); if (W !== null) { cfg.W = W; apply(); } } }, 'Auto')) : null,
+      cfg ? h('div', { class: 'hint-box' }, `The scale belongs to ${label}: every plot showing it uses the same scale, so gates select the same events everywhere.`) : null,
+    ].flat().filter(Boolean));
+  };
+  draw();
+  popover(anchor, body);
+}
+
+// Logicle W from the 5th percentile of negative values in the active sample (Parks et al. 2006)
+function autoW(ch, cfg) {
+  const col = app.ws.activeSample()?.column(ch); if (!col) return null;
+  const negs = []; for (let i = 0; i < col.length; i++) if (col[i] < 0) negs.push(col[i]);
+  if (negs.length < 20) { toast('Too few negative events to estimate W'); return null; }
+  negs.sort((a, b) => a - b);
+  const r = negs[Math.floor(negs.length * 0.05)];
+  return +Math.max(0, Math.min((cfg.M / 2) - 0.01, (cfg.M - Math.log10(cfg.T / Math.abs(r))) / 2)).toFixed(2);
 }
 
 // ---- plot selection (shift-click, rubber band) ----
@@ -568,7 +648,7 @@ function figureSpec(f, theme) {
   return {
     w: f.w, h: f.h, theme, kind: f.kind === 'overlay-hist' ? 'histogram' : 'dot', title: f.title,
     x: { name: f.x, label: ws.channelLabel(f.x), cfg: cfgX }, y: f.y ? { name: f.y, label: ws.channelLabel(f.y), cfg: cfgY } : null,
-    series, labels: { mode: f.labelMode || 'inside', legendPos: f.legendPos }, gateLabels: f.gateLabels !== false,
+    series, labels: { mode: f.labelMode || 'inside', legendPos: f.legendPos }, gateLabels: f.gateLabels !== false, dotSize: f.dotSize,
     hist: { mode: f.mode, offset: f.offset, smooth: f.smooth, fill: f.fill },
     gates: f.kind === 'overlay-hist' && f.showGates !== false ? overlayGates(f) : [],
   };
@@ -614,7 +694,7 @@ app.createFigureGate = (f, geom) => {
 function batchSpec(f, s, theme) {
   const ws = app.ws;
   const pop = f.pop && ws.engine.get(f.pop) ? f.pop : null;
-  const spec = buildSpec(ws, s, { pop, x: f.x, y: f.y, kind: f.plotKind, maxEvents: f.maxEvents }, f.w, f.h, {
+  const spec = buildSpec(ws, s, { pop, x: f.x, y: f.y, kind: f.plotKind, maxEvents: f.maxEvents, dotSize: f.dotSize }, f.w, f.h, {
     theme, title: `${s.name.replace(/\.fcs$/i, '')} (${ws.engine.population(s, pop).count.toLocaleString()})`,
     noGates: f.showGates === false, compactLabels: true, selectedGate: ws.selectedGate,
   });
@@ -678,6 +758,7 @@ function figureCard(f) {
   ctrl.append(field('Title', h('input', { type: 'text', value: f.title, placeholder: '(optional)', oninput: e => { f.title = e.target.value; redraw(); } })));
   ctrl.append(field('X', h('select', { onchange: e => { f.x = e.target.value; redraw(); } }, channelOptions(f.x))));
   if (f.kind !== 'overlay-hist') ctrl.append(field('Y', h('select', { onchange: e => { f.y = e.target.value || null; redraw(); } }, channelOptions(f.y, { allowHist: f.kind === 'batch' }))));
+  if (f.kind !== 'overlay-hist') ctrl.append(field('Dot size', h('select', { onchange: e => { f.dotSize = +e.target.value; redraw(); } }, dotSizeOptions(f.dotSize))));
   if (f.kind !== 'overlay-hist') ctrl.append(field('Events', h('select', { title: 'Events shown per plot / series', onchange: e => { f.maxEvents = e.target.value === 'default' ? undefined : +e.target.value; redraw(); } }, eventLimitOptions(f.maxEvents, { withDefault: true }))));
   if (f.kind === 'batch') {
     ctrl.append(field('Population', h('select', { onchange: e => { f.pop = e.target.value || null; redraw(); } }, popOptions(f.pop))));
@@ -966,7 +1047,8 @@ function openComp() {
 
 function afterDataChange() { app.ws.engine.invalidate(); app.scheduleCommit(); renderAll(); }
 
-app.openScale = (ch, axis) => openTransforms(ch, axis);
+// clicking an axis opens the quick menu at the click point
+app.axisMenu = (def, axis, x, y) => axisMenu(def, axis, { getBoundingClientRect: () => ({ left: x, right: x, top: y, bottom: y }) });
 
 function openTransforms(initial, axis) {
   const ws = app.ws;
@@ -1262,6 +1344,7 @@ $('#btnTransforms').addEventListener('click', () => openTransforms(app.ws.plots.
 $('#btnSaveWs').addEventListener('click', () => app.saveWorkspace());
 $('#btnSaveTpl').addEventListener('click', saveTemplate);
 $('#btnApplyTpl').addEventListener('click', applyTemplate);
+$('#btnClear').addEventListener('click', clearSamples);
 $('#btnTheme').addEventListener('click', () => { applyTheme(app.theme === 'dark' ? 'light' : 'dark'); renderTab(); });
 $('#btnUndo').addEventListener('click', undo);
 $('#btnRedo').addEventListener('click', redo);

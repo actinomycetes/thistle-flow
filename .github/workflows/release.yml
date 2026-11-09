@@ -1,0 +1,48 @@
+# Publishes a GitHub pre-release for every version in js/version.js that has no tag yet:
+# tag vX.Y.Z on the commit that introduced the version, the single-file build attached,
+# notes taken from the version history in help.html. Runs after CI passes on main, so a
+# version-bump commit is all a release needs.
+name: Release
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - name: Create missing releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          git fetch --tags --force
+          # every version that js/version.js has ever had, oldest first
+          versions=$(git log --reverse -p -- js/version.js | sed -n "s/^+export const APP_VERSION = '\([0-9.]*\)';/\1/p" | awk '!seen[$0]++')
+          for v in $versions; do
+            tag="v$v"
+            if git rev-parse -q --verify "refs/tags/$tag" >/dev/null; then echo "$tag exists"; continue; fi
+            sha=$(git log --reverse --format=%H -S"APP_VERSION = '$v'" -- js/version.js | head -1)
+            echo "Releasing $tag from $sha"
+            dir="$RUNNER_TEMP/build-$v"
+            git worktree add --detach "$dir" "$sha"
+            (cd "$dir" && node tools/build.mjs)
+            node tools/release-notes.mjs "$v" help.html > "$RUNNER_TEMP/notes-$v.md"
+            gh release create "$tag" "$dir/dist/thistle-flow.html" --target "$sha" --prerelease \
+              --title "Thistle Flow $tag (beta)" --notes-file "$RUNNER_TEMP/notes-$v.md"
+            git worktree remove --force "$dir"
+          done

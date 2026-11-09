@@ -30,7 +30,9 @@ npm start                                        # http://localhost:8080
    "Known limitations of vX.Y.Z"). `test/version.test.js` checks that these agree.
 2. Add a row at the top of the version history table in `help.html` (version, date, `Thistle Flow`, what changed).
 3. `npm test` and `npm run test:e2e` must pass. New feature means new test.
-4. Commit with a message like `v0.3.1: <summary>`; tag releases `v0.3.1`.
+4. Commit with a message like `v0.3.1: <summary>` and push to `main`. Do not tag by hand: after CI passes,
+   `.github/workflows/release.yml` tags the commit that introduced the version and publishes a GitHub pre-release
+   with `dist/thistle-flow.html` attached and notes from the help.html history row (`tools/release-notes.mjs`).
 Versioning: 0.MINOR.PATCH. Fixes bump PATCH, new features bump MINOR; 1.0 only after validation.
 
 ## Architecture map

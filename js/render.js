@@ -28,6 +28,10 @@ export const LUT = (() => {
   return lut;
 })();
 
+// Dot sizes (px) offered in the UI; plots default to DEFAULT_DOT
+export const DOT_SIZES = [[0.8, 'Tiny'], [1.2, 'Small'], [1.6, 'Medium'], [2.2, 'Large'], [3, 'Extra large']];
+export const DEFAULT_DOT = 1.2;
+
 export const SERIES_COLORS = ['#d62728', '#1f77b4', '#2ca02c', '#ff7f0e', '#9467bd', '#8c564b', '#e377c2', '#17becf', '#7f7f7f', '#bcbd22', '#000000'];
 
 // extraRight: room reserved right of the plot (series labels placed outside)
@@ -86,11 +90,13 @@ function drawRaster(ctx, img, x, y, w, h, smooth) {
  *                                                  // labelPos overrides gate.labelPos; render sets item.labelBox
  *   labels: { mode: 'inside'|'outside'|'off', legendPos },  // series labels / legend (series may carry labelPos)
  *   gateLabels: false to hide gate labels
+ *   dotSize: px size of each event dot (pseudocolor, dot, contour outliers)
  * }
  */
 export function renderPlot(ctx, spec) {
   const T = spec.theme || THEMES.light;
   const kind = spec.kind === 'histogram' ? 'histogram' : normalizeKind(spec.kind);
+  const dot = spec.dotSize || DEFAULT_DOT; // dot size in px
   const L = layout(spec.w, spec.h, outsideLabelWidth(ctx, spec));
   ctx.save();
   ctx.fillStyle = T.bg;
@@ -98,10 +104,10 @@ export function renderPlot(ctx, spec) {
   ctx.save();
   ctx.beginPath(); ctx.rect(MARGIN.l, MARGIN.t, L.pw, L.ph); ctx.clip();
   if (kind === 'histogram') drawHistograms(ctx, L, spec, T);
-  else if (spec.series.length === 1 && kind === 'pseudo') drawPseudo(ctx, L, spec.series[0]);
+  else if (spec.series.length === 1 && kind === 'pseudo') drawPseudo(ctx, L, spec.series[0], dot);
   else if (spec.series.length === 1 && kind === 'smooth') drawSmooth(ctx, L, spec.series[0]);
-  else if (spec.series.length === 1 && kind === 'contour') drawContour(ctx, L, spec.series[0], spec.contour || {}, T);
-  else drawDots(ctx, L, spec.series, T);
+  else if (spec.series.length === 1 && kind === 'contour') drawContour(ctx, L, spec.series[0], spec.contour || {}, T, dot);
+  else drawDots(ctx, L, spec.series, T, dot);
   ctx.restore();
   drawAxes(ctx, L, spec, T);
   if (spec.gates) for (const g of spec.gates) drawGate(ctx, L, spec, g, T);
@@ -151,35 +157,29 @@ export function gaussianBlur(g, nx, ny, sigma) {
   return out;
 }
 
-function box3(g, nx, ny) {
-  const out = new Float32Array(g.length);
-  for (let y = 0; y < ny; y++) for (let x = 0; x < nx; x++) {
-    let s = 0, n = 0;
-    for (let dy = -1; dy <= 1; dy++) { const yy = y + dy; if (yy < 0 || yy >= ny) continue;
-      for (let dx = -1; dx <= 1; dx++) { const xx = x + dx; if (xx < 0 || xx >= nx) continue;
-        const wgt = dx === 0 && dy === 0 ? 4 : (dx === 0 || dy === 0 ? 2 : 1);
-        s += g[yy * nx + xx] * wgt; n += wgt; } }
-    out[y * nx + x] = s / n * 4; // keep isolated single events visible
-  }
-  return out;
-}
-
-function drawPseudo(ctx, L, s) {
+// Pseudocolor: every displayed event is a small square dot coloured by the local density
+// (density is estimated from all events). Dots are drawn sparse-to-dense so dense cores sit on top.
+function drawPseudo(ctx, L, s, size) {
   const cell = 2;
   const nx = Math.max(1, Math.floor(L.pw / cell)), ny = Math.max(1, Math.floor(L.ph / cell));
-  const grid = binGrid(s, nx, ny);
-  const sm = box3(grid, nx, ny);
-  let max = 0; for (let i = 0; i < sm.length; i++) if (sm[i] > max) max = sm[i];
-  const img = makeImage(nx, ny);
-  const lmax = Math.log1p(max);
-  for (let gy = 0; gy < ny; gy++) for (let gx = 0; gx < nx; gx++) {
-    const v = sm[gy * nx + gx];
-    if (grid[gy * nx + gx] <= 0 && v <= 0.34) continue;
-    const c = LUT[Math.min(255, Math.max(0, Math.round((lmax > 0 ? Math.log1p(v) / lmax : 0) * 255)))];
-    const o = ((ny - 1 - gy) * nx + gx) * 4;
-    img.data[o] = c[0]; img.data[o + 1] = c[1]; img.data[o + 2] = c[2]; img.data[o + 3] = 255;
+  const d = gaussianBlur(binGrid(s, nx, ny, s.fullIdx || s.idx), nx, ny, 1.2);
+  let max = 0; for (let i = 0; i < d.length; i++) if (d[i] > max) max = d[i];
+  const lmax = Math.log1p(max) || 1;
+  const { ux, uy, idx } = s;
+  const buckets = Array.from({ length: 64 }, () => []);
+  for (let k = 0; k < idx.length; k++) {
+    const i = idx[k];
+    const x = Math.min(1, Math.max(0, ux[i] || 0)), y = Math.min(1, Math.max(0, uy[i] || 0));
+    const gx = Math.min(nx - 1, Math.floor(x * nx)), gy = Math.min(ny - 1, Math.floor(y * ny));
+    buckets[Math.min(63, Math.floor(Math.log1p(d[gy * nx + gx]) / lmax * 63.999))].push(x, y);
   }
-  drawRaster(ctx, img, MARGIN.l, MARGIN.t, nx * cell, ny * cell, false);
+  const half = size / 2;
+  buckets.forEach((pts, b) => {
+    if (!pts.length) return;
+    const c = LUT[Math.round(b / 63 * 255)];
+    ctx.fillStyle = `rgb(${c[0]},${c[1]},${c[2]})`;
+    for (let k = 0; k < pts.length; k += 2) ctx.fillRect(L.ux2px(pts[k]) - half, L.uy2px(pts[k + 1]) - half, size, size);
+  });
 }
 
 // Smooth kernel-density shading
@@ -246,7 +246,7 @@ export function marchingSquares(d, nx, ny, level) {
   return segs;
 }
 
-function drawContour(ctx, L, s, opt, T) {
+function drawContour(ctx, L, s, opt, T, size = DEFAULT_DOT) {
   const cell = 3;
   const nx = Math.max(4, Math.floor(L.pw / cell)), ny = Math.max(4, Math.floor(L.ph / cell));
   const grid = binGrid(s, nx, ny, s.fullIdx || s.idx); // contour levels use every event; only outlier dots are thinned
@@ -261,7 +261,7 @@ function drawContour(ctx, L, s, opt, T) {
       let gx = Math.floor(ux[i] * nx), gy = Math.floor(uy[i] * ny);
       gx = Math.min(nx - 1, Math.max(0, gx || 0)); gy = Math.min(ny - 1, Math.max(0, gy || 0));
       if (d[gy * nx + gx] >= lo) continue;
-      ctx.fillRect(L.ux2px(Math.min(1, Math.max(0, ux[i]))) - 0.6, L.uy2px(Math.min(1, Math.max(0, uy[i]))) - 0.6, 1.3, 1.3);
+      ctx.fillRect(L.ux2px(Math.min(1, Math.max(0, ux[i]))) - size / 2, L.uy2px(Math.min(1, Math.max(0, uy[i]))) - size / 2, size, size);
     }
   }
   ctx.strokeStyle = T.contour; ctx.lineWidth = 0.9;
@@ -272,7 +272,8 @@ function drawContour(ctx, L, s, opt, T) {
   }
 }
 
-function drawDots(ctx, L, series, T) {
+function drawDots(ctx, L, series, T, size = DEFAULT_DOT) {
+  const half = size / 2;
   series.forEach(s => {
     const { ux, uy, idx } = s;
     ctx.fillStyle = s.color || T.dot;
@@ -280,7 +281,7 @@ function drawDots(ctx, L, series, T) {
     for (let k = 0; k < idx.length; k++) {
       const i = idx[k];
       const x = Math.min(1, Math.max(0, ux[i] || 0)), y = Math.min(1, Math.max(0, uy[i] || 0));
-      ctx.fillRect(L.ux2px(x) - 0.6, L.uy2px(y) - 0.6, 1.3, 1.3);
+      ctx.fillRect(L.ux2px(x) - half, L.uy2px(y) - half, size, size);
     }
     ctx.globalAlpha = 1;
   });

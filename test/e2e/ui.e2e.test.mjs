@@ -45,6 +45,11 @@ test('all UI features work end to end', { timeout: 240000 }, async () => {
   await page.click('#btnDemo');
   await page.waitForSelector('.plot-card canvas');
   await page.waitForTimeout(400);
+  const defaults = await ev(() => window.thistleFlow.ws.plots.map(p => `${p.x}/${p.y}`));
+  check('default plots: FSC-A/SSC-A, FSC-A/FSC-H (singlets), Time/SSC-A', JSON.stringify(defaults) === JSON.stringify(['FSC-A/SSC-A', 'FSC-A/FSC-H', 'Time/SSC-A']), defaults.join(', '));
+  // the rest of this test uses scatter, two fluorescence channels and a histogram
+  await ev(() => { const ws = window.thistleFlow.ws; ws.plots[1].x = 'FITC-A'; ws.plots[1].y = 'PE-A'; ws.plots[2].x = 'FITC-A'; ws.plots[2].y = null; window.thistleFlow.renderAll(); });
+  await page.waitForTimeout(200);
 
   const plotBox = async i => page.locator('.plot-card canvas').nth(i).boundingBox();
   const P = (b, ux, uy) => [b.x + 64 + ux * (b.width - 78), b.y + 24 + (1 - uy) * (b.height - 72)];
@@ -112,13 +117,19 @@ test('all UI features work end to end', { timeout: 240000 }, async () => {
   b = await plotBox(1);
   await page.mouse.click(b.x + 20, b.y + 24 + 100);
   await page.waitForTimeout(200);
-  const modalTitle = await page.textContent('#modalTitle');
-  check('(8b) clicking an axis opens that axis scale', modalTitle === 'Y axis scale', modalTitle);
+  const menuTitle = await page.textContent('.popover .pop-title').catch(() => '');
+  check('(8b) clicking an axis opens a quick menu for that axis only', menuTitle.startsWith('Y axis') && (await page.isHidden('#modal')), menuTitle);
   const yCh = await ev(() => window.thistleFlow.ws.plots[1].y);
-  await page.locator('#modalBody select').nth(1).selectOption('arcsinh');
+  check('(8b) quick menu shows the channel of that axis', (await page.locator('.popover select').first().inputValue()) === yCh);
+  await page.click('.popover .seg button:has-text("Arcsinh")');
   await page.waitForTimeout(150);
   check('(8b) Y axis scale changed independently', await page.evaluate(ch => window.thistleFlow.ws.transforms[ch].kind === 'arcsinh' && window.thistleFlow.ws.transforms[window.thistleFlow.ws.plots[1].x].kind !== 'arcsinh', yCh));
-  await page.click('#modalClose');
+  // switching the channel of this axis from the quick menu changes only this plot
+  await page.locator('.popover select').first().selectOption('APC-A');
+  await page.waitForTimeout(150);
+  check('(8b) quick menu changes the channel of this plot only', await ev(() => window.thistleFlow.ws.plots[1].y === 'APC-A' && window.thistleFlow.ws.plots[0].y === 'SSC-A'));
+  await page.locator('.popover select').first().selectOption('PE-A');
+  await page.keyboard.press('Escape');
 
   // (11) undo/redo in gating
   const nG = await ev(() => window.thistleFlow.ws.engine.list().length);
@@ -297,6 +308,21 @@ test('all UI features work end to end', { timeout: 240000 }, async () => {
   await page.locator('.figure-card[data-fig=fb]').screenshot({ path: OUT + '/e-batch.png' });
   await page.click('#btnUndo'); await page.waitForTimeout(150);
   check('(i) Layout undo restores the label position', await ev(() => !window.thistleFlow.ws.figures.find(f => f.id === 'fb').labelPos));
+
+  // dot size option (pseudocolor draws dots, sized per plot)
+  await page.click('[data-tab=gating]');
+  await page.locator('.plot-card').nth(0).locator('button[title^="Plot settings"]').click();
+  await page.locator('.popover label:has-text("Dot size") select').selectOption('3');
+  await page.keyboard.press('Escape');
+  check('dot size per plot', await ev(() => window.thistleFlow.ws.plots[0].dotSize === 3 && [...window.thistleFlow.views.values()][0].spec.dotSize === 3));
+  // Clear: remove samples but keep gates and plots
+  const nGatesBefore = await ev(() => window.thistleFlow.ws.engine.list().length);
+  await page.click('#btnClear');
+  await page.click('#modalBody button:has-text("keep gates")');
+  await page.waitForTimeout(200);
+  check('🗑 Clear removes all samples and keeps gates/plots', await page.evaluate(n => window.thistleFlow.ws.samples.length === 0 && window.thistleFlow.ws.engine.list().length === n && window.thistleFlow.ws.plots.length > 0, nGatesBefore));
+  await page.click('#btnClear'); // nothing left: just a message, no dialog
+  check('Clear with no samples shows no dialog', await page.isHidden('#modal'));
 
   // reload workspace into fresh page
   await page.reload(); await page.click('#btnDemo'); await page.waitForSelector('.plot-card canvas');
