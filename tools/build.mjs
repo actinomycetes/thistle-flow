@@ -1,0 +1,28 @@
+// Bundles FlowLite into one self-contained HTML file (dist/flowlite.html) that opens
+// directly from disk (file://) without a web server. No dependencies.
+import { readFileSync, writeFileSync, mkdirSync, unlinkSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const root = join(dirname(fileURLToPath(import.meta.url)), '..');
+const order = ['transforms', 'fcs', 'model', 'gates', 'render', 'plotview', 'demo', 'app'];
+let js = '';
+for (const m of order) {
+  let src = readFileSync(join(root, 'js', m + '.js'), 'utf8');
+  src = src.replace(/^import[^;]+;\s*$/gm, '');          // drop imports (everything shares one scope)
+  src = src.replace(/^export\s+(?=(const|let|function|class|async)\b)/gm, '');
+  if (/^\s*export\b/m.test(src)) throw new Error(`Unsupported export form in ${m}.js`);
+  js += `\n// ---- ${m}.js ----\n` + src;
+}
+js = `(() => {\n'use strict';\n${js}\n})();\n`;
+mkdirSync(join(root, 'dist'), { recursive: true });
+const tmp = join(root, 'dist', '.bundle-check.js');
+writeFileSync(tmp, js);
+try { execFileSync(process.execPath, ['--check', tmp], { stdio: 'inherit' }); } finally { unlinkSync(tmp); } // catches duplicate top-level names
+const css = readFileSync(join(root, 'css', 'style.css'), 'utf8');
+let html = readFileSync(join(root, 'index.html'), 'utf8');
+html = html.replace(/<link rel="stylesheet" href="css\/style.css">/, () => `<style>\n${css}</style>`);
+html = html.replace(/<script type="module" src="js\/app.js"><\/script>/, () => `<script>\n${js.replace(/<\/script/gi, '<\\/script')}</script>`);
+writeFileSync(join(root, 'dist', 'flowlite.html'), html);
+console.log(`dist/flowlite.html written (${(html.length / 1024).toFixed(0)} KB)`);

@@ -1,0 +1,12 @@
+{
+  "name": "flowlite",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Lightweight browser-based flow cytometry (FCS) analysis",
+  "scripts": {
+    "start": "python3 -m http.server 8080",
+    "test": "node --test test/*.test.js",
+    "build": "node tools/build.mjs"
+  }
+}
