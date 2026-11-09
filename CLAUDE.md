@@ -31,8 +31,11 @@ npm start                                        # http://localhost:8080
 2. Add a row at the top of the version history table in `help.html` (version, date, `Thistle Flow`, what changed).
 3. `npm test` and `npm run test:e2e` must pass. New feature means new test.
 4. Commit with a message like `v0.3.1: <summary>` and push to `main`. Do not tag by hand: after CI passes,
-   `.github/workflows/release.yml` tags the commit that introduced the version and publishes a GitHub pre-release
+   `.github/workflows/release.yml` tags the last commit carrying the version and publishes a GitHub pre-release
    with `dist/thistle-flow.html` attached and notes from the help.html history row (`tools/release-notes.mjs`).
+   Keep changes to `.github/workflows/` in commits of their own: the workflow token cannot tag commits that change
+   workflow files, so such commits are never used as release targets. (Repository setting needed once:
+   Settings → Actions → General → Workflow permissions → Read and write.)
 Versioning: 0.MINOR.PATCH. Fixes bump PATCH, new features bump MINOR; 1.0 only after validation.
 
 ## Architecture map

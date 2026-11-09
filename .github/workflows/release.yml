@@ -1,5 +1,6 @@
 # Publishes a GitHub pre-release for every version in js/version.js that has no tag yet:
-# tag vX.Y.Z on the commit that introduced the version, the single-file build attached,
+# tag vX.Y.Z on the last commit carrying that version (so later fixes are included) that does not
+# change workflow files (the workflow token may not tag those), the single-file build attached,
 # notes taken from the version history in help.html. Runs on every push to main (after its
 # own unit tests), so a version-bump commit is all a release needs. It can also be started
 # by hand: Actions -> Release -> Run workflow.
@@ -35,7 +36,14 @@ jobs:
           for v in $versions; do
             tag="v$v"
             if git rev-parse -q --verify "refs/tags/$tag" >/dev/null; then echo "$tag exists"; continue; fi
-            sha=$(git log --reverse --format=%H -S"APP_VERSION = '$v'" -- js/version.js | head -1)
+            first=$(git log --reverse --format=%H -S"APP_VERSION = '$v'" -- js/version.js | head -1)
+            sha=""
+            for c in $(git rev-list --reverse "$first^..HEAD"); do
+              git show "$c:js/version.js" | grep -q "APP_VERSION = '$v'" || continue
+              git diff-tree --no-commit-id --name-only -r "$c" | grep -q '^\.github/workflows/' && continue
+              sha=$c
+            done
+            if [ -z "$sha" ]; then echo "::warning::$tag: every commit with this version changes workflow files; skipped"; continue; fi
             echo "Releasing $tag from $sha"
             dir="$RUNNER_TEMP/build-$v"
             git worktree add --detach "$dir" "$sha"
