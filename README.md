@@ -77,3 +77,14 @@ Logicle transform about 80 ms per channel, polygon gate about 70 ms. All of thes
 * Derived parameters, ratios, and dimensionality reduction (tSNE/UMAP)
 * Unmixing raw spectral data (load files already unmixed by the instrument software)
 * Running the work in a Web Worker for multi-million-event files
+
+## References
+The biexponential scale implements the published Logicle algorithm:
+* Parks DR, Roederer M, Moore WA. A new "Logicle" display method avoids deceptive effects of logarithmic scaling for low signals and compensated data. *Cytometry A* 2006;69(6):541–551.
+* Moore WA, Parks DR. Update for the logicle data scale including operational code implementations. *Cytometry A* 2012;81(4):273–277.
+
+## Citing
+See [`CITATION.cff`](CITATION.cff), or use GitHub's "Cite this repository" button.
+
+## Licence
+[MIT](LICENSE) © 2026 Takanobu Tagawa (The University of Edinburgh).

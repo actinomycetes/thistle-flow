@@ -1,0 +1,50 @@
+cff-version: 1.2.0
+message: "If you use Thistle Flow in your work, please cite it as below."
+title: "Thistle Flow: lightweight in-browser flow cytometry (FCS) analysis"
+type: software
+authors:
+  - given-names: Takanobu
+    family-names: Tagawa
+    affiliation: "The University of Edinburgh"
+version: 0.1.0
+license: MIT
+repository-code: "https://github.com/actinomycetes/thistle-flow"
+url: "https://actinomycetes.github.io/thistle-flow/"
+abstract: >-
+  Free, browser-based flow cytometry analysis: FCS 2.0-3.2 import, compensation,
+  biexponential (Logicle) scaling, hierarchical gating, MFI statistics and overlay figures.
+  Data never leaves the user's computer.
+keywords:
+  - flow cytometry
+  - FCS
+  - gating
+  - web application
+references:
+  - type: article
+    title: "A new \"Logicle\" display method avoids deceptive effects of logarithmic scaling for low signals and compensated data"
+    authors:
+      - family-names: Parks
+        given-names: David R.
+      - family-names: Roederer
+        given-names: Mario
+      - family-names: Moore
+        given-names: Wayne A.
+    journal: "Cytometry Part A"
+    volume: 69
+    issue: 6
+    start: 541
+    end: 551
+    year: 2006
+  - type: article
+    title: "Update for the logicle data scale including operational code implementations"
+    authors:
+      - family-names: Moore
+        given-names: Wayne A.
+      - family-names: Parks
+        given-names: David R.
+    journal: "Cytometry Part A"
+    volume: 81
+    issue: 4
+    start: 273
+    end: 277
+    year: 2012
