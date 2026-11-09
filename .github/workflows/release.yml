@@ -1,12 +1,11 @@
 # Publishes a GitHub pre-release for every version in js/version.js that has no tag yet:
 # tag vX.Y.Z on the commit that introduced the version, the single-file build attached,
-# notes taken from the version history in help.html. Runs after CI passes on main, so a
-# version-bump commit is all a release needs.
+# notes taken from the version history in help.html. Runs on every push to main (after its
+# own unit tests), so a version-bump commit is all a release needs. It can also be started
+# by hand: Actions -> Release -> Run workflow.
 name: Release
 on:
-  workflow_run:
-    workflows: [CI]
-    types: [completed]
+  push:
     branches: [main]
   workflow_dispatch:
 
@@ -15,16 +14,16 @@ permissions:
 
 jobs:
   release:
-    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
           fetch-depth: 0
       - uses: actions/setup-node@v4
         with: { node-version: 22 }
+      - name: Unit tests
+        run: npm test
       - name: Create missing releases
         env:
           GH_TOKEN: ${{ github.token }}
