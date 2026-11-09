@@ -253,6 +253,7 @@ test('all UI features work end to end', { timeout: 240000 }, async () => {
       { id: 'fb', kind: 'batch', x: 'FSC-A', y: 'SSC-A', pop: null, plotKind: 'pseudo', w: 230, h: 220, title: '' });
     window.thistleFlow.renderAll();
   });
+  const gatingLabelBefore = await ev(() => JSON.stringify(window.thistleFlow.ws.engine.list().find(x => x.name === 'Lymphocytes').labelPos || null));
   const ofig = page.locator('.figure-card[data-fig=fo]');
   await ofig.locator('button:has-text("Range gate")').click();
   let oc = await ofig.locator('canvas').boundingBox();
@@ -286,11 +287,13 @@ test('all UI features work end to end', { timeout: 240000 }, async () => {
   await bcan.first().scrollIntoViewIfNeeded();
   const bb = await bcan.first().boundingBox();
   const blb = await page.evaluate(() => document.querySelector('.figure-card[data-fig=fb] canvas')._figView.spec.gates[0].labelBox);
-  await page.mouse.move(bb.x + blb.cx, bb.y + blb.cy); await page.mouse.down(); await page.mouse.move(bb.x + blb.cx - 60, bb.y + blb.cy + 80, { steps: 6 }); await page.mouse.up();
+  // move the label to the vertical middle of the plot (always room there, wherever it starts)
+  const midY = 24 + (220 - 72) / 2;
+  await page.mouse.move(bb.x + blb.cx, bb.y + blb.cy); await page.mouse.down(); await page.mouse.move(bb.x + blb.cx - 40, bb.y + midY, { steps: 6 }); await page.mouse.up();
   await page.waitForTimeout(300);
   const bx = await page.evaluate(() => [...document.querySelectorAll('.figure-card[data-fig=fb] canvas')].map(c => Math.round(c._figView.spec.gates[0].labelBox.cy)));
-  check('(i) batch labels movable (same place in every sample plot)', bx.every(v => v === bx[0]) && Math.abs(bx[0] - blb.cy - 80) < 3, `${blb.cy} -> ${bx.join(',')}`);
-  check('(i) Gating label position not changed by Layout', await ev(() => JSON.stringify(window.thistleFlow.ws.engine.list().find(x => x.name === 'Lymphocytes').labelPos)) === JSON.stringify([1, 1]));
+  check('(i) batch labels movable (same place in every sample plot)', bx.every(v => v === bx[0]) && Math.abs(bx[0] - midY) < 3, `${blb.cy} -> ${bx.join(',')}`);
+  check('(i) Gating label position not changed by Layout', await ev(() => JSON.stringify(window.thistleFlow.ws.engine.list().find(x => x.name === 'Lymphocytes').labelPos || null)) === gatingLabelBefore);
   await page.locator('.figure-card[data-fig=fb]').screenshot({ path: OUT + '/e-batch.png' });
   await page.click('#btnUndo'); await page.waitForTimeout(150);
   check('(i) Layout undo restores the label position', await ev(() => !window.thistleFlow.ws.figures.find(f => f.id === 'fb').labelPos));
