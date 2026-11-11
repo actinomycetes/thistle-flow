@@ -35,6 +35,11 @@ export function subsampleIdx(idx, max) {
   return arr;
 }
 
+// Quadrants are labelled Q1-Q4 in plots (Q1 upper left, then clockwise) so the % stays visible;
+// the full names are in the gate tree and statistics.
+export const QUAD_NUM = { UL: 'Q1', UR: 'Q2', LR: 'Q3', LL: 'Q4' };
+export const plotGateName = g => (g.type === 'quad' && QUAD_NUM[g.q]) || g.name;
+
 // Colour of a sample in a quick overlay (same in the plots and the sample list)
 export const overlayColor = i => SERIES_COLORS[i % SERIES_COLORS.length];
 
@@ -59,7 +64,7 @@ export function buildSpec(ws, sample, def, w, h, opts = {}) {
       const st = populationStats(eng, sample, g.id);
       return {
         gate: g, color: g.color,
-        text: opts.compactLabels ? fmtPct(st.pctParent) : `${g.name}  ${fmtPct(st.pctParent)}`,
+        text: opts.compactLabels ? fmtPct(st.pctParent) : `${plotGateName(g)}  ${fmtPct(st.pctParent)}`,
         selected: !!sel && (sel.id === g.id || (g.group && sel.group === g.group)),
       };
     });
@@ -97,8 +102,8 @@ function buildOverlaySpec(ws, samples, def, w, h, opts) {
   const gates = opts.noGates ? [] : eng.children(popId)
     .filter(g => (isHist ? g.type === 'interval' && g.x === x : g.type !== 'interval' && g.x === x && g.y === y))
     .map(g => ({
-      gate: g, color: g.color, text: g.name,
-      lines: [{ text: g.name, color: g.color }, ...list.map(({ s, color }) => ({ text: `${name(s)}  ${fmtPct(populationStats(eng, s, g.id).pctParent)}`, color }))],
+      gate: g, color: g.color, text: plotGateName(g),
+      lines: [{ text: plotGateName(g), color: g.color }, ...list.map(({ s, color }) => ({ text: `${name(s)}  ${fmtPct(populationStats(eng, s, g.id).pctParent)}`, color }))],
       selected: !!sel && (sel.id === g.id || (g.group && sel.group === g.group)),
     }));
   const first = list[0].s;

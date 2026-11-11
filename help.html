@@ -9,7 +9,7 @@
   catch { document.documentElement.dataset.theme = 'dark'; }
 </script>
 <link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2024%2026%22%3E%3Cg%20stroke%3D%22%23a855f7%22%20stroke-width%3D%221.6%22%20stroke-linecap%3D%22round%22%3E%3Cpath%20d%3D%22M12%2010V2%22%2F%3E%3Cpath%20d%3D%22M12%2010L7%203%22%2F%3E%3Cpath%20d%3D%22M12%2010L17%203%22%2F%3E%3Cpath%20d%3D%22M12%2010L4.5%206%22%2F%3E%3Cpath%20d%3D%22M12%2010L19.5%206%22%2F%3E%3Cpath%20d%3D%22M12%2010L9.5%202.3%22%2F%3E%3Cpath%20d%3D%22M12%2010L14.5%202.3%22%2F%3E%3C%2Fg%3E%3Cellipse%20cx%3D%2212%22%20cy%3D%2213.5%22%20rx%3D%225%22%20ry%3D%224.2%22%20fill%3D%22%2322c55e%22%2F%3E%3Cg%20fill%3D%22%2315803d%22%3E%3Ccircle%20cx%3D%229.7%22%20cy%3D%2212.7%22%20r%3D%22.95%22%2F%3E%3Ccircle%20cx%3D%2212.3%22%20cy%3D%2211.9%22%20r%3D%22.95%22%2F%3E%3Ccircle%20cx%3D%2214.7%22%20cy%3D%2213.3%22%20r%3D%22.95%22%2F%3E%3Ccircle%20cx%3D%2210.8%22%20cy%3D%2215.3%22%20r%3D%22.95%22%2F%3E%3Ccircle%20cx%3D%2213.5%22%20cy%3D%2215.5%22%20r%3D%22.95%22%2F%3E%3C%2Fg%3E%3Cpath%20d%3D%22M12%2017.5V25%22%20stroke%3D%22%2316a34a%22%20stroke-width%3D%221.8%22%20stroke-linecap%3D%22round%22%2F%3E%3Cpath%20d%3D%22M12%2021.5c-2.5-.5-4.5-2-5.5-4M12%2021c2.5-.5%204.3-1.8%205.3-3.8%22%20stroke%3D%22%2316a34a%22%20stroke-width%3D%221.4%22%20fill%3D%22none%22%20stroke-linecap%3D%22round%22%2F%3E%3C%2Fsvg%3E">
-<title>Thistle Flow v0.7.0 (Beta) — Help</title>
+<title>Thistle Flow v0.8.0 (Beta) — Help</title>
 <style>
   /* Thistle Plot palette: dark by default, light when the system asks for it */
   :root { --bg: #0f172a; --surf: #1e293b; --surf2: #263347; --text: #e2e8f0; --muted: #94a3b8; --border: #334155; --accent: #3b82f6; --code: #263347; --badge-bg: #1d3461; --note-bg: #1a2744; --note-bd: #2a4080; --note-tx: #93c5fd; color-scheme: dark; }
@@ -44,13 +44,13 @@
   <svg width="24" height="26" viewBox="0 0 24 26" aria-hidden="true" style="flex:none"><g stroke="#a855f7" stroke-width="1.6" stroke-linecap="round"><path d="M12 10V2"/><path d="M12 10L7 3"/><path d="M12 10L17 3"/><path d="M12 10L4.5 6"/><path d="M12 10L19.5 6"/><path d="M12 10L9.5 2.3"/><path d="M12 10L14.5 2.3"/></g><ellipse cx="12" cy="13.5" rx="5" ry="4.2" fill="#22c55e"/><g fill="#15803d"><circle cx="9.7" cy="12.7" r=".95"/><circle cx="12.3" cy="11.9" r=".95"/><circle cx="14.7" cy="13.3" r=".95"/><circle cx="10.8" cy="15.3" r=".95"/><circle cx="13.5" cy="15.5" r=".95"/></g><path d="M12 17.5V25" stroke="#16a34a" stroke-width="1.8" stroke-linecap="round"/><path d="M12 21.5c-2.5-.5-4.5-2-5.5-4M12 21c2.5-.5 4.3-1.8 5.3-3.8" stroke="#16a34a" stroke-width="1.4" fill="none" stroke-linecap="round"/></svg>
   <span class="title">Thistle Flow</span>
   <span class="badge beta">BETA</span>
-  <span class="badge">v0.7.0</span>
+  <span class="badge">v0.8.0</span>
   <a class="app" href="./">Open the app</a>
 </header>
 <main>
 <h1>Help and manual</h1>
 <p class="muted">Lightweight flow cytometry analysis in your browser; your data never leaves your computer. Sister app of <a href="https://actinomycetes.github.io/thistle-plot/">Thistle Plot</a> (statistics and figures). <a href="https://github.com/actinomycetes/thistle-flow">Source on GitHub</a>.</p>
-<div class="note">Thistle Flow is a <b>beta (v0.7.0)</b>. Check important results against an established package before you rely on them in a publication.</div>
+<div class="note">Thistle Flow is a <b>beta (v0.8.0)</b>. Check important results against an established package before you rely on them in a publication.</div>
 
 <nav class="toc">
   <a href="#start">Getting started</a>
@@ -75,6 +75,7 @@
 <h2 id="start">Getting started</h2>
 <ol>
   <li>Click <b>⬆ Open FCS…</b> or drag <code>.fcs</code> files onto the window. Files from BD FACSDiva, Attune NxT, Sony, Cytek, CytoFLEX and others are supported (FCS 2.0 to 3.2). Click <b>🧪 Demo data</b> to try the app without your own files.</li>
+  <li>Drag the <b>☰</b> handle of a sample to change the order of the samples. The order is used in Statistics, batch figures and overlays, and is saved with the workspace.</li>
   <li>Starting plots appear: FSC-A vs SSC-A (cells), FSC-A vs FSC-H (singlets) and, if the files have a time channel, Time vs SSC-A (to check the acquisition was stable). Click a sample in the left pane to make it the <i>active sample</i> that the plots show.</li>
   <li>Draw gates (see <a href="#gating">Gating</a>). Gates apply to <b>every sample in the workspace</b>, so you gate once and read the results for all samples in the <b>Statistics</b> tab.</li>
 </ol>
@@ -91,7 +92,7 @@
   <tr><td>Rectangle <kbd>R</kbd></td><td>Drag a box.</td></tr>
   <tr><td>Polygon <kbd>P</kbd></td><td>Click each corner. Double-click, or click the first point, to close. Right-click cancels.</td></tr>
   <tr><td>Ellipse <kbd>E</kbd></td><td>Drag the bounding box. It becomes an editable polygon.</td></tr>
-  <tr><td>Quadrant <kbd>Q</kbd></td><td>Click the centre. Four linked gates are created.</td></tr>
+  <tr><td>Quadrant <kbd>Q</kbd></td><td>Click the centre. Four linked gates are created. In Gating plots they are labelled <b>Q1</b> (upper left), <b>Q2</b> (upper right), <b>Q3</b> (lower right) and <b>Q4</b> (lower left) with their %, so the numbers stay readable. The gate tree shows the full names, e.g. “Q1 · CD4- CD8+”, and Statistics uses the full names.</td></tr>
   <tr><td>Range <kbd>I</kbd></td><td>On a histogram, drag across the range.</td></tr>
 </table>
 <p>After you name a gate, the tool switches back to <b>Select</b> <kbd>V</kbd>. In Select mode you can:</p>
@@ -222,7 +223,7 @@
   <tr><td><kbd>F1</kbd></td><td>This help</td></tr>
 </table>
 
-<h2 id="limits">Known limitations of v0.7.0 (beta)</h2>
+<h2 id="limits">Known limitations of v0.8.0 (beta)</h2>
 <ul>
   <li>Gates are shared by all samples in a workspace. There are no per-sample gate adjustments yet.</li>
   <li>FlowJo <code>.wsp</code> and Gating-ML files cannot be imported. There are no derived parameters and no tSNE/UMAP.</li>
@@ -233,6 +234,7 @@
 <p>All releases are beta (0.x).</p>
 <table>
   <tr><th>Version</th><th>Name</th><th>Changes</th></tr>
+  <tr><td>0.8.0 (11 Nov 2026)</td><td>Thistle Flow</td><td>Samples can be put in any order by dragging the ☰ handle in the sample list (the order is used in Statistics, batch figures and overlays, and saved with the workspace); quadrant gates are labelled Q1–Q4 with their % in Gating plots so the percentages stay visible, with the full names shown in the gate tree</td></tr>
   <tr><td>0.7.0 (9 Nov 2026)</td><td>Thistle Flow</td><td>Quick overlay in Gating: Ctrl/⌘-click or Shift-click samples in the sample list to overlay them in every gating plot (coloured dots, or histograms normalised to mode), with each sample’s % in the gate labels; <b>Population</b> in histogram and dot-plot overlays sets the gate of every series in one go (e.g. Singlets for all samples)</td></tr>
   <tr><td>0.6.1 (9 Nov 2026)</td><td>Thistle Flow</td><td>Dark mode is the default again for everyone: only clicking 🌙/☀️ is remembered (earlier versions also stored the automatic choice, which kept some browsers in light mode); the Help page follows the same choice</td></tr>
   <tr><td>0.6.0 (9 Nov 2026)</td><td>Thistle Flow</td><td>Pseudocolor plots draw each event as a small dot coloured by density (no more cross-shaped specks), with a <b>Dot size</b> setting for pseudocolor, dot and contour plots and for figures; clicking an axis opens a quick menu for that axis only (its channel, and the scale of that channel) instead of the global scale dialog; <b>🗑 Clear</b> removes all samples (optionally keeping gates and plots); new default plots after loading: FSC-A vs SSC-A, FSC-A vs FSC-H (singlets) and Time vs SSC-A, with the Time axis fitted to the recorded acquisition; releases are now published automatically</td></tr>

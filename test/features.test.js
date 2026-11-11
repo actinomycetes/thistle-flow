@@ -168,3 +168,13 @@ test('template: no data or file names, re-expands to all samples, applies compen
   assert.ok(target.samples.every(s => s.label('APC-A') === 'CD8a :: APC-A'));
   assert.throws(() => target.deserialize(t), /template/);
 });
+
+test('workspace files keep the order of the samples', () => {
+  const ws = demoWorkspace(3);
+  ws.samples.reverse();
+  const json = JSON.parse(JSON.stringify(ws.serialize()));
+  const ws2 = demoWorkspace(3);
+  assert.deepEqual(ws2.samples.map(s => s.key), ['s0.fcs', 's1.fcs', 's2.fcs']);
+  ws2.deserialize(json);
+  assert.deepEqual(ws2.samples.map(s => s.key), ['s2.fcs', 's1.fcs', 's0.fcs']);
+});

@@ -187,6 +187,10 @@ export class Workspace {
       }
       missing = (ws.samples || []).filter(n => !byKey(n));
     }
+    // restore the saved order of the samples (samples not in the file keep their place at the end)
+    const order = Workspace.savedKeys(ws);
+    const rank = s => { const i = order.findIndex(k => k === s.key || k === s.name); return i < 0 ? order.length : i; };
+    this.samples = this.samples.map((s, i) => [s, i]).sort((a, b) => rank(a[0]) - rank(b[0]) || a[1] - b[1]).map(([s]) => s);
     this.selectedGate = null; this.selPlots.clear();
     this.engine.invalidate();
     return missing;

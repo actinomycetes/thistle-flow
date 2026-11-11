@@ -2,7 +2,7 @@
 
 Part of the Thistle suite, together with [Thistle Plot](https://github.com/actinomycetes/thistle-plot) (TP).
 
-**Status:** beta (0.x; current v0.7.0). Check important results against an established package before publishing. Version history: [`help.html#history`](help.html#history).
+**Status:** beta (0.x; current v0.8.0). Check important results against an established package before publishing. Version history: [`help.html#history`](help.html#history).
 
 **Hosted copy:** https://actinomycetes.github.io/thistle-flow/
 
@@ -41,7 +41,8 @@ Tests:
 | **Compensation** | Reads the embedded `$SPILLOVER` / `SPILL` / `$COMP` matrix. Channel names are matched by `$PnN`, then by `$PnS`. Sony `APPLY_COMPENSATION=FALSE` is respected. You can edit the matrix, apply it to all samples, and import or export it as CSV. Spectral files (Sony ID7000/SA3800, Cytek) are usually already unmixed. |
 | **Axis scales** | Linear, Log, **Biexponential (Logicle**, Parks/Moore reference algorithm) and Arcsinh (with cofactor). Scales are set per channel. The top of the scale defaults to the instrument's `$PnR` range. The Logicle dialog has an **Auto W** button. |
 | **Plots** | **Pseudocolor** (event dots coloured by density, adjustable dot size), **Density** (smoothed), **Contour** (equal-probability, with optional outlier dots), **Dot** and histograms. Off-scale events pile up on the axes. Clicking an axis opens a quick menu for that axis (channel and scale). A workspace-wide or per-plot **limit on events shown** (default 10,000) keeps plots readable; statistics always use every event. Plot sizes S to XL. **Dark** (default) and light mode. |
-| **Gates** | Rectangle, Polygon, Ellipse, Quadrant (4 linked gates) and Range (on histograms). Gates form a hierarchy. After a gate is drawn the tool returns to **Select**, where you can drag a gate to move it, drag its vertices or handles to reshape it, **drag its label** anywhere inside the plot, and double-click inside a gate to open a plot of that population. Gates are **shared by all samples** in a workspace, so you gate once and get results for every sample. |
+| **Gates** | Rectangle, Polygon, Ellipse, Quadrant (4 linked gates, labelled Q1–Q4 in plots) and Range (on histograms). Gates form a hierarchy. After a gate is drawn the tool returns to **Select**, where you can drag a gate to move it, drag its vertices or handles to reshape it, **drag its label** anywhere inside the plot, and double-click inside a gate to open a plot of that population. Gates are **shared by all samples** in a workspace, so you gate once and get results for every sample. |
+| **Samples** | Drag the ☰ handle to change the order of the samples (used in Statistics, figures and overlays; saved with the workspace). |
 | **Quick overlay** | Ctrl/⌘- or Shift-click samples to overlay them in every Gating plot, with each sample's % in the gate labels. |
 | **Multiple plots** | Shift-click plots or drag a box around them. Then change the population, axes, type, events shown or size on one plot, and the change applies to all selected plots. |
 | **Statistics** | Count, % Parent, % Total, **Median (MFI)**, Mean, Geometric mean, SD, CV, robust SD and robust CV, for any population and channel. Choose a long, wide or transposed table. Export as CSV or copy straight into Excel/Prism. |

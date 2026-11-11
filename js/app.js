@@ -3,7 +3,7 @@ import { parseFCS, writeFCS } from './fcs.js';
 import { Sample } from './model.js';
 import { defaultTransformFor } from './transforms.js';
 import { GATE_COLORS, STAT_DEFS, channelStats, populationStats } from './gates.js';
-import { PlotView, buildSpec, shortLabel, fmtPct, subsampleIdx, overlayColor, PLOT_SIZES, EVENT_LIMITS } from './plotview.js';
+import { PlotView, buildSpec, shortLabel, fmtPct, subsampleIdx, overlayColor, QUAD_NUM, PLOT_SIZES, EVENT_LIMITS } from './plotview.js';
 import { renderPlot, prepareCanvas, SERIES_COLORS, THEMES, PLOT_KINDS, HIST_OFFSETS, DOT_SIZES, DEFAULT_DOT, normalizeKind } from './render.js';
 import { renderSVG, renderPDF } from './vector.js';
 import { demoFiles } from './demo.js';
@@ -244,11 +244,13 @@ function renderSamples() {
     const compTag = s.spill ? h('span', { class: 'badge' + (s.compEnabled ? '' : ' off'), title: 'Compensation' }, s.compEnabled ? 'comp' : 'uncomp') : null;
     const oi = overlay ? overlay.indexOf(s) : -1;
     ul.append(h('li', {
+      'data-sample': s.id,
       class: (s.id === ws.activeId ? 'active' : '') + (oi >= 0 ? ' in-overlay' : ''),
       title: 'Click: show this sample · Ctrl/⌘-click or Shift-click: overlay several samples in the Gating plots',
       onclick: e => sampleClicked(s, e),
       onmousedown: e => { if (e.shiftKey) e.preventDefault(); }, // no text selection on Shift-click
     },
+      h('span', { class: 'drag-handle', title: 'Drag to change the order of the samples', onmousedown: e => startSampleDrag(e, s), onclick: e => e.stopPropagation() }, '☰'),
       h('div', { class: 'meta' },
         h('div', { class: 'name', title: s.name }, oi >= 0 ? h('span', { class: 'ov-swatch', style: `background:${overlayColor(oi)}` }) : null, s.name),
         h('div', { class: 'sub' }, `${s.events.toLocaleString()} events · ${s.params.length} par · ${s.version}`, compTag),
@@ -261,6 +263,36 @@ function renderSamples() {
       } }, '⇄'),
       h('button', { class: 'icon', title: 'Remove sample', onclick: e => { e.stopPropagation(); removeSample(s.id); } }, '×')));
   }
+}
+
+// Reorder samples by dragging the ☰ handle (mouse events, so the file-drop overlay is not triggered)
+function startSampleDrag(e, s) {
+  if (e.button !== 0) return;
+  e.preventDefault(); e.stopPropagation();
+  const ws = app.ws, ul = $('#sampleList');
+  const items = [...ul.children];
+  const from = ws.samples.indexOf(s);
+  let to = from;
+  items[from]?.classList.add('dragging');
+  document.body.classList.add('reordering');
+  const move = ev => {
+    // insertion index from the pointer position relative to the middle of each row
+    to = items.length;
+    for (let i = 0; i < items.length; i++) { const r = items[i].getBoundingClientRect(); if (ev.clientY < r.top + r.height / 2) { to = i; break; } }
+    items.forEach((li, i) => { li.classList.toggle('drop-before', i === to && to !== from && to !== from + 1); li.classList.toggle('drop-after', to === items.length && i === items.length - 1 && from !== items.length - 1); });
+  };
+  const up = () => {
+    window.removeEventListener('mousemove', move); window.removeEventListener('mouseup', up);
+    document.body.classList.remove('reordering');
+    items.forEach(li => li.classList.remove('dragging', 'drop-before', 'drop-after'));
+    const target = to > from ? to - 1 : to;
+    if (target === from) return;
+    ws.samples.splice(from, 1);
+    ws.samples.splice(target, 0, s);
+    ws.dirty = true;
+    renderAll();
+  };
+  window.addEventListener('mousemove', move); window.addEventListener('mouseup', up);
 }
 
 function removeSample(id) {
@@ -295,7 +327,7 @@ function renderGateTree() {
       title: id ? eng.fullName(id) : 'All Events',
     },
       h('span', { class: 'swatch', style: `background:${g ? g.color : '#999'}` }),
-      h('span', { class: 'gname' }, g ? g.name : 'All Events'),
+      h('span', { class: 'gname' }, g ? (g.type === 'quad' && QUAD_NUM[g.q] ? `${QUAD_NUM[g.q]} · ${g.name}` : g.name) : 'All Events'),
       h('span', { class: 'gpct' }, pct ? `${pct} · ${count}` : count),
       h('button', { class: 'icon', title: 'Open plot of this population', onclick: e => { e.stopPropagation(); openPopulationPlot(id); } }, '＋'),
       s ? h('button', { class: 'icon', title: 'Export events of this population (FCS)', onclick: e => { e.stopPropagation(); exportPopulation(s, id); } }, '⤓') : null,

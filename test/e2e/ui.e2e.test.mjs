@@ -510,3 +510,53 @@ test('README describes the functionality without naming other software', () => {
   assert.ok(!/flowjo/i.test(readme));
   assert.match(readme, /Part of the Thistle suite/);
 });
+
+test('reorder samples by dragging the handle; quadrants labelled Q1-Q4 in Gating plots', { timeout: 120000 }, async () => {
+  browser = browser || await chromium.launch();
+  const page = await browser.newPage({ viewport: { width: 1600, height: 1000 } });
+  const errors = [];
+  page.on('pageerror', e => errors.push(e.message));
+  await page.addInitScript(() => { try { localStorage.clear(); } catch {} });
+  const ev = f => page.evaluate(f);
+  await page.goto(BASE + '/');
+  await page.click('#btnDemo'); await page.waitForSelector('.plot-card canvas');
+  const order = () => ev(() => window.thistleFlow.ws.samples.map(s => s.name));
+  assert.deepEqual(await order(), ['Unstimulated.fcs', 'Stim_6h.fcs', 'Stim_24h.fcs']);
+  const drag = async (fromIdx, toY) => {
+    const hb = await page.locator('.sample-list .drag-handle').nth(fromIdx).boundingBox();
+    await page.mouse.move(hb.x + hb.width / 2, hb.y + hb.height / 2); await page.mouse.down();
+    await page.mouse.move(hb.x + hb.width / 2, toY, { steps: 8 }); await page.mouse.up();
+  };
+  // last sample to the top
+  const first = await page.locator('.sample-list li').nth(0).boundingBox();
+  await drag(2, first.y + 4);
+  assert.deepEqual(await order(), ['Stim_24h.fcs', 'Unstimulated.fcs', 'Stim_6h.fcs']);
+  assert.equal(await page.locator('.sample-list li .name').first().textContent(), 'Stim_24h.fcs');
+  // first sample to the bottom
+  const last = await page.locator('.sample-list li').nth(2).boundingBox();
+  await drag(0, last.y + last.height - 3);
+  assert.deepEqual(await order(), ['Unstimulated.fcs', 'Stim_6h.fcs', 'Stim_24h.fcs']);
+  // clicking the handle does not change the active sample
+  const active = await ev(() => window.thistleFlow.ws.activeId);
+  await page.locator('.sample-list .drag-handle').nth(1).click();
+  assert.equal(await ev(() => window.thistleFlow.ws.activeId), active);
+  // the statistics follow the new order
+  await drag(2, first.y + 4);
+  await page.click('[data-tab=stats]');
+  assert.equal(await page.locator('#statsTable tbody tr td').first().textContent(), 'Stim_24h.fcs');
+
+  // quadrant gate: plots show Q1-Q4 with %, the gate tree keeps the full names
+  await page.click('[data-tab=gating]');
+  await ev(() => { const ws = window.thistleFlow.ws; ws.plots[1].x = 'PE-A'; ws.plots[1].y = 'APC-A'; window.thistleFlow.renderAll(); });
+  const b = await page.locator('.plot-card canvas').nth(1).boundingBox();
+  await page.click('[data-tool=quad]');
+  await page.mouse.click(b.x + 64 + 0.55 * (b.width - 78), b.y + 24 + 0.45 * (b.height - 72));
+  const texts = await ev(() => [...window.thistleFlow.views.values()][1].spec.gates.map(g => g.text.split('  ')[0]).sort());
+  assert.deepEqual(texts, ['Q1', 'Q2', 'Q3', 'Q4']);
+  const tree = await page.locator('.gate-tree .gname').allTextContents();
+  assert.ok(tree.includes('Q1 · CD4- CD8+') && tree.includes('Q2 · CD4+ CD8+'), tree.join(' | '));
+  await page.locator('.plot-card').nth(1).screenshot({ path: OUT + '/e-quad-labels.png' });
+  await page.locator('.sample-list').screenshot({ path: OUT + '/e-sample-handles.png' });
+  assert.deepEqual(errors, []);
+  await page.close();
+});
