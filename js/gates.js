@@ -17,6 +17,19 @@ function unitRange(t, a, b) {
   return [a === -Infinity ? -Infinity : t.fwd(a), b === Infinity ? Infinity : t.fwd(b)];
 }
 
+// ---- per-sample gate adjustments ----
+// A gate may carry overrides: { [sample.key]: geometry } (keyed by file name so they survive saving).
+const GEOM_KEYS = { rect: ['x0', 'x1', 'y0', 'y1'], polygon: ['pts'], quad: ['cx', 'cy'], interval: ['x0', 'x1', 'level'] };
+export function pickGeom(g) {
+  const out = {};
+  for (const k of GEOM_KEYS[g.type] || []) if (g[k] !== undefined) out[k] = JSON.parse(JSON.stringify(g[k]));
+  return out;
+}
+export const isCustom = (g, sample) => !!(sample && g.overrides && g.overrides[sample.key]);
+// The gate as it applies to one sample (the global gate unless that sample has its own geometry)
+export function gateFor(g, sample) { return isCustom(g, sample) ? { ...g, ...g.overrides[sample.key] } : g; }
+export const customSampleKeys = g => Object.keys(g.overrides || {});
+
 // Which channels a gate uses
 export function gateChannels(g) { return g.type === 'interval' ? [g.x] : [g.x, g.y]; }
 
@@ -59,6 +72,7 @@ export class GateEngine {
   canApply(sample, g) { return gateChannels(g).every(c => sample.hasChannel(c)); }
 
   _test(sample, g) {
+    g = gateFor(g, sample);
     const N = sample.events;
     const out = new Uint8Array(N);
     if (!this.canApply(sample, g)) return out; // channels missing -> empty

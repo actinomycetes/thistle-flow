@@ -560,3 +560,71 @@ test('reorder samples by dragging the handle; quadrants labelled Q1-Q4 in Gating
   assert.deepEqual(errors, []);
   await page.close();
 });
+
+test('per-sample gates (adjust, indicators, back to global); Layout keep ratio', { timeout: 180000 }, async () => {
+  browser = browser || await chromium.launch();
+  const page = await browser.newPage({ viewport: { width: 1600, height: 1000 } });
+  const errors = [];
+  page.on('pageerror', e => errors.push(e.message));
+  await page.addInitScript(() => { try { localStorage.clear(); } catch {} });
+  page.on('dialog', d => d.accept());
+  const ev = f => page.evaluate(f);
+  await page.goto(BASE + '/');
+  await page.click('#btnDemo'); await page.waitForSelector('.plot-card canvas');
+  await ev(() => {
+    const ws = window.thistleFlow.ws;
+    ws.engine.add({ id: 'gL', name: 'Lymph', parent: null, type: 'rect', x: 'FSC-A', y: 'SSC-A', x0: 40000, x1: 80000, y0: 8000, y1: 38000, color: '#e6194b' });
+    window.thistleFlow.renderAll();
+  });
+  const counts = () => ev(() => window.thistleFlow.ws.samples.map(s => window.thistleFlow.ws.engine.population(s, 'gL').count));
+  const before = await counts();
+  // "This sample" mode, then drag the right edge of the gate for the active (first) sample
+  await page.click('#gateEditMode button[data-mode=sample]');
+  const b = await page.locator('.plot-card canvas').nth(0).boundingBox();
+  const P = (ux, uy) => [b.x + 64 + ux * (b.width - 78), b.y + 24 + (1 - uy) * (b.height - 72)];
+  const ux1 = 80000 / 262144, uy0 = 8000 / 262144;
+  { const [x, y] = P(ux1, uy0); await page.mouse.move(x, y); await page.mouse.down(); const [x2] = P(0.22, uy0); await page.mouse.move(x2, y, { steps: 6 }); await page.mouse.up(); }
+  await page.waitForTimeout(200);
+  const after = await counts();
+  assert.ok(after[0] < before[0] * 0.9, `active sample uses its adjusted gate: ${before[0]} -> ${after[0]}`);
+  assert.deepEqual(after.slice(1), before.slice(1), 'other samples unchanged');
+  assert.equal(await ev(() => window.thistleFlow.ws.engine.get('gL').x1), 80000, 'global gate unchanged');
+  // indicators: dashed + ✎ on the plot label, ✎1 in the gate tree, badge on the sample
+  const item = await ev(() => { const it = [...window.thistleFlow.views.values()][0].spec.gates[0]; return { custom: it.custom, text: it.text }; });
+  assert.ok(item.custom && item.text.includes('✎'), JSON.stringify(item));
+  assert.equal(await page.locator('.gate-tree .custom-mark').textContent(), '✎1');
+  assert.equal(await page.locator('.sample-list li').nth(0).locator('.badge.custom').count(), 1);
+  assert.equal(await page.locator('.sample-list li').nth(1).locator('.badge.custom').count(), 0);
+  await page.locator('.plot-card').nth(0).screenshot({ path: OUT + '/e-custom-gate.png' });
+  // another sample shows the global gate
+  await page.locator('.sample-list li').nth(1).click();
+  assert.equal(await ev(() => [...window.thistleFlow.views.values()][0].spec.gates[0].custom), false);
+  // back to the global gate
+  await page.locator('.sample-list li').nth(0).click();
+  await page.locator('.gate-tree .node:has-text("Lymph")').click();
+  assert.equal(await page.isDisabled('#btnGlobalGate'), false);
+  await page.click('#btnGlobalGate');
+  await page.waitForTimeout(150);
+  assert.deepEqual(await counts(), before, 'back to the global gate');
+  assert.equal(await page.locator('.gate-tree .custom-mark').count(), 0);
+  assert.equal(await page.isDisabled('#btnGlobalGate'), true);
+  // "All samples" mode edits the global gate again
+  await page.click('#gateEditMode button[data-mode=all]');
+  { const [x, y] = P(ux1, uy0); await page.mouse.move(x, y); await page.mouse.down(); const [x2] = P(0.25, uy0); await page.mouse.move(x2, y, { steps: 6 }); await page.mouse.up(); }
+  await page.waitForTimeout(150);
+  assert.ok(await ev(() => window.thistleFlow.ws.engine.get('gL').x1 < 80000 && !window.thistleFlow.ws.engine.get('gL').overrides));
+
+  // Layout: keep ratio (on by default)
+  await page.click('[data-tab=layout]');
+  await page.click('[data-addfig=overlay-hist]');
+  const fig = page.locator('.figure-card').first();
+  assert.equal(await fig.locator('label:has-text("Keep ratio") input').isChecked(), true);
+  await fig.locator('.wh input[type=number]').first().fill('660'); await fig.locator('.wh input[type=number]').first().press('Tab');
+  assert.deepEqual(await ev(() => [window.thistleFlow.ws.figures[0].w, window.thistleFlow.ws.figures[0].h]), [660, 510]);
+  assert.equal(await fig.locator('.wh input[type=number]').nth(1).inputValue(), '510');
+  await fig.locator('label:has-text("Keep ratio") input').uncheck();
+  await fig.locator('.wh input[type=number]').nth(1).fill('300'); await fig.locator('.wh input[type=number]').nth(1).press('Tab');
+  assert.deepEqual(await ev(() => [window.thistleFlow.ws.figures[0].w, window.thistleFlow.ws.figures[0].h]), [660, 300]);
+  assert.deepEqual(errors, []);
+  await page.close();
+});

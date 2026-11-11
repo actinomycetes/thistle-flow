@@ -1,7 +1,7 @@
 // Interactive plot (gating) component.
 import { renderPlot, prepareCanvas, gateGeometry, MARGIN, THEMES, SERIES_COLORS, normalizeKind } from './render.js';
 import { makeTransform } from './transforms.js';
-import { populationStats, pointInPolygon } from './gates.js';
+import { populationStats, pointInPolygon, gateFor, isCustom } from './gates.js';
 
 export const fmtPct = v => (Number.isFinite(v) ? (v >= 10 ? v.toFixed(1) : v.toFixed(2)) + '%' : '–');
 
@@ -62,9 +62,11 @@ export function buildSpec(ws, sample, def, w, h, opts = {}) {
     .filter(g => (isHist ? g.type === 'interval' && g.x === x : g.type !== 'interval' && g.x === x && g.y === y))
     .map(g => {
       const st = populationStats(eng, sample, g.id);
+      const custom = isCustom(g, sample); // this sample has its own version of the gate
+      const mark = custom ? '✎' : '';
       return {
-        gate: g, color: g.color,
-        text: opts.compactLabels ? fmtPct(st.pctParent) : `${plotGateName(g)}  ${fmtPct(st.pctParent)}`,
+        gate: gateFor(g, sample), color: g.color, custom,
+        text: opts.compactLabels ? `${mark}${fmtPct(st.pctParent)}` : `${plotGateName(g)}${mark}  ${fmtPct(st.pctParent)}`,
         selected: !!sel && (sel.id === g.id || (g.group && sel.group === g.group)),
       };
     });
@@ -103,7 +105,7 @@ function buildOverlaySpec(ws, samples, def, w, h, opts) {
     .filter(g => (isHist ? g.type === 'interval' && g.x === x : g.type !== 'interval' && g.x === x && g.y === y))
     .map(g => ({
       gate: g, color: g.color, text: plotGateName(g),
-      lines: [{ text: plotGateName(g), color: g.color }, ...list.map(({ s, color }) => ({ text: `${name(s)}  ${fmtPct(populationStats(eng, s, g.id).pctParent)}`, color }))],
+      lines: [{ text: plotGateName(g), color: g.color }, ...list.map(({ s, color }) => ({ text: `${name(s)}${isCustom(g, s) ? ' ✎' : ''}  ${fmtPct(populationStats(eng, s, g.id).pctParent)}`, color }))],
       selected: !!sel && (sel.id === g.id || (g.group && sel.group === g.group)),
     }));
   const first = list[0].s;
@@ -306,21 +308,24 @@ export class PlotView {
     const d = this.drag;
     if (Math.abs(px - d.startPx[0]) + Math.abs(py - d.startPx[1]) > 2) d.moved = true;
     if (!d.moved) return;
-    const g = this.app.ws.engine.get(d.gate.id);
+    const base = this.app.ws.engine.get(d.gate.id);
+    const perSample = this.app.gateEditMode === 'sample' && this.sample();
     if (d.mode === 'label') {
+      const g = base;
       // keep the grab offset; store the label centre in plot units
       const cxp = d.box.cx + (px - d.startPx[0]), cyp = d.box.cy + (py - d.startPx[1]);
       g.labelPos = [Math.min(1, Math.max(0, this.L.px2ux(cxp))), Math.min(1, Math.max(0, this.L.px2uy(cyp)))];
       this.draw();
       return;
     }
+    const g = JSON.parse(JSON.stringify(d.orig)); // effective gate for this sample at drag start
     const du = [u[0] - d.start[0], u[1] - d.start[1]];
     const tx = makeTransform(this.app.ws.getCfg(g.x));
     const ty = g.y ? makeTransform(this.app.ws.getCfg(g.y)) : null;
     const o = d.orig;
     const mvX = v => tx.inv(tx.fwd(v) + du[0]);
     const mvY = v => ty.inv(ty.fwd(v) + du[1]);
-    const mvLabel = () => { if (o.labelPos) g.labelPos = [o.labelPos[0] + du[0], o.labelPos[1] + du[1]].map(v => Math.min(1, Math.max(0, v))); };
+    const mvLabel = () => { if (o.labelPos && !perSample) base.labelPos = [o.labelPos[0] + du[0], o.labelPos[1] + du[1]].map(v => Math.min(1, Math.max(0, v))); };
     if (g.type === 'polygon') {
       if (d.mode === 'vertex') { const s = snapUnit(u); g.pts[d.index] = [tx.inv(s[0]), ty.inv(s[1])]; }
       else { g.pts = o.pts.map(([x, y]) => [mvX(x), mvY(y)]); mvLabel(); }
@@ -332,14 +337,14 @@ export class PlotView {
         if (d.index === 0 || d.index === 1) g.y0 = vy; else g.y1 = vy;
       } else { g.x0 = mvX(o.x0); g.x1 = mvX(o.x1); g.y0 = mvY(o.y0); g.y1 = mvY(o.y1); mvLabel(); }
     } else if (g.type === 'quad') {
-      const cx = tx.inv(u[0]), cy = ty.inv(u[1]);
-      for (const q of this.app.ws.engine.list()) if (q.group === g.group) { q.cx = cx; q.cy = cy; }
+      g.cx = tx.inv(u[0]); g.cy = ty.inv(u[1]);
     } else if (g.type === 'interval') {
       if (d.mode === 'iv0') g.x0 = tx.inv(snapUnit(u)[0]);
       else if (d.mode === 'iv1') g.x1 = tx.inv(snapUnit(u)[0]);
       else { g.x0 = mvX(o.x0); g.x1 = mvX(o.x1); g.level = Math.min(0.97, Math.max(0.05, (o.level ?? 0.85) + du[1])); mvLabel(); }
     }
-    this.app.gateChanged(g, { live: true });
+    this.app.setGateGeometry(base, g, perSample || null);
+    this.app.gateChanged(base, { live: true });
     this.draw();
   }
 

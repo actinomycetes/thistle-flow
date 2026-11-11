@@ -2,7 +2,7 @@
 import { parseFCS, writeFCS } from './fcs.js';
 import { Sample } from './model.js';
 import { defaultTransformFor } from './transforms.js';
-import { GATE_COLORS, STAT_DEFS, channelStats, populationStats } from './gates.js';
+import { GATE_COLORS, STAT_DEFS, channelStats, populationStats, pickGeom, isCustom, customSampleKeys } from './gates.js';
 import { PlotView, buildSpec, shortLabel, fmtPct, subsampleIdx, overlayColor, QUAD_NUM, PLOT_SIZES, EVENT_LIMITS } from './plotview.js';
 import { renderPlot, prepareCanvas, SERIES_COLORS, THEMES, PLOT_KINDS, HIST_OFFSETS, DOT_SIZES, DEFAULT_DOT, normalizeKind } from './render.js';
 import { renderSVG, renderPDF } from './vector.js';
@@ -21,6 +21,7 @@ const app = {
   workspaces: [],
   ws: null,
   tool: 'select',
+  gateEditMode: 'all', // 'all': gate edits apply to every sample; 'sample': only to the active sample
   views: new Map(),
   figDrawing: null, // id of the Layout figure whose Range-gate tool is active
   theme: 'light',
@@ -253,7 +254,8 @@ function renderSamples() {
       h('span', { class: 'drag-handle', title: 'Drag to change the order of the samples', onmousedown: e => startSampleDrag(e, s), onclick: e => e.stopPropagation() }, '☰'),
       h('div', { class: 'meta' },
         h('div', { class: 'name', title: s.name }, oi >= 0 ? h('span', { class: 'ov-swatch', style: `background:${overlayColor(oi)}` }) : null, s.name),
-        h('div', { class: 'sub' }, `${s.events.toLocaleString()} events · ${s.params.length} par · ${s.version}`, compTag),
+        h('div', { class: 'sub' }, `${s.events.toLocaleString()} events · ${s.params.length} par · ${s.version}`, compTag,
+          ws.engine.list().some(g => isCustom(g, s)) ? h('span', { class: 'badge custom', title: 'Some gates are adjusted for this sample' }, '✎ gates') : null),
         h('div', { class: 'sub', title: s.instrument }, s.instrument)),
       h('button', { class: 'icon', title: 'Properties', onclick: e => { e.stopPropagation(); ws.activeId = s.id; switchTab('properties'); } }, 'ⓘ'),
       h('button', { class: 'icon', title: 'Replace this sample’s FCS file (keeps gates and settings)', onclick: async e => {
@@ -328,6 +330,10 @@ function renderGateTree() {
     },
       h('span', { class: 'swatch', style: `background:${g ? g.color : '#999'}` }),
       h('span', { class: 'gname' }, g ? (g.type === 'quad' && QUAD_NUM[g.q] ? `${QUAD_NUM[g.q]} · ${g.name}` : g.name) : 'All Events'),
+      g && customSampleKeys(g).length ? h('span', {
+        class: 'custom-mark' + (s && isCustom(g, s) ? ' here' : ''),
+        title: `Adjusted for ${customSampleKeys(g).length} sample(s): ${ws.samples.filter(x => isCustom(g, x)).map(x => x.name).join(', ')}${s && isCustom(g, s) ? ' (including this one)' : ''}`,
+      }, `✎${customSampleKeys(g).length}`) : null,
       h('span', { class: 'gpct' }, pct ? `${pct} · ${count}` : count),
       h('button', { class: 'icon', title: 'Open plot of this population', onclick: e => { e.stopPropagation(); openPopulationPlot(id); } }, '＋'),
       s ? h('button', { class: 'icon', title: 'Export events of this population (FCS)', onclick: e => { e.stopPropagation(); exportPopulation(s, id); } }, '⤓') : null,
@@ -584,7 +590,7 @@ app.redrawAll = () => { for (const v of app.views.values()) v.draw(); renderGate
 
 app.selectGate = (id, { quiet = false } = {}) => {
   app.ws.selectedGate = id || null;
-  $('#btnDeleteGate').disabled = !app.ws.selectedGate;
+  updateGateButtons();
   if (!quiet) app.redrawAll(); else renderGateTree();
 };
 
@@ -620,6 +626,58 @@ app.createQuadrant = (def, [cx, cy]) => {
   setTool('select');
   renderAll();
 };
+
+// ---- per-sample gates ----
+// Write a gate's geometry, either globally or as an adjustment for one sample
+// (quadrant gates move together with their group).
+app.setGateGeometry = (base, w, sample) => {
+  const ws = app.ws, geom = pickGeom(w);
+  const targets = base.type === 'quad' ? ws.engine.list().filter(q => q.group === base.group) : [base];
+  for (const t of targets) {
+    if (sample) t.overrides = { ...(t.overrides || {}), [sample.key]: { ...pickGeom(t), ...geom } };
+    else Object.assign(t, geom);
+  }
+};
+// Back to the global gate for one sample (key) or for every sample (key = null)
+function useGlobalGate(g, key) {
+  const ws = app.ws;
+  const targets = g.type === 'quad' ? ws.engine.list().filter(q => q.group === g.group) : [g];
+  for (const t of targets) {
+    if (!t.overrides) continue;
+    if (key) delete t.overrides[key]; else t.overrides = {};
+    if (!Object.keys(t.overrides).length) delete t.overrides;
+  }
+  app.gateChanged(g);
+}
+async function revertSelectedGate() {
+  const ws = app.ws, g = ws.engine.get(ws.selectedGate), s = ws.activeSample();
+  if (!g) return;
+  const keys = customSampleKeys(g);
+  if (!keys.length) return toast('This gate is the same for all samples');
+  const here = s && keys.includes(s.key);
+  const others = keys.filter(k => k !== s?.key).length;
+  let choice = here ? 'this' : 'all';
+  if (here && others) {
+    choice = await choose('Use the global gate', `“${g.name}” is adjusted for ${keys.length} samples. Return to the global gate for:`, [
+      { label: 'Cancel', value: null }, { label: `All ${keys.length} samples`, value: 'all' }, { label: `${s.name} only`, value: 'this', primary: true }]);
+    if (!choice) return;
+  }
+  useGlobalGate(g, choice === 'this' ? s.key : null);
+  toast(choice === 'this' ? `“${g.name}” now uses the global gate for ${s.name}` : `“${g.name}” now uses the global gate for every sample`);
+}
+function setGateEditMode(m) {
+  app.gateEditMode = m;
+  $$('#gateEditMode button').forEach(b => b.classList.toggle('primary', b.dataset.mode === m));
+  updateGateButtons();
+}
+function updateGateButtons() {
+  const ws = app.ws, g = ws.selectedGate && ws.engine.get(ws.selectedGate);
+  $('#btnDeleteGate').disabled = !g;
+  const n = g ? customSampleKeys(g).length : 0;
+  const b = $('#btnGlobalGate');
+  b.disabled = !n;
+  b.title = n ? `“${g.name}” is adjusted for ${n} sample(s): ${ws.samples.filter(s => isCustom(g, s)).map(s => s.name).join(', ')}` : 'The selected gate is the same for all samples';
+}
 
 // During drags only descendants of the changed gate need recomputation.
 app.gateChanged = (g, { live = false } = {}) => {
@@ -900,9 +958,24 @@ function figureCard(f) {
           renderSeries(); syncAllPop(); redraw();
         } }, 'Child gates')));
   }
-  ctrl.append(h('div', { class: 'wh', style: 'display:flex;gap:12px' },
-    field('W', h('input', { type: 'number', value: f.w, min: 150, max: 1600, step: 10, onchange: e => { f.w = +e.target.value; redraw(); } })),
-    field('H', h('input', { type: 'number', value: f.h, min: 150, max: 1600, step: 10, onchange: e => { f.h = +e.target.value; redraw(); } }))));
+  // size; with Keep ratio (default) changing one side scales the other
+  const clampSize = v => Math.round(Math.min(1600, Math.max(150, v)));
+  const wIn = h('input', { type: 'number', value: f.w, min: 150, max: 1600, step: 10 });
+  const hIn = h('input', { type: 'number', value: f.h, min: 150, max: 1600, step: 10 });
+  const setSize = (side, v) => {
+    if (!Number.isFinite(v) || v <= 0) return;
+    const ratio = f.h / f.w;
+    if (side === 'w') { f.w = clampSize(v); if (f.keepRatio !== false) f.h = clampSize(f.w * ratio); }
+    else { f.h = clampSize(v); if (f.keepRatio !== false) f.w = clampSize(f.h / ratio); }
+    wIn.value = f.w; hIn.value = f.h;
+    redraw();
+  };
+  wIn.addEventListener('change', e => setSize('w', +e.target.value));
+  hIn.addEventListener('change', e => setSize('h', +e.target.value));
+  ctrl.append(h('div', { class: 'wh', style: 'display:flex;gap:12px;align-items:center;flex-wrap:wrap' },
+    field('W', wIn), field('H', hIn),
+    h('label', { title: 'Changing the width or height scales the other side to keep the shape' },
+      h('input', { type: 'checkbox', checked: f.keepRatio !== false, onchange: e => { f.keepRatio = e.target.checked; } }), 'Keep ratio')));
   const card = h('div', { class: 'figure-card', 'data-fig': f.id }, ctrl, out);
   redraw();
   return card;
@@ -1322,6 +1395,7 @@ async function replaceSampleFile(ws, old, file, key) {
     if (old.spill && old.spill.names.every(c => ns.hasChannel(c))) { ns.setSpill(old.spill); ns.setCompEnabled(old.compEnabled); }
     ns.applyEdits({ ...old.edits, name: null });
     const missingCh = old.channelNames.filter(c => !ns.hasChannel(c));
+    if (ns.key !== old.key) for (const g of ws.engine.list()) if (g.overrides?.[old.key]) { g.overrides[ns.key] = g.overrides[old.key]; delete g.overrides[old.key]; }
     ws.samples[ws.samples.indexOf(old)] = ns;
     ws.engine.invalidate(old.id);
     ws.refreshAutoTransforms();
@@ -1382,7 +1456,7 @@ function renderAll({ keepGating = false } = {}) {
   renderSamples();
   renderGateTree();
   if (keepGating && app.ws.tab === 'gating') app.redrawAll(); else renderTab();
-  $('#btnDeleteGate').disabled = !app.ws.selectedGate;
+  updateGateButtons();
   updateUndoButtons();
 }
 app.renderAll = renderAll;
@@ -1441,6 +1515,8 @@ $('#btnAddPlot').addEventListener('click', () => {
   renderGating();
 });
 $('#btnDeleteGate').addEventListener('click', () => app.ws.selectedGate && deleteGate(app.ws.selectedGate));
+$('#btnGlobalGate').addEventListener('click', revertSelectedGate);
+$$('#gateEditMode button').forEach(b => b.addEventListener('click', () => setGateEditMode(b.dataset.mode)));
 $('#btnExportLayout').addEventListener('click', e => {
   if (!app.ws.figures.length) return toast('No figures in the layout');
   exportMenu(e.currentTarget, `${app.ws.name}_layout`, layoutComposite);

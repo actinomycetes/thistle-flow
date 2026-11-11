@@ -204,7 +204,8 @@ export class Workspace {
     return {
       app: 'ThistleFlow', appVersion: APP_VERSION, kind: 'template', version: 1, name: this.name, saved: new Date().toISOString(),
       transforms: Object.fromEntries(Object.entries(this.transforms).filter(([, c]) => !c.auto)),
-      gates: this.engine.toJSON(), plots: this.plots, displayMax: this.displayMax, statsCfg: this.statsCfg,
+      // per-sample gate adjustments belong to specific files, so templates keep only the global gates
+      gates: this.engine.toJSON().map(({ overrides, ...g }) => g), plots: this.plots, displayMax: this.displayMax, statsCfg: this.statsCfg,
       // overlay series are stored by position; a series set that covered every sample re-expands to all samples
       figures: this.figures.map(f => {
         if (!f.series) return f;

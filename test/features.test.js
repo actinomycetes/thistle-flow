@@ -178,3 +178,29 @@ test('workspace files keep the order of the samples', () => {
   ws2.deserialize(json);
   assert.deepEqual(ws2.samples.map(s => s.key), ['s2.fcs', 's1.fcs', 's0.fcs']);
 });
+
+test('per-sample gate adjustments: only that sample changes; saved with the workspace, not in templates', async () => {
+  const { gateFor, isCustom } = await import('../js/gates.js');
+  const ws = demoWorkspace(2);
+  ws.engine.add({ ...lymph });
+  const [a, b] = ws.samples;
+  const before = ws.samples.map(s => ws.engine.population(s, 'g1').count);
+  const g = ws.engine.get('g1');
+  g.overrides = { [b.key]: { x0: 40000, x1: 60000, y0: 8000, y1: 38000 } }; // narrower for sample b only
+  ws.engine.invalidate();
+  const after = ws.samples.map(s => ws.engine.population(s, 'g1').count);
+  assert.equal(after[0], before[0], 'other sample unchanged');
+  assert.ok(after[1] < before[1] * 0.8, 'adjusted sample uses its own gate');
+  assert.ok(isCustom(g, b) && !isCustom(g, a));
+  assert.equal(gateFor(g, b).x1, 60000); assert.equal(gateFor(g, a).x1, 80000);
+  // workspace file keeps it (by file name), template drops it
+  const ws2 = demoWorkspace(2);
+  ws2.deserialize(JSON.parse(JSON.stringify(ws.serialize())));
+  assert.deepEqual(ws2.samples.map(s => ws2.engine.population(s, 'g1').count), after);
+  assert.ok(!JSON.stringify(ws.template()).includes('overrides'));
+  // undo restores the adjustment state
+  ws.commit();
+  delete g.overrides; ws.commit();
+  ws.undoStep('gating');
+  assert.ok(isCustom(ws.engine.get('g1'), ws.samples[1]));
+});

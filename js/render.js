@@ -501,6 +501,7 @@ function drawGate(ctx, L, spec, item, T) {
   ctx.beginPath(); ctx.rect(MARGIN.l - 1, MARGIN.t - 1, L.pw + 2, L.ph + 2); ctx.clip();
   ctx.lineWidth = selected ? 2.2 : 1.4;
   ctx.strokeStyle = color;
+  if (item.custom) ctx.setLineDash([5, 3]); // adjusted for this sample only
   if (geo.kind === 'poly') {
     ctx.beginPath();
     geo.pts.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));

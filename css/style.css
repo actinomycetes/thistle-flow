@@ -217,3 +217,12 @@ body.reordering, body.reordering * { cursor: grabbing !important; user-select: n
 .sample-list li.dragging { opacity: .45; }
 .sample-list li.drop-before { box-shadow: 0 -2px 0 var(--accent); }
 .sample-list li.drop-after { box-shadow: 0 2px 0 var(--accent); }
+.seg-group { display: inline-flex; align-items: center; }
+.seg-group .seg-label { color: var(--muted); margin-right: 5px; }
+.seg-group .btn { border-radius: 0; }
+.seg-group .btn:first-of-type { border-radius: 4px 0 0 4px; }
+.seg-group .btn:last-of-type { border-radius: 0 4px 4px 0; border-left: none; }
+.custom-mark { font-size: 10.5px; color: #f59e0b; margin-left: 2px; }
+.custom-mark.here { font-weight: 700; }
+.badge.custom { background: #3b2f14; color: #fbbf24; }
+:root[data-theme="light"] .badge.custom { background: #fef3c7; color: #92400e; }
