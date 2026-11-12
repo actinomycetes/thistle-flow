@@ -257,3 +257,5 @@ body.reordering, body.reordering * { cursor: grabbing !important; user-select: n
 .help-box { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; width: min(1000px, 100%); height: min(90vh, 100%); display: flex; flex-direction: column; box-shadow: 0 20px 60px rgba(0,0,0,.45); overflow: hidden; }
 .help-head { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--border); }
 .help-box iframe { flex: 1; border: none; width: 100%; background: var(--bg); }
+.tb-sub { font-size: 10.5px; color: var(--muted); margin: 0 2px 0 2px; }
+.tb-sep { width: 1px; align-self: stretch; background: var(--border); margin: 2px 4px; }

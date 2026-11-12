@@ -761,16 +761,15 @@ test('select-to-zoom with unzoom/reset; split gate; leaving "This sample" asks t
   let z = await ev(() => window.thistleFlow.ws.plots[0].zoom);
   assert.ok(z && Math.abs(z.x[0] - 0.1 * 262144) < 3000 && Math.abs(z.x[1] - 0.4 * 262144) < 3000, JSON.stringify(z));
   assert.ok(z.y[1] < 0.25 * 262144);
-  assert.equal(await ev(() => window.thistleFlow.tool), 'select', 'back to Select after zooming');
+  assert.equal(await ev(() => window.thistleFlow.tool), 'zoom', 'Zoom stays on after zooming');
   assert.match(await ev(() => [...window.thistleFlow.views.values()][0].spec.title), /zoomed/);
   assert.deepEqual(await counts('gL'), lymphBefore, 'zoom does not change gates or statistics');
   // the gate is drawn larger: its rectangle now spans most of the frame width
   const gw = await ev(() => { const L = [...window.thistleFlow.views.values()][0].L; return (L.ux2px(80000 / 262144) - L.ux2px(40000 / 262144)) / L.pw; });
   assert.ok(gw > 0.4, `gate width fraction ${gw}`);
   await page.locator('.plot-card').nth(0).screenshot({ path: OUT + '/e-zoomed.png' });
-  // zoom again inside, then Unzoom goes back one step, Reset to the full range
+  // zoom again inside (the tool is still on), then Unzoom goes back one step, Reset to the full range
   b = await box(0);
-  await page.click('[data-tool=zoom]');
   await drag(b, [0.2, 0.2], [0.6, 0.7]);
   const z2 = await ev(() => window.thistleFlow.ws.plots[0].zoom);
   assert.ok(z2.x[1] - z2.x[0] < z.x[1] - z.x[0], 'zoomed further in');
@@ -866,7 +865,11 @@ test('help opens over the app and closing it keeps the data; grouped two-tier ga
 
   // toolbar: two rows of named groups, tools still work
   const groups = await page.$$eval('#tab-gating .tb-row', rows => rows.map(r => [...r.querySelectorAll('.tb-label')].map(l => l.textContent)));
-  assert.deepEqual(groups, [['Mouse', 'Draw gate · 2-D', 'Draw gate · histogram'], ['Selected gate', 'Gate edits apply to', 'Plots']]);
+  assert.deepEqual(groups, [['Plots', 'Gate'], ['Gate edits apply to']]);
+  // Use global gate sits right after the All samples / This sample switch, in the same group
+  assert.equal(await page.evaluate(() => document.getElementById('gateEditMode').nextElementSibling.id), 'btnGlobalGate');
+  assert.equal(await page.evaluate(() => document.getElementById('btnDeleteGate').closest('.tb-group').getAttribute('aria-label')), 'Gate');
+  assert.equal(await page.evaluate(() => document.getElementById('btnAddPlot').closest('.tb-group').getAttribute('aria-label')), 'Plots');
   await page.click('[data-tool=zoom]');
   assert.equal(await ev(() => window.thistleFlow.tool), 'zoom');
   assert.equal(await page.locator('[data-tool=zoom].active').count(), 1);

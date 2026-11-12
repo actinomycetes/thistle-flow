@@ -551,8 +551,7 @@ function clearZoom(q) { delete q.zoom; delete q.zoomStack; }
 app.zoomPlot = (def, zoom) => {
   def.zoomStack = [...(def.zoomStack || []), def.zoom || null];
   def.zoom = zoom;
-  setTool('select');
-  renderGating();
+  renderGating(); // the Zoom tool stays active (zoom again) until Select or another tool is chosen
 };
 function unzoomPlot(def) {
   const prev = (def.zoomStack || []).pop();
