@@ -978,6 +978,8 @@ test('gate previews follow the cursor; double-click resets zoom; spider and offs
     for (let y = 20; y < pv.h - 40; y += 2) for (let x = 60; x < pv.w - 10; x += 2) { const h = pv.hitTest(x, y); if (h?.mode === 'arm' && h.arm === arm) return [x, y]; }
     return null;
   }, [view(2), arm]);
+  b = await box(2); // the toolbar must not have moved the plot, but measure again to be safe
+  const toolbarH = await page.locator('#tools').evaluate(e => e.offsetHeight);
   let hnd = await findArm('right');
   assert.ok(hnd, 'right-arm handle found');
   await page.mouse.move(b.x + hnd[0], b.y + hnd[1]); await page.mouse.down();
@@ -991,6 +993,7 @@ test('gate previews follow the cursor; double-click resets zoom; spider and offs
 
   await page.click('#quadStyle [data-qmode=offset]');
   assert.deepEqual(await counts(), std, 'offset starts as the straight cross');
+  b = await box(2);
   hnd = await findArm('up');
   assert.ok(hnd, 'up-arm handle found');
   await page.mouse.move(b.x + hnd[0], b.y + hnd[1]); await page.mouse.down();
@@ -1010,6 +1013,7 @@ test('gate previews follow the cursor; double-click resets zoom; spider and offs
   await page.click('.plot-card >> nth=0'); // another gate selected / none: style switch hidden
   await ev(() => window.thistleFlow.selectGate(null));
   assert.equal(await page.isVisible('#quadStyle'), false);
+  assert.equal(await page.locator('#tools').evaluate(e => e.offsetHeight), toolbarH, 'toolbar height unchanged when the quadrant style hides');
   assert.deepEqual(errors, []);
   await page.close();
 });

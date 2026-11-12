@@ -781,7 +781,7 @@ function updateGateButtons() {
   const qs = $('#quadStyle');
   if (qs) {
     const s = ws.activeSample(), eff = g && g.type === 'quad' ? gateFor(g, s) : null;
-    qs.hidden = !eff;
+    qs.style.visibility = eff ? 'visible' : 'hidden'; // keeps its place, so the toolbar never reflows and moves the plots
     if (eff) qs.querySelectorAll('button').forEach(x => x.classList.toggle('primary', x.dataset.qmode === quadMode(eff)));
   }
   b.title = n ? `“${g.name}” is adjusted for ${n} sample(s): ${ws.samples.filter(s => isCustom(g, s)).map(s => s.name).join(', ')}` : 'The selected gate is the same for all samples';
