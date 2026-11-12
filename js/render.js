@@ -1,6 +1,7 @@
 // Rendering of pseudocolor / density / contour / dot plots, histograms, overlays and gates.
 // Works on a Canvas 2D context or on the canvas-compatible SVG/PDF contexts from vector.js.
 import { makeTransform } from './transforms.js';
+import { quadArms, quadHandles, quadMode, DEFAULT_ANGLES, QUAD_REGION_ARMS } from './gates.js';
 
 export const MARGIN = { l: 64, r: 14, t: 24, b: 48 };
 
@@ -504,7 +505,14 @@ export function gateGeometry(L, spec, g) {
   const Y = v => (v === -Infinity ? L.fy2px(-0.05) : v === Infinity ? L.fy2px(1.05) : L.uy2px(ty.fwd(v)));
   if (g.type === 'rect') return { kind: 'poly', pts: [[X(g.x0), Y(g.y0)], [X(g.x1), Y(g.y0)], [X(g.x1), Y(g.y1)], [X(g.x0), Y(g.y1)]] };
   if (g.type === 'polygon') return { kind: 'poly', pts: g.pts.map(([x, y]) => [X(x), Y(y)]) };
-  if (g.type === 'quad') return { kind: 'quad', cx: X(g.cx), cy: Y(g.cy) };
+  if (g.type === 'quad') {
+    const P = ([u, v]) => [L.ux2px(u), L.uy2px(v)];
+    const A = quadArms(g, tx, ty), H = quadHandles(g, tx, ty);
+    const arms = {}, handles = {};
+    for (const k in A.arms) arms[k] = A.arms[k].map(P);
+    for (const k in H) handles[k] = P(H[k]);
+    return { kind: 'quad', cx: X(g.cx), cy: Y(g.cy), mode: quadMode(g), arms, handles };
+  }
   return null;
 }
 
@@ -539,13 +547,26 @@ function drawGate(ctx, L, spec, item, T) {
     const xs = geo.pts.map(p => cx(p[0]));
     def = [(Math.min(...xs) + Math.max(...xs)) / 2, top[1] - 10];
   } else if (geo.kind === 'quad') {
+    // four arms from the centre (straight for standard, angled for spider, stepped for offset)
     ctx.beginPath();
-    ctx.moveTo(geo.cx, MARGIN.t); ctx.lineTo(geo.cx, MARGIN.t + L.ph);
-    ctx.moveTo(MARGIN.l, geo.cy); ctx.lineTo(MARGIN.l + L.pw, geo.cy);
+    for (const k in geo.arms) geo.arms[k].forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
     ctx.stroke();
-    if (selected) { ctx.fillStyle = color; ctx.fillRect(geo.cx - 4, geo.cy - 4, 8, 8); }
+    if (selected) {
+      ctx.fillStyle = color; ctx.fillRect(geo.cx - 4, geo.cy - 4, 8, 8);
+      ctx.setLineDash([]); ctx.lineWidth = 1.5; ctx.fillStyle = T.bg || '#fff';
+      for (const k in geo.handles) { // round handles to turn (spider) or slide (offset) each arm
+        const [x, y] = geo.handles[k];
+        ctx.beginPath(); ctx.arc(x, y, 4.5, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+      }
+    }
     const left = MARGIN.l + 6 + tw / 2, right = MARGIN.l + L.pw - 6 - tw / 2, top = MARGIN.t + 11, bottom = MARGIN.t + L.ph - 11;
     def = { UL: [left, top], UR: [right, top], LL: [left, bottom], LR: [right, bottom] }[g.q];
+    if (geo.mode === 'spider') { // between the quadrant's two arms
+      const a = { ...DEFAULT_ANGLES, ...(g.angles || {}) }, [ka, kb] = QUAD_REGION_ARMS[g.q];
+      const r = d => d * Math.PI / 180, ang = r(a[kb]) + ((r(a[ka]) - r(a[kb])) % (2 * Math.PI) + 2 * Math.PI) % (2 * Math.PI) / 2;
+      const R = Math.min(L.pw, L.ph) * 0.36;
+      def = [geo.cx + R * Math.cos(ang), geo.cy - R * Math.sin(ang)];
+    }
   } else if (geo.kind === 'split') {
     // one vertical line dividing the histogram; each side's label sits in the middle of its side
     ctx.beginPath(); ctx.moveTo(geo.cx, MARGIN.t); ctx.lineTo(geo.cx, MARGIN.t + L.ph); ctx.stroke();

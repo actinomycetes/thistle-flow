@@ -259,3 +259,4 @@ body.reordering, body.reordering * { cursor: grabbing !important; user-select: n
 .help-box iframe { flex: 1; border: none; width: 100%; background: var(--bg); }
 .tb-sub { font-size: 10.5px; color: var(--muted); margin: 0 2px 0 2px; }
 .tb-sep { width: 1px; align-self: stretch; background: var(--border); margin: 2px 4px; }
+.seg-group[hidden] { display: none; }

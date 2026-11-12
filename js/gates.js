@@ -19,7 +19,7 @@ function unitRange(t, a, b) {
 
 // ---- per-sample gate adjustments ----
 // A gate may carry overrides: { [sample.key]: geometry } (keyed by file name so they survive saving).
-const GEOM_KEYS = { rect: ['x0', 'x1', 'y0', 'y1'], polygon: ['pts'], quad: ['cx', 'cy'], interval: ['x0', 'x1', 'level'], split: ['cx'] };
+const GEOM_KEYS = { rect: ['x0', 'x1', 'y0', 'y1'], polygon: ['pts'], quad: ['cx', 'cy', 'quadMode', 'angles', 'offsets'], interval: ['x0', 'x1', 'level'], split: ['cx'] };
 // Gates that come in linked groups (moved together): quadrants (4) and splits (left/right)
 export const isGrouped = g => g.type === 'quad' || g.type === 'split';
 export function pickGeom(g) {
@@ -32,9 +32,109 @@ export const isCustom = (g, sample) => !!(sample && g.overrides && g.overrides[s
 export function gateFor(g, sample) { return isCustom(g, sample) ? { ...g, ...g.overrides[sample.key] } : g; }
 export const customSampleKeys = g => Object.keys(g.overrides || {});
 
+// ---- quadrant geometry ----
+// A quadrant group has a centre (cx, cy) and four arms: up, right, down, left (clockwise).
+//  standard: arms along the axes through the centre;
+//  spider:   straight arms at independent angles (degrees, in display units, anticlockwise from +x);
+//  offset:   staggered arms: the up/down arms run vertically at their own x (offsets.up / .down) and
+//            the right/left arms horizontally at their own y (offsets.right / .left), each joined to
+//            the centre by a step (values in data units).
+// Each quadrant is the region between two neighbouring arms, closed along a frame that extends well
+// past the axes (so piled-up off-scale events are included); the four regions tile the plane.
+export const ARMS = ['up', 'right', 'down', 'left'];
+export const QUAD_REGION_ARMS = { UR: ['up', 'right'], LR: ['right', 'down'], LL: ['down', 'left'], UL: ['left', 'up'] };
+export const DEFAULT_ANGLES = { up: 90, right: 0, down: 270, left: 180 };
+const B0 = -0.5, B1 = 1.5; // extended frame in display units
+export const quadMode = g => g.quadMode || 'standard';
+
+function rayToFrame([x, y], deg) {
+  const dx = Math.cos(deg * Math.PI / 180), dy = Math.sin(deg * Math.PI / 180);
+  let t = Infinity;
+  if (dx > 1e-12) t = Math.min(t, (B1 - x) / dx); else if (dx < -1e-12) t = Math.min(t, (B0 - x) / dx);
+  if (dy > 1e-12) t = Math.min(t, (B1 - y) / dy); else if (dy < -1e-12) t = Math.min(t, (B0 - y) / dy);
+  return [x + dx * t, y + dy * t];
+}
+
+// Arms as polylines from the centre to the extended frame, in display units (0..1 = the plot).
+export function quadArms(g, tx, ty) {
+  const c = [tx.fwd(g.cx), ty.fwd(g.cy)];
+  const m = quadMode(g);
+  if (m === 'spider') {
+    const a = { ...DEFAULT_ANGLES, ...(g.angles || {}) };
+    return { c, arms: Object.fromEntries(ARMS.map(k => [k, [c, rayToFrame(c, a[k])]])) };
+  }
+  if (m === 'offset') {
+    const o = g.offsets || {};
+    const xu = tx.fwd(o.up ?? g.cx), xd = tx.fwd(o.down ?? g.cx), yr = ty.fwd(o.right ?? g.cy), yl = ty.fwd(o.left ?? g.cy);
+    // each arm leaves the centre along its own direction until it is past the neighbouring arms' jogs,
+    // then steps sideways to its own line: arms never cross, so the four regions always tile the plane
+    const top = Math.max(c[1], yl, yr), bot = Math.min(c[1], yl, yr);
+    const rgt = Math.max(c[0], xu, xd), lft = Math.min(c[0], xu, xd);
+    return { c, arms: {
+      up: [c, [c[0], top], [xu, top], [xu, B1]], down: [c, [c[0], bot], [xd, bot], [xd, B0]],
+      right: [c, [rgt, c[1]], [rgt, yr], [B1, yr]], left: [c, [lft, c[1]], [lft, yl], [B0, yl]],
+    } };
+  }
+  return { c, arms: { up: [c, [c[0], B1]], right: [c, [B1, c[1]]], down: [c, [c[0], B0]], left: [c, [B0, c[1]]] } };
+}
+
+// position along the frame, clockwise from the top-left corner (0..8)
+function frameT([x, y]) {
+  const e = 1e-9;
+  if (Math.abs(y - B1) < e) return x - B0;
+  if (Math.abs(x - B1) < e) return 2 + (B1 - y);
+  if (Math.abs(y - B0) < e) return 4 + (B1 - x);
+  return 6 + (y - B0);
+}
+const CORNERS = [[0, [B0, B1]], [2, [B1, B1]], [4, [B1, B0]], [6, [B0, B0]]];
+
+// Polygon (display units) of one quadrant: arm A out, clockwise along the frame, arm B back.
+export function quadRegion(armsObj, q) {
+  const [ka, kb] = QUAD_REGION_ARMS[q];
+  const A = armsObj.arms[ka], B = armsObj.arms[kb];
+  const ta = frameT(A.at(-1));
+  let tb = frameT(B.at(-1));
+  if (tb <= ta) tb += 8;
+  const walk = [];
+  for (const add of [0, 8]) for (const [t, pt] of CORNERS) if (t + add > ta && t + add < tb) walk.push(pt);
+  return [...A, ...walk, ...B.slice().reverse().slice(0, -1)];
+}
+
+// Handles for reshaping (display units): one on each arm (spider: along the arm; offset: on its outer part)
+export function quadHandles(g, tx, ty) {
+  const { c, arms } = quadArms(g, tx, ty);
+  const m = quadMode(g);
+  if (m === 'standard') return {};
+  const clip = v => Math.min(0.97, Math.max(0.03, v));
+  const out = {};
+  for (const k of ARMS) {
+    const a = arms[k];
+    if (m === 'spider') {
+      const deg = { ...DEFAULT_ANGLES, ...(g.angles || {}) }[k] * Math.PI / 180;
+      out[k] = [clip(c[0] + 0.28 * Math.cos(deg)), clip(c[1] + 0.28 * Math.sin(deg))];
+    } else {
+      const [p, q] = [a.at(-2), a.at(-1)]; // the outer segment
+      out[k] = [clip((p[0] + clip(q[0])) / 2), clip((p[1] + clip(q[1])) / 2)];
+    }
+  }
+  return out;
+}
+
 // Which channels a gate uses
 export const isOneD = g => g.type === 'interval' || g.type === 'split'; // histogram gates
 export function gateChannels(g) { return isOneD(g) ? [g.x] : [g.x, g.y]; }
+
+function polygonMask(ux, uy, pts, out) {
+  let minx = Infinity, maxx = -Infinity, miny = Infinity, maxy = -Infinity;
+  for (const [x, y] of pts) { minx = Math.min(minx, x); maxx = Math.max(maxx, x); miny = Math.min(miny, y); maxy = Math.max(maxy, y); }
+  for (let i = 0; i < out.length; i++) {
+    let x = ux[i], y = uy[i];
+    if (!(x === x)) x = B0 + 1e-6; if (!(y === y)) y = B0 + 1e-6; // NaN-safe
+    if (x < minx || x > maxx || y < miny || y > maxy) continue;
+    out[i] = pointInPolygon(x, y, pts) ? 1 : 0;
+  }
+  return out;
+}
 
 export class GateEngine {
   constructor(getCfg) {
@@ -79,6 +179,11 @@ export class GateEngine {
     const N = sample.events;
     const out = new Uint8Array(N);
     if (!this.canApply(sample, g)) return out; // channels missing -> empty
+    if (g.type === 'quad' && quadMode(g) !== 'standard') {
+      const tx = makeTransform(this.getCfg(g.x)), ty = makeTransform(this.getCfg(g.y));
+      const pts = quadRegion(quadArms(g, tx, ty), g.q);
+      return polygonMask(sample.unit(g.x, this.getCfg(g.x)), sample.unit(g.y, this.getCfg(g.y)), pts, out);
+    }
     if (g.type === 'rect' || g.type === 'quad' || g.type === 'interval' || g.type === 'split') {
       let x0, x1, y0 = -Infinity, y1 = Infinity;
       if (g.type === 'rect') ({ x0, x1, y0, y1 } = g);
@@ -109,15 +214,7 @@ export class GateEngine {
     if (g.type === 'polygon') {
       const tx = makeTransform(this.getCfg(g.x)), ty = makeTransform(this.getCfg(g.y));
       const pts = g.pts.map(([x, y]) => [tx.fwd(x), ty.fwd(y)]);
-      const ux = sample.unit(g.x, this.getCfg(g.x)), uy = sample.unit(g.y, this.getCfg(g.y));
-      let minx = Infinity, maxx = -Infinity, miny = Infinity, maxy = -Infinity;
-      for (const [x, y] of pts) { minx = Math.min(minx, x); maxx = Math.max(maxx, x); miny = Math.min(miny, y); maxy = Math.max(maxy, y); }
-      for (let i = 0; i < N; i++) {
-        const x = ux[i], y = uy[i];
-        if (x < minx || x > maxx || y < miny || y > maxy) continue;
-        out[i] = pointInPolygon(x, y, pts) ? 1 : 0;
-      }
-      return out;
+      return polygonMask(sample.unit(g.x, this.getCfg(g.x)), sample.unit(g.y, this.getCfg(g.y)), pts, out);
     }
     throw new Error('Unknown gate type ' + g.type);
   }

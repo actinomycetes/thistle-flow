@@ -82,3 +82,39 @@ test('demo file: compensation recovers single-stain, gating and stats work', () 
   assert.ok(peComp < 200, 'compensated PE median in CD8 ' + peComp);
   assert.ok(peRaw > 500, 'uncompensated PE median in CD8 ' + peRaw);
 });
+
+test('quadrant styles: spider and offset quadrants tile the parent; defaults equal the straight cross', async () => {
+  const { quadArms, quadRegion, pointInPolygon } = await import('../js/gates.js');
+  const [ds] = parseFCS(makeDemoFile('q.fcs', 0.5, 7, 20000), 'q.fcs');
+  const s = new Sample(ds);
+  const getCfg = ch => (ch.startsWith('FSC') || ch.startsWith('SSC') ? { kind: 'linear', min: 0, max: 262144 } : { kind: 'logicle', T: 262144, W: 0.5, M: 4.5, A: 0 });
+  const counts = geom => {
+    const eng = new GateEngine(getCfg);
+    for (const q of ['UL', 'UR', 'LR', 'LL']) eng.add({ id: q, name: q, parent: null, type: 'quad', group: 'Q', q, x: 'PE-A', y: 'APC-A', cx: 800, cy: 800, ...geom });
+    return Object.fromEntries(['UL', 'UR', 'LR', 'LL'].map(q => [q, eng.population(s, q).idx.length]));
+  };
+  const N = s.events;
+  const std = counts({});
+  const sum = c => Object.values(c).reduce((a, b) => a + b, 0);
+  assert.equal(sum(std), N);
+  // default spider / offset = the standard cross
+  assert.deepEqual(counts({ quadMode: 'spider', angles: { up: 90, right: 0, down: 270, left: 180 } }), std);
+  assert.deepEqual(counts({ quadMode: 'offset', offsets: { up: 800, down: 800, right: 800, left: 800 } }), std);
+  // reshaped: every event still in exactly one quadrant
+  const sp = counts({ quadMode: 'spider', angles: { up: 70, right: 20, down: 250, left: 170 } });
+  assert.equal(sum(sp), N); assert.notDeepEqual(sp, std);
+  const of = counts({ quadMode: 'offset', offsets: { up: 3000, down: 300, right: 2000, left: 200 } });
+  assert.equal(sum(of), N); assert.notDeepEqual(of, std);
+  // offset: up arm moved left, so UL shrinks and UR grows by the same events; the lower half is unchanged
+  const of2 = counts({ quadMode: 'offset', offsets: { up: 10, down: 800, right: 800, left: 800 } });
+  assert.ok(of2.UL < std.UL && of2.UR > std.UR && of2.UL + of2.UR === std.UL + std.UR, JSON.stringify([of2, std]));
+  assert.ok(of2.LR === std.LR && of2.LL === std.LL);
+  // geometry: regions tile an extended grid for awkward settings too
+  const id = { fwd: v => v, inv: v => v };
+  const g = { cx: 0.3, cy: 0.7, quadMode: 'offset', offsets: { up: 0.1, down: 0.6, right: 0.9, left: 0.2 } };
+  const arms = quadArms(g, id, id);
+  for (let x = -0.3; x < 1.3; x += 0.031) for (let y = -0.3; y < 1.3; y += 0.029) {
+    const n = ['UR', 'LR', 'LL', 'UL'].filter(q => pointInPolygon(x, y, quadRegion(arms, q))).length;
+    assert.equal(n, 1, `point ${x},${y} in ${n} quadrants`);
+  }
+});

@@ -2,7 +2,7 @@
 import { renderPlot, prepareCanvas, gateGeometry, MARGIN, THEMES, SERIES_COLORS, normalizeKind } from './render.js';
 import { makeTransform } from './transforms.js';
 import { trackDrag } from './ui.js';
-import { populationStats, pointInPolygon, gateFor, isCustom, isOneD } from './gates.js';
+import { populationStats, pointInPolygon, gateFor, isCustom, isOneD, quadArms, quadRegion, quadMode, ARMS, DEFAULT_ANGLES } from './gates.js';
 
 export const fmtPct = v => (Number.isFinite(v) ? (v >= 10 ? v.toFixed(1) : v.toFixed(2)) + '%' : '–');
 
@@ -136,6 +136,17 @@ function buildOverlaySpec(ws, samples, def, w, h, opts) {
 
 const HANDLE = 6;
 
+function distToPolyline(px, py, pts) {
+  let best = Infinity;
+  for (let i = 1; i < pts.length; i++) {
+    const [ax, ay] = pts[i - 1], [bx, by] = pts[i];
+    const dx = bx - ax, dy = by - ay, l2 = dx * dx + dy * dy;
+    const t = l2 ? Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / l2)) : 0;
+    best = Math.min(best, Math.hypot(px - ax - t * dx, py - ay - t * dy));
+  }
+  return best;
+}
+
 export class PlotView {
   constructor(app, def, canvas) {
     Object.assign(this, { app, def, canvas });
@@ -145,6 +156,7 @@ export class PlotView {
     this._move = e => this.onMove(e);
     this._up = e => this.onUp(e);
     canvas.addEventListener('mousemove', e => { if (!this.drag && !this.drawing) this.hover(e); else if (this.drawing?.type === 'polygon') this.onMove(e); });
+    canvas.addEventListener('mouseleave', () => { if (this.preview) { this.preview = null; this.quickDraw(); } });
     canvas.addEventListener('contextmenu', e => { if (this.drawing) { e.preventDefault(); this.drawing = null; this.draw(); } });
   }
 
@@ -179,8 +191,31 @@ export class PlotView {
     this.drawInProgress(ctx);
   }
 
+  // Where a Quadrant, Split or Range gate would go, following the cursor before clicking
+  previewType() {
+    const t = this.app.tool, hist = this.def && !this.def.y;
+    return (t === 'quad' && !hist) || ((t === 'split' || t === 'interval') && hist) ? t : null;
+  }
+
+  drawPreview(ctx) {
+    const p = this.preview, L = this.L;
+    if (!p || !L || p.type !== this.previewType()) return;
+    const [x, y] = [L.ux2px(p.u[0]), L.uy2px(p.u[1])];
+    ctx.save();
+    ctx.beginPath(); ctx.rect(MARGIN.l, MARGIN.t, L.pw, L.ph); ctx.clip();
+    ctx.strokeStyle = this.app.theme === 'dark' ? 'rgba(255,255,255,0.75)' : 'rgba(0,0,0,0.7)';
+    ctx.setLineDash([5, 4]); ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    if (p.type === 'quad') { ctx.moveTo(x, MARGIN.t); ctx.lineTo(x, MARGIN.t + L.ph); ctx.moveTo(MARGIN.l, y); ctx.lineTo(MARGIN.l + L.pw, y); }
+    else if (p.type === 'split') { ctx.moveTo(x, MARGIN.t); ctx.lineTo(x, MARGIN.t + L.ph); }
+    else { ctx.moveTo(x, y - 8); ctx.lineTo(x, y + 8); ctx.moveTo(x, y); ctx.lineTo(x + 14, y); } // range: its start
+    ctx.stroke();
+    ctx.restore();
+  }
+
   drawInProgress(ctx) {
-    const d = this.drawing; if (!d) return;
+    const d = this.drawing;
+    if (!d) return this.drawPreview(ctx);
     const L = this.L;
     ctx.save();
     ctx.strokeStyle = this.app.theme === 'dark' ? '#fff' : '#000'; ctx.setLineDash([4, 3]); ctx.lineWidth = 1.3;
@@ -204,8 +239,9 @@ export class PlotView {
       const y0 = this.def.y ? L.uy2px(d.start[1]) : MARGIN.t, y1 = this.def.y ? L.uy2px(d.cur[1]) : MARGIN.t + L.ph;
       ctx.fillRect(x0, y0, x1 - x0, y1 - y0); ctx.strokeRect(x0, y0, x1 - x0, y1 - y0);
     } else if (d.type === 'interval' && d.cur) {
-      const y = L.uy2px(d.start[1]);
-      ctx.beginPath(); ctx.moveTo(L.ux2px(d.start[0]), y); ctx.lineTo(L.ux2px(d.cur[0]), y); ctx.stroke();
+      const y = L.uy2px(d.start[1]), x0 = L.ux2px(d.start[0]), x1 = L.ux2px(d.cur[0]);
+      ctx.beginPath(); ctx.moveTo(x0, y); ctx.lineTo(x1, y);
+      ctx.moveTo(x0, y - 8); ctx.lineTo(x0, y + 8); ctx.moveTo(x1, y - 8); ctx.lineTo(x1, y + 8); ctx.stroke();
     }
     ctx.restore();
   }
@@ -248,6 +284,10 @@ export class PlotView {
         if (Math.abs(geo.cx - px) <= HANDLE && this.inPlot(px, py)) return { gate: it.gate, mode: 'split' };
       } else if (geo.kind === 'quad') {
         if (Math.abs(geo.cx - px) <= HANDLE + 2 && Math.abs(geo.cy - py) <= HANDLE + 2) return { gate: it.gate, mode: 'quad' };
+        if (it.selected) for (const k in geo.handles) {
+          const [hx, hy] = geo.handles[k];
+          if (Math.hypot(hx - px, hy - py) <= HANDLE + 1) return { gate: it.gate, mode: 'arm', arm: k };
+        }
       } else if (geo.kind === 'interval') {
         if (Math.abs(clampX(geo.x0) - px) <= HANDLE && Math.abs(geo.y - py) <= 10) return { gate: it.gate, mode: 'iv0' };
         if (Math.abs(clampX(geo.x1) - px) <= HANDLE && Math.abs(geo.y - py) <= 10) return { gate: it.gate, mode: 'iv1' };
@@ -257,7 +297,7 @@ export class PlotView {
       const geo = gateGeometry(this.L, this.spec, it.gate);
       if (geo.kind === 'poly' && pointInPolygon(px, py, geo.pts)) return { gate: it.gate, mode: 'move' };
       if (geo.kind === 'interval' && px >= Math.min(geo.x0, geo.x1) && px <= Math.max(geo.x0, geo.x1) && Math.abs(py - geo.y) <= 8) return { gate: it.gate, mode: 'move' };
-      if (geo.kind === 'quad' && (Math.abs(geo.cx - px) <= 4 || Math.abs(geo.cy - py) <= 4)) return { gate: it.gate, mode: 'quad' };
+      if (geo.kind === 'quad' && this.inPlot(px, py) && Object.values(geo.arms).some(a => distToPolyline(px, py, a) <= 4)) return { gate: it.gate, mode: 'quad' };
     }
     for (const it of items) { // clicking on one side of a split selects that side
       const g = it.gate; if (g.type !== 'split' || !this.inPlot(px, py)) continue;
@@ -266,9 +306,9 @@ export class PlotView {
     }
     for (const it of items) {
       const g = it.gate; if (g.type !== 'quad') continue;
-      const geo = gateGeometry(this.L, this.spec, g);
-      const q = (py < geo.cy ? 'U' : 'L') + (px < geo.cx ? 'L' : 'R');
-      if (q === g.q && this.inPlot(px, py)) return { gate: g, mode: 'select' };
+      if (!this.inPlot(px, py)) continue;
+      const tx = makeTransform(this.spec.x.cfg), ty = makeTransform(this.spec.y.cfg);
+      if (pointInPolygon(this.L.px2ux(px), this.L.px2uy(py), quadRegion(quadArms(g, tx, ty), g.q))) return { gate: g, mode: 'select' };
     }
     return null;
   }
@@ -278,9 +318,16 @@ export class PlotView {
     const { px, py } = this.evtUnit(e);
     if (this.axisAt(px, py)) { this.canvas.style.cursor = 'pointer'; this.canvas.title = 'Click for this axis: channel and scale'; return; }
     this.canvas.title = '';
-    if (this.app.tool !== 'select') { this.canvas.style.cursor = 'crosshair'; return; }
+    if (this.app.tool !== 'select') {
+      this.canvas.style.cursor = 'crosshair';
+      const t = this.previewType();
+      const prev = this.preview;
+      this.preview = t && this.inPlot(px, py) ? { type: t, u: this.evtUnit(e).u } : null;
+      if (this.preview || prev) this.quickDraw();
+      return;
+    }
     const h = this.hitTest(px, py);
-    this.canvas.style.cursor = !h ? 'default' : h.mode === 'move' || h.mode === 'label' ? 'move' : h.mode === 'split' ? 'ew-resize' : h.mode === 'select' ? 'pointer' : 'crosshair';
+    this.canvas.style.cursor = !h ? 'default' : h.mode === 'move' || h.mode === 'label' ? 'move' : h.mode === 'split' ? 'ew-resize' : h.mode === 'select' ? 'pointer' : h.mode === 'arm' ? 'grab' : 'crosshair';
   }
 
   onDown(e) {
@@ -291,6 +338,7 @@ export class PlotView {
     if (axis && !this.drawing) { this.app.plotClicked(this.def.id, e, { keepSelection: true }); this.app.axisMenu(this.def, axis, e.clientX, e.clientY); return; }
     const tool = this.app.tool;
     const isHist = !this.def.y;
+    this.preview = null;
     if (tool === 'select') {
       const h = this.hitTest(px, py);
       if (!h) { this.app.plotClicked(this.def.id, e); this.app.selectGate(null); return; }
@@ -372,7 +420,30 @@ export class PlotView {
     } else if (g.type === 'split') {
       g.cx = tx.inv(u[0]);
     } else if (g.type === 'quad') {
-      g.cx = tx.inv(u[0]); g.cy = ty.inv(u[1]);
+      const m = quadMode(o);
+      if (d.mode === 'arm' && m === 'spider') {
+        // turn one arm, keeping it between its neighbours so the four quadrants stay in order
+        const c = [tx.fwd(o.cx), ty.fwd(o.cy)];
+        const a = { ...DEFAULT_ANGLES, ...(o.angles || {}) }, i = ARMS.indexOf(d.arm);
+        const cw = a[ARMS[(i + 1) % 4]], acw = a[ARMS[(i + 3) % 4]];
+        const norm = v => ((v % 360) + 360) % 360;
+        const want = Math.atan2(u[1] - c[1], u[0] - c[0]) * 180 / Math.PI;
+        const span = norm(acw - cw) || 360, rel = Math.min(span - 5, Math.max(5, norm(want - cw)));
+        g.angles = { ...a, [d.arm]: Math.round(norm(cw + rel) * 10) / 10 };
+      } else if (d.mode === 'arm' && m === 'offset') {
+        const off = { up: o.cx, down: o.cx, right: o.cy, left: o.cy, ...(o.offsets || {}) };
+        const s = snapUnit(u);
+        off[d.arm] = d.arm === 'up' || d.arm === 'down' ? tx.inv(s[0]) : ty.inv(s[1]);
+        g.offsets = off;
+      } else {
+        g.cx = tx.inv(u[0]); g.cy = ty.inv(u[1]);
+        if (m === 'offset' && o.offsets) { // the staggered arms move with the centre
+          const dx = u[0] - tx.fwd(o.cx), dy = u[1] - ty.fwd(o.cy);
+          const ox = v => tx.inv(tx.fwd(v) + dx), oy = v => ty.inv(ty.fwd(v) + dy);
+          const f = o.offsets;
+          g.offsets = { up: ox(f.up ?? o.cx), down: ox(f.down ?? o.cx), right: oy(f.right ?? o.cy), left: oy(f.left ?? o.cy) };
+        }
+      }
     } else if (g.type === 'interval') {
       if (d.mode === 'iv0') g.x0 = tx.inv(snapUnit(u)[0]);
       else if (d.mode === 'iv1') g.x1 = tx.inv(snapUnit(u)[0]);
@@ -424,6 +495,10 @@ export class PlotView {
       this.drawing.pts.pop(); // dblclick produced a duplicate point
       return this.finishPolygon();
     }
+    if (this.app.tool === 'zoom') { // double-click while zooming = Reset zoom (whole axis range)
+      if (this.def.zoom) this.app.resetZoom(this.def);
+      return;
+    }
     if (this.app.tool !== 'select' || !this.spec) return;
     const { px, py } = this.evtUnit(e);
     const h = this.hitTest(px, py);
@@ -438,7 +513,7 @@ export class PlotView {
     this.app.createGate(this.def, { type: 'polygon', pts: pts.map(p => this.toData(p)) });
   }
 
-  cancel() { if (this.drawing) { this.drawing = null; this.draw(); } }
+  cancel() { if (this.drawing || this.preview) { this.drawing = null; this.preview = null; this.draw(); } }
 
   toData([ux, uy]) {
     const tx = makeTransform(this.app.ws.getCfg(this.def.x));

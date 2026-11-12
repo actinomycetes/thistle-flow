@@ -2,7 +2,7 @@
 import { parseFCS, writeFCS } from './fcs.js';
 import { Sample } from './model.js';
 import { defaultTransformFor } from './transforms.js';
-import { GATE_COLORS, STAT_DEFS, channelStats, populationStats, pickGeom, isCustom, customSampleKeys, isGrouped, isOneD } from './gates.js';
+import { GATE_COLORS, STAT_DEFS, channelStats, populationStats, pickGeom, isCustom, customSampleKeys, isGrouped, isOneD, gateFor, quadMode } from './gates.js';
 import { PlotView, buildSpec, shortLabel, fmtPct, subsampleIdx, overlayColor, QUAD_NUM, PLOT_SIZES, EVENT_LIMITS } from './plotview.js';
 import { renderPlot, prepareCanvas, SERIES_COLORS, THEMES, PLOT_KINDS, HIST_OFFSETS, DOT_SIZES, DEFAULT_DOT, normalizeKind } from './render.js';
 import { renderSVG, renderPDF } from './vector.js';
@@ -553,6 +553,7 @@ app.zoomPlot = (def, zoom) => {
   def.zoom = zoom;
   renderGating(); // the Zoom tool stays active (zoom again) until Select or another tool is chosen
 };
+app.resetZoom = def => { clearZoom(def); renderGating(); };
 function unzoomPlot(def) {
   const prev = (def.zoomStack || []).pop();
   if (prev) def.zoom = prev; else clearZoom(def);
@@ -643,6 +644,23 @@ app.createQuadrant = (def, [cx, cy]) => {
   ws.selectedGate = first.id;
   setTool('select');
   renderAll();
+};
+
+// Quadrant style: standard (straight cross), spider (each arm at its own angle) or offset (staggered arms).
+// Switching style starts from the straight cross at the current centre. Follows "Gate edits apply to".
+app.setQuadMode = mode => {
+  const ws = app.ws, g = ws.selectedGate && ws.engine.get(ws.selectedGate);
+  if (!g || g.type !== 'quad') return;
+  const s = ws.activeSample(), perSample = app.gateEditMode === 'sample' && s;
+  const eff = gateFor(g, perSample || null);
+  if (quadMode(eff) === mode) return;
+  const w = { ...eff, quadMode: mode, angles: null, offsets: null };
+  if (mode === 'spider') w.angles = { up: 90, right: 0, down: 270, left: 180 };
+  if (mode === 'offset') w.offsets = { up: eff.cx, down: eff.cx, right: eff.cy, left: eff.cy };
+  app.setGateGeometry(g, w, perSample || null);
+  app.gateChanged(g);
+  app.scheduleCommit?.();
+  if (mode !== 'standard') app.toast(mode === 'spider' ? 'Spider quadrant: drag the round handles to turn each arm.' : 'Offset quadrant: drag the round handles to slide each arm on its own.');
 };
 
 // ---- per-sample gates ----
@@ -739,6 +757,13 @@ function updateGateButtons() {
   const n = g ? customSampleKeys(g).length : 0;
   const b = $('#btnGlobalGate');
   b.disabled = !n;
+  // quadrant style (Standard / Spider / Offset) for the selected quadrant group, as it applies to the active sample
+  const qs = $('#quadStyle');
+  if (qs) {
+    const s = ws.activeSample(), eff = g && g.type === 'quad' ? gateFor(g, s) : null;
+    qs.hidden = !eff;
+    if (eff) qs.querySelectorAll('button').forEach(x => x.classList.toggle('primary', x.dataset.qmode === quadMode(eff)));
+  }
   b.title = n ? `“${g.name}” is adjusted for ${n} sample(s): ${ws.samples.filter(s => isCustom(g, s)).map(s => s.name).join(', ')}` : 'The selected gate is the same for all samples';
 }
 
@@ -1592,6 +1617,7 @@ $('#btnAddPlot').addEventListener('click', () => {
 });
 $('#btnDeleteGate').addEventListener('click', () => app.ws.selectedGate && deleteGate(app.ws.selectedGate));
 $('#btnGlobalGate').addEventListener('click', revertSelectedGate);
+$$('#quadStyle [data-qmode]').forEach(b => b.addEventListener('click', () => app.setQuadMode(b.dataset.qmode)));
 $$('#gateEditMode button').forEach(b => b.addEventListener('click', () => switchGateEditMode(b.dataset.mode)));
 $('#btnExportLayout').addEventListener('click', e => {
   if (!app.ws.figures.length) return toast('No figures in the layout');

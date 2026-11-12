@@ -865,7 +865,7 @@ test('help opens over the app and closing it keeps the data; grouped two-tier ga
 
   // toolbar: two rows of named groups, tools still work
   const groups = await page.$$eval('#tab-gating .tb-row', rows => rows.map(r => [...r.querySelectorAll('.tb-label')].map(l => l.textContent)));
-  assert.deepEqual(groups, [['Plots', 'Gate'], ['Gate edits apply to']]);
+  assert.deepEqual(groups, [['Plots', 'Gate edits apply to'], ['Gate']]);
   // Use global gate sits right after the All samples / This sample switch, in the same group
   assert.equal(await page.evaluate(() => document.getElementById('gateEditMode').nextElementSibling.id), 'btnGlobalGate');
   assert.equal(await page.evaluate(() => document.getElementById('btnDeleteGate').closest('.tb-group').getAttribute('aria-label')), 'Gate');
@@ -905,6 +905,111 @@ test('help opens over the app and closing it keeps the data; grouped two-tier ga
   await page.click('#backToApp');
   await page.waitForURL(u => !/help\.html/.test(String(u)));
   assert.equal(await page.isVisible('#btnDemo'), true);
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
+test('gate previews follow the cursor; double-click resets zoom; spider and offset quadrants', { timeout: 240000 }, async () => {
+  browser = browser || await chromium.launch();
+  const page = await browser.newPage({ viewport: { width: 1600, height: 1000 } });
+  const errors = [];
+  page.on('pageerror', e => errors.push(e.message));
+  await page.addInitScript(() => { try { localStorage.clear(); } catch {} });
+  const ev = f => page.evaluate(f);
+  await page.goto(BASE + '/');
+  await page.click('#btnDemo'); await page.waitForSelector('.plot-card canvas');
+  await ev(() => {
+    const ws = window.thistleFlow.ws;
+    ws.plots[1].x = 'FITC-A'; ws.plots[1].y = null;
+    ws.plots[2].x = 'PE-A'; ws.plots[2].y = 'APC-A';
+    window.thistleFlow.renderAll();
+  });
+  const box = async i => page.locator('.plot-card canvas').nth(i).boundingBox();
+  const at = (b, ux, uy) => [b.x + 64 + ux * (b.width - 78), b.y + 24 + (1 - uy) * (b.height - 72)];
+  const view = i => `[...window.thistleFlow.views.values()][${i}]`;
+  const preview = i => page.evaluate(`(${view(i)}).preview?.type || null`);
+
+  // ---- previews: Quadrant on a 2-D plot, Split and Range on a histogram ----
+  let b = await box(2);
+  await page.click('[data-tool=quad]');
+  await page.mouse.move(...at(b, 0.4, 0.4)); await page.mouse.move(...at(b, 0.45, 0.42));
+  assert.equal(await preview(2), 'quad');
+  await page.locator('.plot-card').nth(2).screenshot({ path: OUT + '/f-quad-preview.png' });
+  await page.mouse.move(b.x + b.width + 200, b.y + 10); // leaving the plot removes it
+  assert.equal(await preview(2), null);
+  b = await box(1);
+  for (const t of ['split', 'interval']) {
+    await page.click(`[data-tool=${t}]`);
+    await page.mouse.move(...at(b, 0.5, 0.5)); await page.mouse.move(...at(b, 0.55, 0.5));
+    assert.equal(await preview(1), t, t + ' preview');
+    await page.locator('.plot-card').nth(1).screenshot({ path: OUT + `/f-${t}-preview.png` });
+  }
+  await page.keyboard.press('v');
+  assert.equal(await preview(1), null, 'choosing Select clears the preview');
+
+  // ---- double-click in Zoom mode = Reset zoom ----
+  b = await box(0);
+  await page.click('[data-tool=zoom]');
+  await page.mouse.move(...at(b, 0.1, 0.1)); await page.mouse.down(); await page.mouse.move(...at(b, 0.5, 0.5), { steps: 6 }); await page.mouse.up();
+  assert.ok(await ev(() => window.thistleFlow.ws.plots[0].zoom));
+  await page.mouse.move(...at(b, 0.3, 0.3)); await page.mouse.down(); await page.mouse.move(...at(b, 0.6, 0.6), { steps: 6 }); await page.mouse.up(); // zoom twice
+  assert.equal(await ev(() => window.thistleFlow.ws.plots[0].zoomStack?.length), 2);
+  await page.mouse.dblclick(...at(b, 0.5, 0.5));
+  assert.equal(await ev(() => window.thistleFlow.ws.plots[0].zoom), undefined, 'double-click resets the zoom');
+  assert.equal(await ev(() => window.thistleFlow.tool), 'zoom', 'still zooming');
+
+  // ---- quadrant: standard, then spider and offset ----
+  b = await box(2);
+  await page.click('[data-tool=quad]');
+  await page.mouse.click(...at(b, 0.35, 0.35));
+  const ids = await ev(() => window.thistleFlow.ws.engine.list().filter(g => g.type === 'quad').map(g => g.id));
+  assert.equal(ids.length, 4);
+  const counts = () => page.evaluate(ids => ids.map(id => window.thistleFlow.ws.engine.population(window.thistleFlow.ws.activeSample(), id).count), ids);
+  const total = await ev(() => window.thistleFlow.ws.activeSample().events);
+  const sum = a => a.reduce((x, y) => x + y, 0);
+  const std = await counts();
+  assert.equal(sum(std), total);
+  assert.equal(await page.isVisible('#quadStyle'), true, 'style switch shown for a selected quadrant');
+  await page.click('#quadStyle [data-qmode=spider]');
+  assert.equal(await ev(() => window.thistleFlow.ws.engine.list().filter(g => g.type === 'quad').every(g => g.quadMode === 'spider')), true, 'whole group');
+  assert.deepEqual(await counts(), std, 'spider starts as the straight cross');
+  const findArm = arm => page.evaluate(([v, arm]) => {
+    const pv = eval(v);
+    for (let y = 20; y < pv.h - 40; y += 2) for (let x = 60; x < pv.w - 10; x += 2) { const h = pv.hitTest(x, y); if (h?.mode === 'arm' && h.arm === arm) return [x, y]; }
+    return null;
+  }, [view(2), arm]);
+  let hnd = await findArm('right');
+  assert.ok(hnd, 'right-arm handle found');
+  await page.mouse.move(b.x + hnd[0], b.y + hnd[1]); await page.mouse.down();
+  await page.mouse.move(b.x + hnd[0], b.y + hnd[1] - 60, { steps: 6 }); await page.mouse.up(); // turn the right arm upwards
+  const ang = await ev(() => window.thistleFlow.ws.engine.list().find(g => g.type === 'quad').angles.right);
+  assert.ok(ang > 10 && ang < 85, 'right arm turned anticlockwise: ' + ang);
+  const sp = await counts();
+  assert.equal(sum(sp), total, 'spider quadrants still cover every event once');
+  assert.notDeepEqual(sp, std);
+  await page.locator('.plot-card').nth(2).screenshot({ path: OUT + '/f-spider.png' });
+
+  await page.click('#quadStyle [data-qmode=offset]');
+  assert.deepEqual(await counts(), std, 'offset starts as the straight cross');
+  hnd = await findArm('up');
+  assert.ok(hnd, 'up-arm handle found');
+  await page.mouse.move(b.x + hnd[0], b.y + hnd[1]); await page.mouse.down();
+  await page.mouse.move(b.x + hnd[0] - 50, b.y + hnd[1], { steps: 6 }); await page.mouse.up(); // slide the up arm left
+  const of = await counts();
+  assert.equal(sum(of), total, 'offset quadrants still cover every event once');
+  assert.notDeepEqual(of, std);
+  // only the upper quadrants change when the up arm slides
+  const names = await ev(() => window.thistleFlow.ws.engine.list().filter(g => g.type === 'quad').map(g => g.q));
+  names.forEach((q, i) => { if (q[0] === 'L') assert.equal(of[i], std[i], q + ' unchanged'); });
+  await page.locator('.plot-card').nth(2).screenshot({ path: OUT + '/f-offset.png' });
+  // undo / workspace keep the style
+  const json = await ev(() => JSON.stringify(window.thistleFlow.ws.serialize ? window.thistleFlow.ws.serialize() : {}));
+  assert.match(json, /"quadMode":"offset"/);
+  await page.click('#quadStyle [data-qmode=standard]');
+  assert.deepEqual(await counts(), std, 'back to the straight cross');
+  await page.click('.plot-card >> nth=0'); // another gate selected / none: style switch hidden
+  await ev(() => window.thistleFlow.selectGate(null));
+  assert.equal(await page.isVisible('#quadStyle'), false);
   assert.deepEqual(errors, []);
   await page.close();
 });
