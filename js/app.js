@@ -7,7 +7,7 @@ import { PlotView, buildSpec, shortLabel, fmtPct, subsampleIdx, overlayColor, QU
 import { renderPlot, prepareCanvas, SERIES_COLORS, THEMES, PLOT_KINDS, HIST_OFFSETS, DOT_SIZES, DEFAULT_DOT, normalizeKind } from './render.js';
 import { renderSVG, renderPDF } from './vector.js';
 import { demoFiles } from './demo.js';
-import { $, $$, h, uid, esc, safeName, dateStamp, toast, openModal, closeModal, modalOpen, choose, popover, closePopover, saveFile, saveDialog, pickFile, pickFiles } from './ui.js';
+import { $, $$, h, uid, esc, safeName, dateStamp, toast, openModal, closeModal, modalOpen, choose, popover, closePopover, doneButton, trackDrag, saveFile, saveDialog, pickFile, pickFiles } from './ui.js';
 import { createZip, readZip, isZip } from './zip.js';
 import { Workspace } from './workspace.js';
 import { renderProperties } from './properties.js';
@@ -284,7 +284,6 @@ function startSampleDrag(e, s) {
     items.forEach((li, i) => { li.classList.toggle('drop-before', i === to && to !== from && to !== from + 1); li.classList.toggle('drop-after', to === items.length && i === items.length - 1 && from !== items.length - 1); });
   };
   const up = () => {
-    window.removeEventListener('mousemove', move); window.removeEventListener('mouseup', up);
     document.body.classList.remove('reordering');
     items.forEach(li => li.classList.remove('dragging', 'drop-before', 'drop-after'));
     const target = to > from ? to - 1 : to;
@@ -294,7 +293,7 @@ function startSampleDrag(e, s) {
     ws.dirty = true;
     renderAll();
   };
-  window.addEventListener('mousemove', move); window.addEventListener('mouseup', up);
+  trackDrag(move, up);
 }
 
 function removeSample(id) {
@@ -493,8 +492,9 @@ function plotSettings(p, anchor) {
     h('div', { class: 'row' },
       h('button', { class: 'btn small', onclick: () => axisMenu(p, 'x', anchor) }, 'X axis…'),
       h('button', { class: 'btn small', onclick: () => axisMenu(p, 'y', anchor) }, p.y ? 'Y axis…' : 'Y: histogram…')),
-    h('div', { class: 'hint-box' }, n > 1 ? 'Changes apply to all selected plots.' : 'Tip: shift-click plots or drag a box around them to change several at once.'));
-  popover(anchor, body);
+    h('div', { class: 'hint-box' }, n > 1 ? 'Changes apply to all selected plots.' : 'Tip: shift-click plots or drag a box around them to change several at once.'),
+    doneButton());
+  popover(anchor, body, { beside: anchor.closest?.('.plot-card') });
 }
 
 // ---- quick axis menu: channel and scale of one axis of this plot (or of the selected plots) ----
@@ -526,10 +526,11 @@ function axisMenu(p, axis, anchor) {
       cfg && cfg.kind === 'logicle' ? h('label', {}, h('span', {}, 'Width (W)'), h('input', { type: 'number', step: 0.05, min: 0, value: cfg.W, style: 'width:70px', onchange: e => { const v = parseFloat(e.target.value); if (Number.isFinite(v)) { cfg.W = v; apply(); } } }),
         h('button', { class: 'btn small', title: 'Estimate W from the negative events of the active sample', onclick: () => { const W = autoW(ch, cfg); if (W !== null) { cfg.W = W; apply(); } } }, 'Auto')) : null,
       cfg ? h('div', { class: 'hint-box' }, `The scale belongs to ${label}: every plot showing it uses the same scale, so gates select the same events everywhere.`) : null,
+      doneButton(),
     ].flat().filter(Boolean));
   };
   draw();
-  popover(anchor, body);
+  popover(anchor, body, { beside: $(`.plot-card[data-plot="${p.id}"]`) });
 }
 
 // Logicle W from the 5th percentile of negative values in the active sample (Parks et al. 2006)
@@ -580,8 +581,8 @@ function setupRubberBand() {
       }
       app.ws.selPlots = sel; updateSelectionUI();
     };
-    const up = () => { window.removeEventListener('mousemove', move); window.removeEventListener('mouseup', up); band.remove(); updateSelectionUI(); };
-    window.addEventListener('mousemove', move); window.addEventListener('mouseup', up);
+    const up = () => { band.remove(); updateSelectionUI(); };
+    trackDrag(move, up);
     move(e);
   });
 }
@@ -1482,8 +1483,7 @@ function setupSplitters() {
   const drag = (el, onMove, onEnd) => el.addEventListener('mousedown', e => {
     e.preventDefault();
     document.body.classList.add('resizing');
-    const up = () => { window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', up); document.body.classList.remove('resizing'); onEnd(); };
-    window.addEventListener('mousemove', onMove); window.addEventListener('mouseup', up);
+    trackDrag(onMove, () => { document.body.classList.remove('resizing'); onEnd(); });
   });
   drag($('#mainSplit'), e => { side.style.width = Math.max(180, Math.min(window.innerWidth * 0.6, e.clientX - side.getBoundingClientRect().left)) + 'px'; },
     () => pref.set('sidebarW', side.offsetWidth));

@@ -6,7 +6,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
-const order = ['version', 'transforms', 'fcs', 'model', 'gates', 'render', 'vector', 'plotview', 'figureview', 'zip', 'demo', 'ui', 'workspace', 'properties', 'app'];
+const order = ['version', 'transforms', 'fcs', 'model', 'gates', 'render', 'vector', 'ui', 'plotview', 'figureview', 'zip', 'demo', 'workspace', 'properties', 'app'];
 let js = '';
 for (const m of order) {
   let src = readFileSync(join(root, 'js', m + '.js'), 'utf8');

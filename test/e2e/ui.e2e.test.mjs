@@ -628,3 +628,55 @@ test('per-sample gates (adjust, indicators, back to global); Layout keep ratio',
   assert.deepEqual(errors, []);
   await page.close();
 });
+
+test('drags end even if the browser loses the mouseup (Safari); axis menu beside the plot with Done', { timeout: 120000 }, async () => {
+  browser = browser || await chromium.launch();
+  const page = await browser.newPage({ viewport: { width: 1600, height: 1000 } });
+  const errors = [];
+  page.on('pageerror', e => errors.push(e.message));
+  await page.addInitScript(() => { try { localStorage.clear(); } catch {} });
+  const ev = f => page.evaluate(f);
+  await page.goto(BASE + '/');
+  await page.click('#btnDemo'); await page.waitForSelector('.plot-card canvas');
+  await ev(() => { const ws = window.thistleFlow.ws; ws.plots[1].x = 'FITC-A'; ws.plots[1].y = 'PE-A'; window.thistleFlow.renderAll(); });
+
+  // axis quick menu opens beside the plot card, not over it
+  const card = await page.locator('.plot-card').nth(1).boundingBox();
+  const cv = await page.locator('.plot-card canvas').nth(1).boundingBox();
+  await page.mouse.click(cv.x + 20, cv.y + 24 + 120);
+  const pop = await page.locator('.popover').boundingBox();
+  const overlaps = !(pop.x >= card.x + card.width || pop.x + pop.width <= card.x || pop.y >= card.y + card.height || pop.y + pop.height <= card.y);
+  assert.ok(!overlaps, `menu ${JSON.stringify(pop)} must not cover the plot ${JSON.stringify(card)}`);
+
+  // the drag that closes the menu: start a selection box on the empty grid, then lose the mouseup
+  const grid = await page.locator('#plotGrid').boundingBox();
+  await page.mouse.move(grid.x + grid.width - 8, grid.y + grid.height - 8);
+  await page.mouse.down();
+  await page.mouse.move(grid.x + grid.width / 2, grid.y + grid.height / 2, { steps: 5 });
+  assert.equal(await page.locator('.rubber-band').count(), 1, 'selection box while dragging');
+  assert.equal(await page.locator('.popover').count(), 0, 'menu closed by the click outside');
+  // Safari sometimes never delivers this mouseup: the next move arrives with no button pressed
+  await ev(() => window.dispatchEvent(new MouseEvent('mousemove', { clientX: 300, clientY: 300, buttons: 0, bubbles: true })));
+  assert.equal(await page.locator('.rubber-band').count(), 0, 'selection box ended');
+  const selAfter = await ev(() => [...window.thistleFlow.ws.selPlots].length);
+  await page.mouse.move(grid.x + 10, grid.y + 10, { steps: 3 }); // more movement must not keep selecting
+  assert.equal(await ev(() => [...window.thistleFlow.ws.selPlots].length), selAfter);
+  await page.mouse.up();
+  // the same safety net for gate drawing: a rectangle drag that loses its mouseup still finishes
+  page.once('dialog', d => d.dismiss());
+  await page.click('[data-tool=rect]');
+  await page.mouse.move(cv.x + 150, cv.y + 120); await page.mouse.down(); await page.mouse.move(cv.x + 220, cv.y + 200, { steps: 4 });
+  await ev(() => window.dispatchEvent(new MouseEvent('mousemove', { clientX: 10, clientY: 10, buttons: 0 })));
+  await page.mouse.up();
+  assert.equal(await ev(() => window.thistleFlow.tool), 'select', 'gate drag finished (back to Select)');
+
+  // Done applies a value that is still being typed and closes the menu
+  await page.locator('.plot-card').nth(0).locator('button[title^="Plot settings"]').click();
+  await page.click('.popover button:has-text("X axis")');
+  await page.locator('.popover input[type=number]').nth(1).fill('200000');
+  await page.click('.popover .pop-actions button:has-text("Done")');
+  assert.equal(await page.locator('.popover').count(), 0, 'Done closes the menu');
+  assert.equal(await ev(() => window.thistleFlow.ws.transforms['FSC-A'].max), 200000, 'typed value applied');
+  assert.deepEqual(errors, []);
+  await page.close();
+});

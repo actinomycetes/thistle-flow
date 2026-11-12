@@ -1,6 +1,7 @@
 // Interactive plot (gating) component.
 import { renderPlot, prepareCanvas, gateGeometry, MARGIN, THEMES, SERIES_COLORS, normalizeKind } from './render.js';
 import { makeTransform } from './transforms.js';
+import { trackDrag } from './ui.js';
 import { populationStats, pointInPolygon, gateFor, isCustom } from './gates.js';
 
 export const fmtPct = v => (Number.isFinite(v) ? (v >= 10 ? v.toFixed(1) : v.toFixed(2)) + '%' : '–');
@@ -272,7 +273,7 @@ export class PlotView {
       if (h.mode === 'select') { this.app.redrawAll(); return; }
       this.drag = { ...h, orig: JSON.parse(JSON.stringify(h.gate)), start: u, startPx: [px, py], moved: false };
       this.draw();
-      window.addEventListener('mousemove', this._move); window.addEventListener('mouseup', this._up);
+      this._stopDrag = trackDrag(this._move, this._up);
       return;
     }
     this.app.plotClicked(this.def.id, e, { keepSelection: true });
@@ -298,7 +299,7 @@ export class PlotView {
     } else if (tool === 'rect' || tool === 'ellipse') {
       this.drawing = { type: tool, start: u, cur: null };
     }
-    window.addEventListener('mousemove', this._move); window.addEventListener('mouseup', this._up);
+    this._stopDrag = trackDrag(this._move, this._up);
   }
 
   onMove(e) {
@@ -349,7 +350,7 @@ export class PlotView {
   }
 
   onUp() {
-    window.removeEventListener('mousemove', this._move); window.removeEventListener('mouseup', this._up);
+    this._stopDrag?.(); this._stopDrag = null;
     if (this.drawing && this.drawing.type !== 'polygon') {
       const d = this.drawing; this.drawing = null;
       if (!d.cur) { this.draw(); return; }

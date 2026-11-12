@@ -5,6 +5,7 @@
 //   sample in the workspace, so one range gate sets the gate for all overlaid samples at once.
 import { renderPlot, prepareCanvas, gateGeometry, MARGIN, THEMES } from './render.js';
 import { makeTransform } from './transforms.js';
+import { trackDrag } from './ui.js';
 
 const FIG_HANDLE = 6;
 
@@ -87,7 +88,7 @@ export class FigureView {
       if (!hit) { if (this.app.ws.selectedGate) { this.app.selectGate(null, { quiet: true }); this.draw(); } return; }
       if (hit.mode === 'slabel' || hit.mode === 'legend') {
         this.drag = { ...hit, startPx: [px, py], moved: false };
-        window.addEventListener('mousemove', this._move); window.addEventListener('mouseup', this._up);
+        this._stopDrag = trackDrag(this._move, this._up);
         return;
       }
       const g = hit.item.gate;
@@ -95,7 +96,7 @@ export class FigureView {
       this.drag = { ...hit, gate: g, orig: JSON.parse(JSON.stringify(g)), start: u, startPx: [px, py], moved: false };
       this.draw();
     }
-    window.addEventListener('mousemove', this._move); window.addEventListener('mouseup', this._up);
+    this._stopDrag = trackDrag(this._move, this._up);
   }
 
   onMove(e) {
@@ -145,7 +146,7 @@ export class FigureView {
   }
 
   onUp() {
-    window.removeEventListener('mousemove', this._move); window.removeEventListener('mouseup', this._up);
+    this._stopDrag?.(); this._stopDrag = null;
     if (this.drawing) {
       const { start, cur } = this.drawing; this.drawing = null;
       if (!cur || Math.abs(cur[0] - start[0]) < 0.01) { this.draw(); return; }

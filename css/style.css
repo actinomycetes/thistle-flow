@@ -226,3 +226,4 @@ body.reordering, body.reordering * { cursor: grabbing !important; user-select: n
 .custom-mark.here { font-weight: 700; }
 .badge.custom { background: #3b2f14; color: #fbbf24; }
 :root[data-theme="light"] .badge.custom { background: #fef3c7; color: #92400e; }
+.pop-actions { display: flex; justify-content: flex-end; margin-top: 4px; }

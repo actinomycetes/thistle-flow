@@ -61,22 +61,68 @@ export function choose(title, message, buttons) {
   });
 }
 
-// ---- popover (small floating panel anchored to a button) ----
-let popEl = null;
-export function closePopover() { if (popEl) { popEl.remove(); popEl = null; } }
-export function popover(anchor, content) {
+// ---- drags ----
+// Track a mouse drag until the button is released. Safari/WebKit can miss the final mouseup
+// (e.g. when a popover closes as the drag starts), which left drags "stuck" to the pointer, so a
+// move with no button pressed, a lost window focus or a cancelled pointer also ends the drag.
+// Returns a function that stops tracking without calling onEnd.
+export function trackDrag(onMove, onEnd) {
+  let done = false;
+  const off = () => {
+    window.removeEventListener('mousemove', move, true); window.removeEventListener('mouseup', end, true);
+    window.removeEventListener('pointercancel', end, true); window.removeEventListener('blur', end);
+    document.removeEventListener('visibilitychange', end);
+  };
+  const end = e => { if (done) return; done = true; off(); onEnd(e); };
+  const move = e => { if (e.buttons === 0) end(e); else onMove(e); };
+  window.addEventListener('mousemove', move, true); window.addEventListener('mouseup', end, true);
+  window.addEventListener('pointercancel', end, true); window.addEventListener('blur', end);
+  document.addEventListener('visibilitychange', end);
+  return () => { if (!done) { done = true; off(); } };
+}
+
+// ---- popover (small floating panel) ----
+// Placed under its anchor, or with { beside: element } next to that element (e.g. a plot card)
+// so it does not cover the plot being changed.
+let popEl = null, popAway = null;
+export function closePopover() {
+  if (popAway) { document.removeEventListener('mousedown', popAway, true); popAway = null; }
+  if (popEl) { popEl.remove(); popEl = null; }
+}
+export function popover(anchor, content, { beside } = {}) {
   closePopover();
   popEl = h('div', { class: 'popover' }, content);
   document.body.append(popEl);
-  const r = anchor.getBoundingClientRect();
-  const pw = popEl.offsetWidth, ph = popEl.offsetHeight;
-  popEl.style.left = Math.max(8, Math.min(window.innerWidth - pw - 8, r.right - pw)) + 'px';
-  popEl.style.top = (r.bottom + ph + 8 > window.innerHeight ? Math.max(8, r.top - ph - 4) : r.bottom + 4) + 'px';
+  const pw = popEl.offsetWidth, ph = popEl.offsetHeight, W = window.innerWidth, H = window.innerHeight;
+  const clamp = (v, a, b) => Math.min(Math.max(v, a), Math.max(a, b));
+  let left, top;
+  const c = beside?.isConnected ? beside.getBoundingClientRect() : null;
+  if (c && c.right + 8 + pw <= W - 8) { left = c.right + 8; top = clamp(c.top, 8, H - ph - 8); }
+  else if (c && c.left - 8 - pw >= 8) { left = c.left - 8 - pw; top = clamp(c.top, 8, H - ph - 8); }
+  else if (c && c.bottom + 4 + ph <= H - 8) { left = clamp(c.left, 8, W - pw - 8); top = c.bottom + 4; }
+  else {
+    const r = anchor.getBoundingClientRect();
+    left = clamp(r.right - pw, 8, W - pw - 8);
+    top = r.bottom + ph + 8 > H ? Math.max(8, r.top - ph - 4) : r.bottom + 4;
+  }
+  popEl.style.left = left + 'px'; popEl.style.top = top + 'px';
+  const el = popEl;
   setTimeout(() => {
-    const away = e => { if (popEl && !popEl.contains(e.target) && e.target !== anchor) { closePopover(); document.removeEventListener('mousedown', away, true); } };
-    document.addEventListener('mousedown', away, true);
+    if (popEl !== el) return;
+    popAway = e => { if (popEl && !popEl.contains(e.target) && e.target !== anchor) closePopover(); };
+    document.addEventListener('mousedown', popAway, true);
   });
   return popEl;
+}
+
+// "Done" for a popover: commits a value still being typed (its change event), then closes.
+// mousedown is cancelled so the click lands on this button even if the panel redraws on change.
+export function doneButton(label = 'Done') {
+  return h('div', { class: 'pop-actions' }, h('button', {
+    class: 'btn small primary',
+    onmousedown: e => e.preventDefault(),
+    onclick: () => { document.activeElement?.blur?.(); closePopover(); },
+  }, label));
 }
 
 // ---- saving files ----
