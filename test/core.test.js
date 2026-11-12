@@ -118,3 +118,39 @@ test('quadrant styles: spider and offset quadrants tile the parent; defaults equ
     assert.equal(n, 1, `point ${x},${y} in ${n} quadrants`);
   }
 });
+
+test('event limit shows exactly that many events, the same ones every time, in order', async () => {
+  const { subsampleIdx } = await import('../js/plotview.js');
+  for (const [n, max] of [[40000, 5000], [40000, 1000], [123457, 10000], [5200, 5000], [3000, 5000]]) {
+    const idx = Uint32Array.from({ length: n }, (_, i) => i * 3 + 7);
+    const a = subsampleIdx(idx, max);
+    assert.equal(a.length, Math.min(n, max), `${n} -> ${max}`);
+    for (let i = 1; i < a.length; i++) assert.ok(a[i] > a[i - 1], 'kept in order');
+    assert.deepEqual([...subsampleIdx(Uint32Array.from(idx), max)], [...a], 'deterministic');
+  }
+});
+
+test('auto gate: a click outlines the population under it, not its neighbours', async () => {
+  const { densityGrid, autoGatePolygon } = await import('../js/autogate.js');
+  const { pointInPolygon } = await import('../js/gates.js');
+  let seed = 7; const rnd = () => (seed = (seed * 1664525 + 1013904223) >>> 0) / 2 ** 32;
+  const g = () => Math.sqrt(-2 * Math.log(rnd() + 1e-12)) * Math.cos(2 * Math.PI * rnd());
+  const ux = [], uy = [], lab = [];
+  const blobs = [[0.3, 0.3, 0.04, 20000], [0.45, 0.35, 0.035, 8000], [0.7, 0.7, 0.05, 15000]];
+  blobs.forEach(([cx, cy, s, n], b) => { for (let i = 0; i < n; i++) { ux.push(cx + s * g()); uy.push(cy + s * g()); lab.push(b); } });
+  // off-scale events piled on the axis must not become a population
+  for (let i = 0; i < 5000; i++) { ux.push(0); uy.push(rnd()); lab.push(3); }
+  const dens = densityGrid(Float32Array.from(ux), Float32Array.from(uy), Uint32Array.from(ux.keys()));
+  blobs.forEach(([cx, cy, , n], b) => {
+    const poly = autoGatePolygon(dens, [cx + 0.01, cy + 0.01]);
+    assert.ok(poly && poly.length >= 3 && poly.length <= 80, 'polygon');
+    const inn = [0, 0, 0, 0]; ux.forEach((x, i) => { if (pointInPolygon(x, uy[i], poly)) inn[lab[i]]++; });
+    assert.ok(inn[b] > 0.88 * n, `population ${b}: ${inn}`);
+    blobs.forEach(([, , , m], o) => { if (o !== b) assert.ok(inn[o] < 0.05 * m, `population ${b} leaks into ${o}: ${inn}`); });
+    assert.equal(inn[3], 0);
+  });
+  assert.equal(autoGatePolygon(dens, [0.9, 0.1]), null, 'empty space');
+  const tight = autoGatePolygon(dens, [0.31, 0.31], { level: 0.25 }), loose = autoGatePolygon(dens, [0.31, 0.31]);
+  const count = p => ux.filter((x, i) => pointInPolygon(x, uy[i], p)).length;
+  assert.ok(count(tight) < count(loose), 'Shift = tighter');
+});

@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Thistle Flow v0.13.0 (Beta)</title>
+<title>Thistle Flow v0.14.0 (Beta)</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2024%2026%22%3E%3Cg%20stroke%3D%22%23a855f7%22%20stroke-width%3D%221.6%22%20stroke-linecap%3D%22round%22%3E%3Cpath%20d%3D%22M12%2010V2%22%2F%3E%3Cpath%20d%3D%22M12%2010L7%203%22%2F%3E%3Cpath%20d%3D%22M12%2010L17%203%22%2F%3E%3Cpath%20d%3D%22M12%2010L4.5%206%22%2F%3E%3Cpath%20d%3D%22M12%2010L19.5%206%22%2F%3E%3Cpath%20d%3D%22M12%2010L9.5%202.3%22%2F%3E%3Cpath%20d%3D%22M12%2010L14.5%202.3%22%2F%3E%3C%2Fg%3E%3Cellipse%20cx%3D%2212%22%20cy%3D%2213.5%22%20rx%3D%225%22%20ry%3D%224.2%22%20fill%3D%22%2322c55e%22%2F%3E%3Cg%20fill%3D%22%2315803d%22%3E%3Ccircle%20cx%3D%229.7%22%20cy%3D%2212.7%22%20r%3D%22.95%22%2F%3E%3Ccircle%20cx%3D%2212.3%22%20cy%3D%2211.9%22%20r%3D%22.95%22%2F%3E%3Ccircle%20cx%3D%2214.7%22%20cy%3D%2213.3%22%20r%3D%22.95%22%2F%3E%3Ccircle%20cx%3D%2210.8%22%20cy%3D%2215.3%22%20r%3D%22.95%22%2F%3E%3Ccircle%20cx%3D%2213.5%22%20cy%3D%2215.5%22%20r%3D%22.95%22%2F%3E%3C%2Fg%3E%3Cpath%20d%3D%22M12%2017.5V25%22%20stroke%3D%22%2316a34a%22%20stroke-width%3D%221.8%22%20stroke-linecap%3D%22round%22%2F%3E%3Cpath%20d%3D%22M12%2021.5c-2.5-.5-4.5-2-5.5-4M12%2021c2.5-.5%204.3-1.8%205.3-3.8%22%20stroke%3D%22%2316a34a%22%20stroke-width%3D%221.4%22%20fill%3D%22none%22%20stroke-linecap%3D%22round%22%2F%3E%3C%2Fsvg%3E">
 <link rel="stylesheet" href="css/style.css">
 </head>
@@ -13,18 +13,14 @@
     <svg width="24" height="26" viewBox="0 0 24 26" aria-hidden="true" style="flex:none"><g stroke="#a855f7" stroke-width="1.6" stroke-linecap="round"><path d="M12 10V2"/><path d="M12 10L7 3"/><path d="M12 10L17 3"/><path d="M12 10L4.5 6"/><path d="M12 10L19.5 6"/><path d="M12 10L9.5 2.3"/><path d="M12 10L14.5 2.3"/></g><ellipse cx="12" cy="13.5" rx="5" ry="4.2" fill="#22c55e"/><g fill="#15803d"><circle cx="9.7" cy="12.7" r=".95"/><circle cx="12.3" cy="11.9" r=".95"/><circle cx="14.7" cy="13.3" r=".95"/><circle cx="10.8" cy="15.3" r=".95"/><circle cx="13.5" cy="15.5" r=".95"/></g><path d="M12 17.5V25" stroke="#16a34a" stroke-width="1.8" stroke-linecap="round"/><path d="M12 21.5c-2.5-.5-4.5-2-5.5-4M12 21c2.5-.5 4.3-1.8 5.3-3.8" stroke="#16a34a" stroke-width="1.4" fill="none" stroke-linecap="round"/></svg>
     <span class="title">Thistle Flow</span>
     <span class="badge-hdr beta">BETA</span>
-    <span class="badge-hdr" id="app-version" title="Version">v0.13.0</span>
-    <span class="badge-hdr">Pure JS</span>
+    <span class="badge-hdr" id="app-version" title="Version">v0.14.0</span>
   </div>
   <div class="actions">
-    <label class="btn primary" title="Open FCS files (or drop them anywhere)">⬆ Open FCS…<input id="fileInput" type="file" accept=".fcs,.FCS,.lmd,.LMD,application/octet-stream" multiple hidden></label>
+    <label class="btn primary" title="Open one or more FCS files at once (or drop them anywhere)">⬆ Open FCS file(s)…<input id="fileInput" type="file" accept=".fcs,.FCS,.lmd,.LMD,application/octet-stream" multiple hidden></label>
     <button class="btn" id="btnDemo" title="Load three example samples">🧪 Demo data</button>
     <span class="sep"></span>
-    <button class="btn" id="btnComp" title="View or edit the spillover matrix">🎛 Compensation</button>
-    <button class="btn" id="btnTransforms" title="Linear, log, biexponential or arcsinh scale for each channel">📏 Axis scales</button>
-    <span class="sep"></span>
-    <button class="btn" id="btnSaveWs" title="Save workspace (Ctrl+S)">💾 Save</button>
-    <label class="btn" title="Open a saved workspace (.zip with its FCS files, or .json)">📂 Load<input id="wsInput" type="file" accept=".zip,.json" hidden></label>
+    <button class="btn" id="btnSaveWs" title="Save the workspace: samples, gates, plots, figures and settings (Ctrl+S)">💾 Save workspace</button>
+    <label class="btn" title="Open a saved workspace (.zip with its FCS files, or .json)">📂 Load workspace<input id="wsInput" type="file" accept=".zip,.json" hidden></label>
     <button class="btn" id="btnClear" title="Remove all samples from this workspace">🗑 Clear</button>
     <button class="btn" id="btnSaveTpl" title="Save gates and settings without data, to reuse on other samples">📋 Save template</button>
     <button class="btn" id="btnApplyTpl" title="Apply saved gates and settings to the samples in this workspace">📥 Apply template</button>
@@ -55,6 +51,7 @@
   <section class="workspace">
     <nav class="tabs">
       <button data-tab="gating" class="active">Gating</button>
+      <button data-tab="comp" title="View or edit the spillover matrix, with live preview plots">Compensation</button>
       <button data-tab="layout">Layout &amp; Overlays</button>
       <button data-tab="stats">Statistics</button>
       <button data-tab="properties">Properties</button>
@@ -76,6 +73,7 @@
             <span class="tb-sep"></span>
             <button class="btn small" id="btnAddPlot">＋ Add plot</button>
             <label class="inline" title="Maximum number of events drawn in each 2-D plot (statistics always use every event)">Show <select id="displayMax"></select> events</label>
+            <button class="btn small" id="btnTransforms" title="Linear, log, biexponential or arcsinh scale for each channel">Axis scales</button>
           </div>
           <div class="tb-group" role="group" aria-label="Gate edits apply to">
             <span class="tb-label">Gate edits apply to</span>
@@ -94,6 +92,7 @@
               <button data-tool="polygon" title="Polygon gate: click vertices, double-click or click first point to close (P)">⬠ Polygon</button>
               <button data-tool="ellipse" title="Ellipse gate: drag a bounding box (E)">◯ Ellipse</button>
               <button data-tool="quad" title="Quadrant gate: click centre (Q)">✚ Quadrant</button>
+              <button data-tool="auto" title="Auto gate: click a population to draw a polygon gate around it; the outline follows the cursor. Shift-click for a tighter gate (A)">✨ Auto</button>
             </span>
             <span class="tb-sep"></span>
             <span class="tb-sub">Histogram</span>
@@ -112,6 +111,10 @@
         </div>
       </div>
       <div id="plotGrid" class="plot-grid"></div>
+    </div>
+
+    <div id="tab-comp" class="tab">
+      <div id="compRoot" class="props"></div>
     </div>
 
     <div id="tab-layout" class="tab">

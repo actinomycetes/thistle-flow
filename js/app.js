@@ -15,7 +15,7 @@ import { FigureView } from './figureview.js';
 import { CompPreview } from './compview.js';
 import { APP_NAME, APP_VERSION } from './version.js';
 
-const MODE_NAMES = { gating: 'Gating', layout: 'Layout', stats: 'Statistics', properties: 'Properties' };
+const MODE_NAMES = { gating: 'Gating', comp: 'Compensation', layout: 'Layout', stats: 'Statistics', properties: 'Properties' };
 const fmtEvents = n => (n ? n.toLocaleString() : 'All');
 
 const app = {
@@ -176,6 +176,25 @@ async function loadBuffers(items) {
   if (errors.length) toast('Could not load: ' + errors.join('; '), true);
   else toast(`Loaded ${added.length} sample(s) into “${ws.name}”`);
   renderAll();
+  warnOldFCS(added);
+}
+
+// FCS 2.0 files usually hold each channel as a 10-bit (1,024-level) number, often after log
+// amplification: much less resolution and dynamic range than FCS 3.x, so say so once per load.
+function fcsVersion(s) { const m = /FCS(\d+\.\d+)/.exec(s.version || ''); return m ? +m[1] : NaN; }
+function warnOldFCS(samples) {
+  const old = samples.filter(s => fcsVersion(s) < 3);
+  if (!old.length) return;
+  const fl = s => s.params.filter(p => !/^(FSC|SSC|FS|SS|BSC|TIME)/i.test(p.name));
+  const levels = Math.max(...old.flatMap(s => fl(s).map(p => p.range)).filter(Number.isFinite), 0);
+  const logAmp = old.some(s => fl(s).some(p => p.ampE[0] > 0));
+  const list = h('ul', {}, old.slice(0, 8).map(s => h('li', {}, `${s.name} (${s.version.trim()})`)), old.length > 8 ? h('li', {}, `… and ${old.length - 8} more`) : '');
+  const body = h('div', { style: 'max-width:520px;line-height:1.45' },
+    h('p', { style: 'margin-top:0' }, `${old.length === 1 ? 'This file is' : `${old.length} files are`} in the older FCS 2 format:`), list,
+    h('p', {}, `FCS 2 files store each channel with far fewer levels${levels ? ` (here up to ${levels.toLocaleString()} channels per parameter)` : ''} than FCS 3.x (usually 262,144 or more, often as floating point)${logAmp ? ', and the fluorescence data were log-amplified by the instrument' : ''}. Expect lower resolution and dynamic range: populations can look banded or stepped, especially near zero, negative values are lost, and compensation and biexponential display are less accurate.`),
+    h('p', {}, 'If you can, export the data again from the instrument software as FCS 3.0 or 3.1. The files have been loaded and can be analysed as they are.'),
+    h('div', { class: 'row', style: 'justify-content:flex-end' }, h('button', { class: 'btn primary', onclick: () => closeModal() }, 'OK')));
+  openModal('Older FCS format', body);
 }
 
 async function readFiles(files) {
@@ -442,7 +461,7 @@ function renderGating() {
     grid.append(h('div', { class: 'empty-state' },
       h('h2', {}, 'Lightweight flow cytometry analysis'),
       h('p', {}, 'Open or drop FCS files exported from BD (FACSDiva/FACSuite), Attune NxT, Sony spectral analysers, CytoFLEX, Cytek, etc. Everything runs locally in your browser — no data is uploaded.'),
-      h('p', {}, h('button', { class: 'btn primary', onclick: () => $('#fileInput').click() }, 'Open FCS files…'), ' ',
+      h('p', {}, h('button', { class: 'btn primary', onclick: () => $('#fileInput').click() }, 'Open FCS file(s)…'), ' ',
         h('button', { class: 'btn', onclick: loadDemo }, 'Try demo data')),
       h('p', { class: 'hint' }, 'Use the + tab above to analyse another group of samples side by side.')));
     updateSelectionUI();
@@ -1334,34 +1353,43 @@ function copyStats() {
 // ---------- compensation & axis scales ----------
 // Matrix editor with a live preview: every edit (typed, or nudged with the arrow keys) redraws the
 // preview plots with the edited matrix before anything is applied to the samples.
-function openComp() {
+function renderComp(root) {
   const ws = app.ws;
-  if (!ws.samples.length) return toast('Load samples first');
-  let s = ws.activeSample();
-  const st = { pop: ws.selectedGate || null, maxEvents: 5000, view: 'edited', sel: null };
+  root.innerHTML = '';
+  if (!ws.samples.length) {
+    root.append(h('div', { class: 'empty-state' }, h('h2', {}, 'Compensation'),
+      h('p', {}, 'Load FCS files to see and adjust their spillover matrix here, with preview plots that update as you edit.')));
+    return;
+  }
+  // kept while switching tabs: the preview settings and any edits not yet applied (per sample)
+  const st = ws.compState ||= { pop: ws.selectedGate || null, maxEvents: 5000, view: 'edited', sel: null, sampleId: null, edits: {} };
+  let s = ws.sampleById(st.sampleId) || ws.activeSample();
   const body = h('div', { class: 'comp-layout' });
+  root.append(body);
   let m = null, preview = null;
   const draw = () => {
     body.innerHTML = '';
     const top = h('div', { class: 'row' }, h('label', {}, 'Sample'),
-      h('select', { onchange: e => { s = ws.sampleById(e.target.value); st.sel = null; draw(); } }, ws.samples.map(x => h('option', { value: x.id, selected: x === s }, x.name))));
+      h('select', { onchange: e => { s = ws.sampleById(e.target.value); st.sampleId = s.id; st.sel = null; draw(); } }, ws.samples.map(x => h('option', { value: x.id, selected: x === s }, x.name))));
     body.append(top);
     if (!s.spill) {
       body.append(h('p', {}, 'This file has no embedded spillover matrix ($SPILLOVER / SPILL). Spectral instruments (e.g. Sony ID7000/SA3800) usually export already-unmixed data, which needs no compensation.'),
         h('button', { class: 'btn', onclick: () => {
           const ch = ws.fluorChannels().filter(c => s.hasChannel(c));
           s.setSpill({ names: ch, matrix: ch.map((_, i) => ch.map((_, j) => (i === j ? 1 : 0))) });
-          s.setCompEnabled(true); afterDataChange(); draw();
+          s.setCompEnabled(true); afterDataChange();
         } }, 'Create editable identity matrix'));
       return;
     }
     const missing = s.spillMissing();
+    const names = s.spill.names;
     if (missing.length) {
       body.append(h('p', { style: 'color:var(--danger)' },
         `The embedded matrix refers to channel(s) not found in this file: ${missing.join(', ')}. Compensation cannot be applied until the names match (edit via Import CSV).`));
     }
-    const names = s.spill.names;
-    m = s.spill.matrix.map(r => [...r]);
+    const kept = st.edits[s.id];
+    m = kept && kept.length === names.length ? kept : s.spill.matrix.map(r => [...r]);
+    st.edits[s.id] = m;
     const status = h('span', { class: 'hint comp-status' });
     const changed = () => m.some((r, i) => r.some((v, j) => v !== s.spill.matrix[i][j]));
     const refreshStatus = () => { status.textContent = changed() ? '● Edited: not applied yet' : ''; };
@@ -1407,11 +1435,12 @@ function openComp() {
           e.target.parentNode.querySelectorAll('button').forEach(b => b.classList.toggle('primary', b.dataset.view === v));
         } }, l))));
     const actions = h('div', { class: 'row' },
-      h('button', { class: 'btn primary', onclick: () => { s.setSpill({ names, matrix: m.map(r => [...r]) }); afterDataChange(); refreshStatus(); toast('Matrix applied'); } }, 'Apply to this sample'),
+      h('button', { class: 'btn primary', onclick: () => { s.setSpill({ names, matrix: m.map(r => [...r]) }); delete st.edits[s.id]; afterDataChange(); toast('Matrix applied'); } }, 'Apply to this sample'),
       h('button', { class: 'btn', onclick: () => {
         let n = 0;
-        for (const o of ws.samples) if (names.every(c => o.hasChannel(c))) { o.setSpill({ names: [...names], matrix: m.map(r => [...r]) }); o.setCompEnabled(true); n++; }
-        afterDataChange(); refreshStatus(); toast(`Matrix applied to ${n} sample(s)`);
+        const mat = m.map(r => [...r]);
+        for (const o of ws.samples) if (names.every(c => o.hasChannel(c))) { o.setSpill({ names: [...names], matrix: mat.map(r => [...r]) }); o.setCompEnabled(true); delete st.edits[o.id]; n++; }
+        afterDataChange(); toast(`Matrix applied to ${n} sample(s)`);
       } }, 'Apply to all samples'),
       h('button', { class: 'btn', title: 'Undo the edits not yet applied', onclick: () => {
         m.forEach((r, i) => r.forEach((_, j) => setVal(i, j, s.spill.matrix[i][j], inputs[i][j])));
@@ -1426,7 +1455,7 @@ function openComp() {
           const nm = rows[0].slice(1); const mat = rows.slice(1).map(r => r.slice(1).map(Number));
           if (!nm.every(c => s.hasChannel(c))) throw new Error('matrix channels not found in sample: ' + nm.filter(c => !s.hasChannel(c)).join(', '));
           if (mat.length !== nm.length || mat.some(r => r.length !== nm.length || r.some(v => !Number.isFinite(v)))) throw new Error('matrix must be square and numeric');
-          s.setSpill({ names: nm, matrix: mat }); s.setCompEnabled(true); afterDataChange(); draw();
+          s.setSpill({ names: nm, matrix: mat }); s.setCompEnabled(true); delete st.edits[s.id]; afterDataChange();
         } catch (err) { toast('Import failed: ' + err.message, true); }
       } })), status);
     const left = h('div', { class: 'comp-left' },
@@ -1447,7 +1476,6 @@ function openComp() {
     refreshStatus();
   };
   draw();
-  openModal('Compensation', body, { wide: true });
 }
 
 function afterDataChange() { app.ws.engine.invalidate(); app.scheduleCommit(); renderAll(); }
@@ -1694,6 +1722,7 @@ function renderTab() {
   $$('.tabs button[data-tab]').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
   $$('.tab').forEach(t => t.classList.toggle('active', t.id === 'tab-' + tab));
   if (tab === 'gating') renderGating();
+  else if (tab === 'comp') renderComp($('#compRoot'));
   else if (tab === 'layout') renderFigures();
   else if (tab === 'stats') { renderStatsControls(); renderStatsTable(); }
   else renderProperties(app, $('#propsRoot'));
@@ -1744,7 +1773,6 @@ function setupSplitters() {
 $('#fileInput').addEventListener('change', e => { loadFiles(e.target.files); e.target.value = ''; });
 $('#wsInput').addEventListener('change', e => { if (e.target.files[0]) loadWorkspaceFile(e.target.files[0]); e.target.value = ''; });
 $('#btnDemo').addEventListener('click', loadDemo);
-$('#btnComp').addEventListener('click', openComp);
 $('#btnTransforms').addEventListener('click', () => openTransforms(app.ws.plots.find(p => p.id === app.ws.focusedPlot)?.x));
 $('#btnSaveWs').addEventListener('click', () => app.saveWorkspace());
 $('#btnSaveTpl').addEventListener('click', saveTemplate);
@@ -1834,7 +1862,7 @@ document.addEventListener('keydown', e => {
     return;
   }
   if (mod || e.altKey) return;
-  const map = { v: 'select', r: 'rect', p: 'polygon', e: 'ellipse', q: 'quad', i: 'interval', s: 'split', z: 'zoom' };
+  const map = { v: 'select', r: 'rect', p: 'polygon', e: 'ellipse', q: 'quad', i: 'interval', s: 'split', z: 'zoom', a: 'auto' };
   if (map[e.key.toLowerCase()] && app.ws.tab === 'gating') setTool(map[e.key.toLowerCase()]);
 });
 

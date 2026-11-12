@@ -77,13 +77,13 @@ test('all UI features work end to end', { timeout: 240000 }, async () => {
   // (2) events per plot
   await page.selectOption('#displayMax', '1000');
   await page.waitForTimeout(200);
-  const titles = await ev(() => [...window.thistleFlow.views.values()].map(v => v.spec.title));
+  const titles = await ev(() => [...window.thistleFlow.views.values()].map(v => v.spec.title + (v.spec.titleTail || "")));
   const shown = titles.map(t => (/showing ([\d,]+)/.exec(t) || [])[1]).filter(Boolean).map(s => +s.replace(/,/g, ''));
-  check('(2) workspace event limit thins 2-D plots', shown.length >= 2 && shown.every(n => n > 800 && n < 1200), titles.join(' | '));
+  check('(2) workspace event limit thins 2-D plots', shown.length >= 2 && shown.every(n => n === 1000), titles.join(' | '));
   await page.locator('.plot-card').nth(0).locator('button[title^="Plot settings"]').click();
   await page.locator('.popover select').nth(1).selectOption('0');
   await page.waitForTimeout(200);
-  const t0 = await ev(() => [...window.thistleFlow.views.values()][0].spec.title);
+  const t0 = await ev(() => [...window.thistleFlow.views.values()][0].spec.titleTail);
   check('(2) per-plot override (All events)', !/showing/.test(t0), t0);
   await page.keyboard.press('Escape');
 
@@ -762,7 +762,7 @@ test('select-to-zoom with unzoom/reset; split gate; leaving "This sample" asks t
   assert.ok(z && Math.abs(z.x[0] - 0.1 * 262144) < 3000 && Math.abs(z.x[1] - 0.4 * 262144) < 3000, JSON.stringify(z));
   assert.ok(z.y[1] < 0.25 * 262144);
   assert.equal(await ev(() => window.thistleFlow.tool), 'zoom', 'Zoom stays on after zooming');
-  assert.match(await ev(() => [...window.thistleFlow.views.values()][0].spec.title), /zoomed/);
+  assert.match(await ev(() => [...window.thistleFlow.views.values()][0].spec.titleTail), /zoomed/);
   assert.deepEqual(await counts('gL'), lymphBefore, 'zoom does not change gates or statistics');
   // the gate is drawn larger: its rectangle now spans most of the frame width
   const gw = await ev(() => { const L = [...window.thistleFlow.views.values()][0].L; return (L.ux2px(80000 / 262144) - L.ux2px(40000 / 262144)) / L.pw; });
@@ -1061,8 +1061,8 @@ test('Layout gating strategy for one sample; compensation editor with live previ
   // saved with the workspace
   assert.match(await ev(() => JSON.stringify(window.thistleFlow.ws.serialize().figures)), /"kind":"strategy"/);
 
-  // ---- compensation with preview ----
-  await page.click('#btnComp');
+  // ---- compensation with preview (its own tab) ----
+  await page.click('.tabs [data-tab=comp]');
   await page.waitForSelector('.comp-mini');
   const n = await ev(() => window.thistleFlow.ws.activeSample().spill.names.length);
   assert.equal(await page.locator('.comp-mini').count(), n * (n - 1), 'one preview plot per off-diagonal matrix value');
@@ -1080,7 +1080,11 @@ test('Layout gating strategy for one sample; compensation editor with live previ
   assert.match(await page.textContent('.comp-status'), /not applied/);
   assert.match(await page.textContent('.comp-focus-wrap'), /→/);
   await page.locator('.matrix input[data-i="1"][data-j="0"]').fill('0.3');
-  assert.match(await page.textContent('.comp-focus-wrap'), /0\.3/, 'typing selects and previews that value');
+  // the preview redraws on the next animation frame
+  await page.waitForFunction(() => /: 0\.3 /.test(document.querySelector('.comp-focus-wrap').textContent), null, { timeout: 5000 });
+  // edits not yet applied survive switching tabs
+  await page.click('.tabs [data-tab=gating]'); await page.click('.tabs [data-tab=comp]');
+  assert.equal(await page.inputValue('.matrix input[data-i="1"][data-j="0"]'), '0.3');
   await page.click('#compView [data-view=raw]');
   await page.waitForTimeout(100);
   await page.screenshot({ path: OUT + '/g-comp-raw.png' });
@@ -1091,7 +1095,84 @@ test('Layout gating strategy for one sample; compensation editor with live previ
   await page.click('button:has-text("Apply to this sample")');
   assert.ok(Math.abs(await ev(() => window.thistleFlow.ws.activeSample().spill.matrix[0][1]) - (before - 0.05)) < 1e-9, 'applied');
   assert.equal(await page.textContent('.comp-status'), '');
+  // applying is undoable in the Compensation tab
+  await page.waitForTimeout(100);
+  await page.click('#btnUndo');
+  assert.equal(await ev(() => window.thistleFlow.ws.activeSample().spill.matrix[0][1]), before, 'undo restores the matrix');
   await page.screenshot({ path: OUT + '/g-comp.png' });
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
+
+test('header labels, Compensation tab, Axis scales in Plots; FCS 2 warning; auto gate; exact event limit', { timeout: 180000 }, async () => {
+  browser = browser || await chromium.launch();
+  const page = await browser.newPage({ viewport: { width: 1600, height: 1000 } });
+  const errors = [];
+  page.on('pageerror', e => errors.push(e.message));
+  page.on('dialog', d => d.accept('Auto'));
+  await page.addInitScript(() => { try { localStorage.clear(); } catch {} });
+  const ev = f => page.evaluate(f);
+  await page.goto(BASE + '/');
+  const header = await page.textContent('header');
+  assert.match(header, /Open FCS file\(s\)/); assert.match(header, /Save workspace/); assert.match(header, /Load workspace/);
+  assert.doesNotMatch(header, /Pure JS/); assert.doesNotMatch(header, /Compensation|Axis scales/);
+  assert.deepEqual(await page.$$eval('.tabs [data-tab]', b => b.map(x => x.textContent.trim())), ['Gating', 'Compensation', 'Layout & Overlays', 'Statistics', 'Properties']);
+  assert.equal(await ev(() => document.getElementById('btnTransforms').closest('.tb-group').getAttribute('aria-label')), 'Plots');
+  assert.equal((await page.textContent('#btnTransforms')).trim(), 'Axis scales');
+
+  // an FCS 2.0 file: loaded, with a warning about resolution and dynamic range
+  const { makeDemoFile } = await import('../../js/demo.js');
+  const buf = new Uint8Array(makeDemoFile('Old.fcs', 0, 1, 3000));
+  buf.set([...'FCS2.0'].map(c => c.charCodeAt(0)), 0);
+  await page.setInputFiles('#fileInput', { name: 'Old.fcs', mimeType: 'application/octet-stream', buffer: Buffer.from(buf) });
+  await page.waitForSelector('#modal:not([hidden])');
+  assert.equal(await page.textContent('#modalTitle'), 'Older FCS format');
+  assert.match(await page.textContent('#modalBody'), /Old\.fcs \(FCS2\.0\)[\s\S]*resolution and dynamic range/);
+  await page.click('#modalBody button:has-text("OK")');
+  assert.equal(await ev(() => window.thistleFlow.ws.samples.length), 1);
+
+  // demo data: no warning (FCS 3.1); the event limit is exact
+  await page.click('#btnDemo'); await page.waitForSelector('.plot-card canvas');
+  await page.waitForTimeout(300);
+  assert.equal(await page.isHidden('#modal'), true);
+  await ev(() => { const ws = window.thistleFlow.ws; ws.activeId = ws.samples.find(x => /Unstim/.test(x.name)).id; window.thistleFlow.renderAll(); });
+  await page.selectOption('#displayMax', '5000');
+  await page.waitForTimeout(200);
+  assert.deepEqual(await ev(() => [...window.thistleFlow.views.values()].filter(v => v.spec.series[0].uy).map(v => v.spec.series[0].idx.length)).then(a => [...new Set(a)]), [5000]);
+  assert.match(await ev(() => [...window.thistleFlow.views.values()][0].spec.titleTail), /showing 5,000\)/);
+
+  // auto gate: the outline follows the cursor, a click makes a polygon around that population
+  await ev(() => { const ws = window.thistleFlow.ws; const s = ws.samples.find(x => /Stim_6h/.test(x.name)) || ws.samples[0]; ws.activeId = s.id; ws.plots[0].x = 'PE-A'; ws.plots[0].y = 'APC-A'; window.thistleFlow.renderAll(); });
+  await page.click('[data-tool=auto]');
+  const b = await page.locator('.plot-card canvas').nth(0).boundingBox();
+  // the CD4+ (PE bright, APC dim) population: find its densest spot from the data
+  const target = await ev(() => {
+    const v = [...window.thistleFlow.views.values()][0], s = v.spec.series[0];
+    let best = null, n = 0;
+    for (const i of s.idx) if (s.ux[i] > 0.6 && s.uy[i] < 0.45) { n++; best = best ? [best[0] + s.ux[i], best[1] + s.uy[i]] : [s.ux[i], s.uy[i]]; }
+    const u = [best[0] / n, best[1] / n];
+    return [v.L.ux2px(u[0]), v.L.uy2px(u[1])];
+  });
+  await page.mouse.move(b.x + target[0] - 5, b.y + target[1]);
+  await page.mouse.move(b.x + target[0], b.y + target[1]);
+  await page.waitForFunction(() => [...window.thistleFlow.views.values()][0].preview?.poly?.length > 3, null, { timeout: 5000 });
+  await page.locator('.plot-card').nth(0).screenshot({ path: OUT + '/h-auto-preview.png' });
+  await page.mouse.click(b.x + target[0], b.y + target[1]);
+  const g = await ev(() => window.thistleFlow.ws.engine.list().find(x => x.name === 'Auto'));
+  assert.ok(g && g.type === 'polygon' && g.pts.length >= 3, 'polygon gate created');
+  const st = await ev(() => { const ws = window.thistleFlow.ws, s = ws.activeSample(), g = ws.engine.list().find(x => x.name === 'Auto');
+    const pop = ws.engine.population(s, g.id), pe = s.column('PE-A'), apc = s.column('APC-A');
+    let cd4 = 0; for (const i of pop.idx) if (pe[i] > 1000 && apc[i] < 500) cd4++;
+    return { n: pop.count, cd4 }; });
+  assert.ok(st.n > 2000 && st.cd4 / st.n > 0.9, `auto gate holds the CD4 population: ${JSON.stringify(st)}`);
+  assert.equal(await ev(() => window.thistleFlow.tool), 'select', 'back to Select');
+  await page.locator('.plot-card').nth(0).screenshot({ path: OUT + '/h-auto.png' });
+  // clicking empty space makes nothing
+  await page.click('[data-tool=auto]');
+  const nGates = await ev(() => window.thistleFlow.ws.engine.list().length);
+  await page.mouse.click(b.x + b.width - 25, b.y + 35);
+  assert.equal(await ev(() => window.thistleFlow.ws.engine.list().length), nGates);
   assert.deepEqual(errors, []);
   await page.close();
 });

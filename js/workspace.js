@@ -5,7 +5,7 @@ import { GateEngine } from './gates.js';
 import { defaultTransformFor } from './transforms.js';
 import { APP_VERSION } from './version.js';
 
-export const MODES = ['gating', 'layout', 'stats', 'properties'];
+export const MODES = ['gating', 'comp', 'layout', 'stats', 'properties'];
 const UNDO_LIMIT = 100;
 let WS_N = 0;
 
@@ -78,8 +78,8 @@ export class Workspace {
     switch (mode) {
       case 'gating': return JSON.stringify({
         gates: this.engine.toJSON(), transforms: this.transforms, plots: this.plots, displayMax: this.displayMax,
-        comp: this.samples.map(s => [s.id, s.compEnabled, s.spill]),
       });
+      case 'comp': return JSON.stringify(this.samples.map(s => [s.id, s.compEnabled, s.spill]));
       case 'layout': return JSON.stringify(this.figures);
       case 'stats': return JSON.stringify(this.statsCfg);
       case 'properties': return JSON.stringify(this.samples.map(s => [s.id, s.edits]));
@@ -89,15 +89,17 @@ export class Workspace {
     const v = JSON.parse(snap);
     if (mode === 'gating') {
       this.engine.load(v.gates); this.transforms = v.transforms; this.plots = v.plots; this.displayMax = v.displayMax;
-      for (const [id, enabled, spill] of v.comp) {
-        const s = this.sampleById(id); if (!s) continue;
-        if (JSON.stringify(s.spill) !== JSON.stringify(spill)) s.setSpill(spill);
-        if (s.compEnabled !== enabled) s.setCompEnabled(enabled);
-      }
       for (const s of this.samples) s.invalidate();
       this.engine.invalidate();
       if (this.selectedGate && !this.engine.get(this.selectedGate)) this.selectedGate = null;
       this.selPlots = new Set([...this.selPlots].filter(id => this.plots.some(p => p.id === id)));
+    } else if (mode === 'comp') {
+      for (const [id, enabled, spill] of v) {
+        const s = this.sampleById(id); if (!s) continue;
+        if (JSON.stringify(s.spill) !== JSON.stringify(spill)) s.setSpill(spill);
+        if (s.compEnabled !== enabled) s.setCompEnabled(enabled);
+      }
+      this.engine.invalidate();
     } else if (mode === 'layout') this.figures = v;
     else if (mode === 'stats') this.statsCfg = v;
     else if (mode === 'properties') for (const [id, edits] of v) this.sampleById(id)?.applyEdits(edits);

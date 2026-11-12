@@ -131,7 +131,9 @@ export function renderPlot(ctx, spec) {
   drawSeriesLabels(ctx, L, spec, T);
   if (spec.title) {
     ctx.fillStyle = T.title; ctx.font = '600 12px Helvetica, Arial, sans-serif'; ctx.textAlign = 'left'; ctx.textBaseline = 'top';
-    ctx.fillText(truncate(ctx, spec.title, spec.w - 12), 6, 5);
+    const tail = spec.titleTail || '';
+    const tw = tail ? ctx.measureText(tail).width : 0;
+    ctx.fillText(truncate(ctx, spec.title, Math.max(30, spec.w - 12 - tw)) + tail, 6, 5);
   }
   ctx.restore();
   return L;

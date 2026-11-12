@@ -261,7 +261,7 @@ body.reordering, body.reordering * { cursor: grabbing !important; user-select: n
 .tb-sep { width: 1px; align-self: stretch; background: var(--border); margin: 2px 4px; }
 .seg-group[hidden] { display: none; }
 /* compensation editor with live preview */
-.comp-layout { width: min(1500px, 88vw); }
+.comp-layout { max-width: 1700px; }
 .comp-cols { display: flex; gap: 18px; align-items: flex-start; flex-wrap: wrap; }
 .comp-left { flex: 0 1 auto; max-width: min(660px, 46vw); min-width: 320px; display: flex; flex-direction: column; gap: 6px; }
 .comp-right { flex: 1 1 420px; min-width: 320px; display: flex; flex-direction: column; gap: 6px; }

@@ -20,16 +20,16 @@ function demoWorkspace(n = 2) {
 }
 const lymph = { id: 'g1', name: 'Lymph', parent: null, type: 'rect', x: 'FSC-A', y: 'SSC-A', x0: 40000, x1: 80000, y0: 8000, y1: 38000, color: '#e6194b' };
 
-test('deterministic subsample: size, stability and nesting', () => {
+test('deterministic subsample: exact size, stability, mostly the same events as the parent', () => {
   const all = Uint32Array.from({ length: 50000 }, (_, i) => i);
   const a = subsampleIdx(all, 5000), b = subsampleIdx(all, 5000);
   assert.equal(a, b); // cached
-  assert.ok(a.length > 4500 && a.length < 5500, `got ${a.length}`);
-  const child = all.filter(i => i % 3 === 0); // a "child population" of the same events
-  const sub = new Set(subsampleIdx(child, 5000 / 3));
-  const parentShown = new Set(a);
-  // every displayed child event is also displayed in the parent
-  assert.ok([...sub].every(i => parentShown.has(i)));
+  assert.equal(a.length, 5000, 'exactly the limit');
+  // a population's own events are chosen by event, so a child population mostly shows the same
+  // events as its parent where both are thinned
+  const child = all.filter(i => i % 3 === 0);
+  const sub = subsampleIdx(child, 5000 / 3), parentShown = new Set(a);
+  assert.ok(sub.filter(i => parentShown.has(i)).length > 0.9 * sub.length);
   assert.equal(subsampleIdx(all, 0), all);
 });
 
@@ -101,9 +101,11 @@ test('per-mode undo/redo', () => {
   assert.ok(ws.canRedo('layout'));
   ws.figures.push({ id: 'f2', kind: 'batch', x: 'PE-A' }); ws.commit();
   assert.ok(!ws.canRedo('layout'));
-  // compensation toggle is a gating step
+  // compensation changes have their own undo history (the Compensation tab), separate from gating
+  const gUndo = ws.undo.gating.length;
   ws.samples[0].setCompEnabled(false); ws.commit();
-  ws.undoStep('gating');
+  assert.equal(ws.undo.gating.length, gUndo);
+  ws.undoStep('comp');
   assert.equal(ws.samples[0].compEnabled, true);
 });
 

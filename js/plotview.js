@@ -2,6 +2,7 @@
 import { renderPlot, prepareCanvas, gateGeometry, MARGIN, THEMES, SERIES_COLORS, normalizeKind } from './render.js';
 import { makeTransform } from './transforms.js';
 import { trackDrag } from './ui.js';
+import { densityGrid, autoGatePolygon } from './autogate.js';
 import { populationStats, pointInPolygon, gateFor, isCustom, isOneD, quadArms, quadRegion, quadMode, ARMS, DEFAULT_ANGLES } from './gates.js';
 
 export const fmtPct = v => (Number.isFinite(v) ? (v >= 10 ? v.toFixed(1) : v.toFixed(2)) + '%' : '–');
@@ -24,14 +25,23 @@ function hash32(i) {
 }
 const subCache = new WeakMap();
 export function subsampleIdx(idx, max) {
+  max = Math.floor(max);
   if (!max || idx.length <= max) return idx;
   let m = subCache.get(idx);
   if (!m) { m = new Map(); subCache.set(idx, m); }
   if (m.has(max)) return m.get(max);
-  const thr = (max / idx.length) * 4294967296;
-  const out = [];
-  for (let k = 0; k < idx.length; k++) if (hash32(idx[k]) < thr) out.push(idx[k]);
-  const arr = Uint32Array.from(out);
+  // exactly `max` events: those with the smallest hash values (a fixed pseudo-random choice, so
+  // the same events are shown every time), kept in their original order
+  let f = 1.08, cand;
+  for (;;) {
+    const thr = Math.min(1, (max / idx.length) * f) * 4294967296;
+    cand = [];
+    for (let k = 0; k < idx.length; k++) { const hv = hash32(idx[k]); if (hv < thr) cand.push([hv, idx[k]]); }
+    if (cand.length >= max) break;
+    f *= 1.5;
+  }
+  if (cand.length > max) { cand.sort((a, b) => a[0] - b[0]); cand.length = max; }
+  const arr = Uint32Array.from(cand.map(c => c[1])).sort();
   m.set(max, arr);
   return arr;
 }
@@ -87,7 +97,9 @@ export function buildSpec(ws, sample, def, w, h, opts = {}) {
   const shown = idx.length < pop.count && kind !== 'smooth' ? ` · showing ${idx.length.toLocaleString()}` : '';
   return {
     w, h, theme, kind,
-    title: opts.title ?? `${sample.name} · ${popName} (${pop.count.toLocaleString()}${shown})${def.zoom ? ' · zoomed' : ''}`,
+    // the counts go in titleTail so a long name is shortened, never the numbers
+    title: opts.title ?? `${sample.name} · ${popName}`,
+    titleTail: opts.title ? '' : ` (${pop.count.toLocaleString()}${shown})${def.zoom ? ' · zoomed' : ''}`,
     zoom: zoomUnits(ws, def),
     x: { name: x, label: sample.label(x), cfg: cfgX },
     y: y ? { name: y, label: sample.label(y), cfg: cfgY } : null,
@@ -195,7 +207,7 @@ export class PlotView {
   // Where a Quadrant, Split or Range gate would go, following the cursor before clicking
   previewType() {
     const t = this.app.tool, hist = this.def && !this.def.y;
-    return (t === 'quad' && !hist) || ((t === 'split' || t === 'interval') && hist) ? t : null;
+    return ((t === 'quad' || t === 'auto') && !hist) || ((t === 'split' || t === 'interval') && hist) ? t : null;
   }
 
   drawPreview(ctx) {
@@ -207,7 +219,10 @@ export class PlotView {
     ctx.strokeStyle = this.app.theme === 'dark' ? 'rgba(255,255,255,0.75)' : 'rgba(0,0,0,0.7)';
     ctx.setLineDash([5, 4]); ctx.lineWidth = 1.2;
     ctx.beginPath();
-    if (p.type === 'quad') { ctx.moveTo(x, MARGIN.t); ctx.lineTo(x, MARGIN.t + L.ph); ctx.moveTo(MARGIN.l, y); ctx.lineTo(MARGIN.l + L.pw, y); }
+    if (p.type === 'auto') {
+      if (p.poly) { p.poly.forEach(([u, v], i) => (i ? ctx.lineTo(L.ux2px(u), L.uy2px(v)) : ctx.moveTo(L.ux2px(u), L.uy2px(v)))); ctx.closePath(); }
+      else { ctx.moveTo(x - 6, y); ctx.lineTo(x + 6, y); ctx.moveTo(x, y - 6); ctx.lineTo(x, y + 6); }
+    } else if (p.type === 'quad') { ctx.moveTo(x, MARGIN.t); ctx.lineTo(x, MARGIN.t + L.ph); ctx.moveTo(MARGIN.l, y); ctx.lineTo(MARGIN.l + L.pw, y); }
     else if (p.type === 'split') { ctx.moveTo(x, MARGIN.t); ctx.lineTo(x, MARGIN.t + L.ph); }
     else { ctx.moveTo(x, y - 8); ctx.lineTo(x, y + 8); ctx.moveTo(x, y); ctx.lineTo(x + 14, y); } // range: its start
     ctx.stroke();
@@ -324,6 +339,15 @@ export class PlotView {
       const t = this.previewType();
       const prev = this.preview;
       this.preview = t && this.inPlot(px, py) ? { type: t, u: this.evtUnit(e).u } : null;
+      if (this.preview?.type === 'auto') { // outline of the population under the cursor (once per frame)
+        this.preview.tight = e.shiftKey;
+        if (!this._autoRaf) this._autoRaf = requestAnimationFrame(() => {
+          this._autoRaf = null;
+          const p = this.preview; if (p?.type !== 'auto') return;
+          p.poly = this.autoPoly(p.u, p.tight); this.quickDraw();
+        });
+        return;
+      }
       if (this.preview || prev) this.quickDraw();
       return;
     }
@@ -366,6 +390,11 @@ export class PlotView {
       return this.app.toast('Use the Range or Split tool on histograms.');
     } else if (tool === 'quad') {
       this.app.createQuadrant(this.def, this.toData(u));
+      return;
+    } else if (tool === 'auto') {
+      const poly = this.autoPoly(u, e.shiftKey);
+      if (!poly) return this.app.toast('No population found here: click inside a cluster of events.');
+      this.app.createGate(this.def, { type: 'polygon', pts: poly.map(p => this.toData(p)) });
       return;
     } else if (tool === 'polygon') {
       if (!this.drawing) this.drawing = { type: 'polygon', pts: [] };
@@ -512,6 +541,16 @@ export class PlotView {
     this.drawing = null;
     if (pts.length < 3) { this.draw(); return; }
     this.app.createGate(this.def, { type: 'polygon', pts: pts.map(p => this.toData(p)) });
+  }
+
+  // Auto gate around the population at u (display units); tight = closer to the core
+  autoPoly(u, tight = false) {
+    const s = this.spec?.series?.[0];
+    if (!s || !s.uy || this.spec.series.length !== 1) return null;
+    const z = this.spec.zoom || {}, box = { x: z.x || [0, 1], y: z.y || [0, 1] };
+    const key = [s.ux, s.uy, s.fullIdx || s.idx, box.x.join(), box.y.join()];
+    if (!this._dens || this._densKey.some((k, i) => k !== key[i])) { this._dens = densityGrid(s.ux, s.uy, s.fullIdx || s.idx, box); this._densKey = key; }
+    return autoGatePolygon(this._dens, u, { level: tight ? 0.25 : 0.08 });
   }
 
   cancel() { if (this.drawing || this.preview) { this.drawing = null; this.preview = null; this.draw(); } }
