@@ -2,4 +2,4 @@
 // When releasing, also update: <title> and #app-version in index.html, package.json,
 // CITATION.cff, help.html (version mentions + history). test/version.test.js checks they agree.
 export const APP_NAME = 'Thistle Flow';
-export const APP_VERSION = '0.9.1';
+export const APP_VERSION = '0.9.2';

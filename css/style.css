@@ -5,6 +5,7 @@
   --th: #263347; --edited: #3b2f14; --shadow: none;
   --hint-bg: #1a2744; --hint-bd: #2a4080; --hint-tx: #93c5fd;
   --badge-bg: #1d3461; --beta-bg: #7c2d12; --beta-tx: #fed7aa;
+  --pop-bg: #334155; --pop-glow: rgba(59,130,246,.25);
   color-scheme: dark;
   font-family: system-ui, sans-serif; font-size: 13px; color: var(--text);
 }
@@ -14,6 +15,7 @@
   --th: #f1f5f9; --edited: #fef3c7; --shadow: 0 1px 2px rgba(15,23,42,.05);
   --hint-bg: #eff6ff; --hint-bd: #bfdbfe; --hint-tx: #1e40af;
   --badge-bg: #dbeafe;
+  --pop-bg: #ffffff; --pop-glow: rgba(37,99,235,.18);
   color-scheme: light;
 }
 * { box-sizing: border-box; }
@@ -132,7 +134,17 @@ body.dragging::after { content: 'Drop FCS files to load into this workspace'; po
 .empty-state { margin: auto; text-align: center; color: var(--muted); max-width: 440px; line-height: 1.5; }
 .empty-state h2 { color: var(--text); font-weight: 600; }
 
-.popover { position: fixed; z-index: 40; background: var(--panel); border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 8px 28px rgba(0,0,0,.18); padding: 10px 12px; max-width: 320px; }
+/* quick menus: lighter surface, accent border and an arrow so they stand out, also in dark mode */
+.popover { position: fixed; z-index: 40; background: var(--pop-bg); color: var(--text); border: 2px solid var(--accent); border-radius: 8px;
+  box-shadow: 0 0 0 4px var(--pop-glow), 0 14px 40px rgba(0,0,0,.45); padding: 10px 12px; max-width: 340px; animation: pop-in .14s ease-out; }
+@keyframes pop-in { from { opacity: 0; transform: scale(.96); } to { opacity: 1; transform: none; } }
+.popover::before { content: ''; position: absolute; width: 12px; height: 12px; background: var(--pop-bg); border: 2px solid var(--accent); transform: rotate(45deg); display: none; }
+.popover.arrow-left::before { display: block; left: -8px; top: calc(var(--arrow) - 7px); border-right: none; border-top: none; }
+.popover.arrow-right::before { display: block; right: -8px; top: calc(var(--arrow) - 7px); border-left: none; border-bottom: none; }
+.popover.arrow-top::before { display: block; top: -8px; left: calc(var(--arrow) - 7px); border-right: none; border-bottom: none; }
+.popover.arrow-bottom::before { display: block; bottom: -8px; left: calc(var(--arrow) - 7px); border-left: none; border-top: none; }
+.pop-form .pop-title { color: var(--accent); }
+.pop-form .pop-sub { color: var(--text); font-weight: 400; }
 .pop-form { display: flex; flex-direction: column; gap: 7px; font-size: 12px; min-width: 230px; }
 .pop-form .pop-title { font-weight: 600; margin-bottom: 2px; }
 .pop-form label { display: flex; align-items: center; gap: 6px; }

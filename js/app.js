@@ -494,7 +494,7 @@ function plotSettings(p, anchor) {
       h('button', { class: 'btn small', onclick: () => axisMenu(p, 'y', anchor) }, p.y ? 'Y axis…' : 'Y: histogram…')),
     h('div', { class: 'hint-box' }, n > 1 ? 'Changes apply to all selected plots.' : 'Tip: shift-click plots or drag a box around them to change several at once.'),
     doneButton());
-  popover(anchor, body, { beside: anchor.closest?.('.plot-card') });
+  popover(anchor, body, { beside: anchor.closest?.('.plot-card'), sides: ['right', 'left', 'below'] });
 }
 
 // ---- quick axis menu: channel and scale of one axis of this plot (or of the selected plots) ----
@@ -518,7 +518,7 @@ function axisMenu(p, axis, anchor) {
       apply();
     };
     body.replaceChildren(...[
-      h('div', { class: 'pop-title' }, `${axis.toUpperCase()} axis${n > 1 ? ` · ${n} selected plots` : ''}`),
+      h('div', { class: 'pop-title' }, `${axis.toUpperCase()} axis`, label ? h('span', { class: 'pop-sub' }, ` · ${label}`) : null, n > 1 ? h('span', { class: 'pop-sub' }, ` · ${n} selected plots`) : null),
       h('label', {}, h('span', {}, 'Channel'), h('select', { onchange: e => { applyPlots(p, q => { q[axis] = e.target.value || null; }, { full: true }); draw(); } }, channelOptions(ch, { allowHist: axis === 'y' }))),
       cfg ? h('div', { class: 'seg', role: 'group', 'aria-label': 'Scale' }, SCALE_KINDS.map(([k, l]) => h('button', { class: 'btn small' + (cfg.kind === k ? ' primary' : ''), onclick: () => setKind(k) }, l))) : null,
       cfg && (cfg.kind === 'linear' || cfg.kind === 'log') ? [num('min', 'Minimum'), num('max', 'Maximum')] : null,
@@ -530,7 +530,7 @@ function axisMenu(p, axis, anchor) {
     ].flat().filter(Boolean));
   };
   draw();
-  popover(anchor, body, { beside: $(`.plot-card[data-plot="${p.id}"]`) });
+  popover(anchor, body, { beside: $(`.plot-card[data-plot="${p.id}"]`), sides: axis === 'y' ? ['left', 'right', 'below', 'above'] : ['below', 'right', 'above', 'left'] });
 }
 
 // Logicle W from the 5th percentile of negative values in the active sample (Parks et al. 2006)

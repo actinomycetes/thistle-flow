@@ -82,30 +82,47 @@ export function trackDrag(onMove, onEnd) {
 }
 
 // ---- popover (small floating panel) ----
-// Placed under its anchor, or with { beside: element } next to that element (e.g. a plot card)
-// so it does not cover the plot being changed.
+// Placed under its anchor, or with { beside: element } just outside that element (e.g. a plot card)
+// so it does not cover the plot being changed. `sides` lists the preferred sides in order
+// ('left', 'right', 'below', 'above'); the panel is lined up with the anchor (e.g. the click point)
+// and an arrow points back at it.
 let popEl = null, popAway = null;
 export function closePopover() {
   if (popAway) { document.removeEventListener('mousedown', popAway, true); popAway = null; }
   if (popEl) { popEl.remove(); popEl = null; }
 }
-export function popover(anchor, content, { beside } = {}) {
+export function popover(anchor, content, { beside, sides = ['right', 'left', 'below', 'above'] } = {}) {
   closePopover();
   popEl = h('div', { class: 'popover' }, content);
   document.body.append(popEl);
   const pw = popEl.offsetWidth, ph = popEl.offsetHeight, W = window.innerWidth, H = window.innerHeight;
   const clamp = (v, a, b) => Math.min(Math.max(v, a), Math.max(a, b));
-  let left, top;
+  const r = anchor.getBoundingClientRect();
+  const ax = (r.left + r.right) / 2, ay = (r.top + r.bottom) / 2; // point to line up with
   const c = beside?.isConnected ? beside.getBoundingClientRect() : null;
-  if (c && c.right + 8 + pw <= W - 8) { left = c.right + 8; top = clamp(c.top, 8, H - ph - 8); }
-  else if (c && c.left - 8 - pw >= 8) { left = c.left - 8 - pw; top = clamp(c.top, 8, H - ph - 8); }
-  else if (c && c.bottom + 4 + ph <= H - 8) { left = clamp(c.left, 8, W - pw - 8); top = c.bottom + 4; }
-  else {
-    const r = anchor.getBoundingClientRect();
+  const GAP = 12; // room for the arrow
+  let left, top, side = null;
+  if (c) {
+    for (const sd of sides) {
+      if (sd === 'left' && c.left - GAP - pw >= 8) { left = c.left - GAP - pw; top = clamp(ay - ph / 2, 8, H - ph - 8); }
+      else if (sd === 'right' && c.right + GAP + pw <= W - 8) { left = c.right + GAP; top = clamp(ay - ph / 2, 8, H - ph - 8); }
+      else if (sd === 'below' && c.bottom + GAP + ph <= H - 8) { top = c.bottom + GAP; left = clamp(ax - pw / 2, 8, W - pw - 8); }
+      else if (sd === 'above' && c.top - GAP - ph >= 8) { top = c.top - GAP - ph; left = clamp(ax - pw / 2, 8, W - pw - 8); }
+      else continue;
+      side = sd; break;
+    }
+  }
+  if (!side) {
     left = clamp(r.right - pw, 8, W - pw - 8);
     top = r.bottom + ph + 8 > H ? Math.max(8, r.top - ph - 4) : r.bottom + 4;
   }
   popEl.style.left = left + 'px'; popEl.style.top = top + 'px';
+  // arrow on the side facing the plot, pointing at the anchor
+  if (side) {
+    popEl.classList.add('arrow-' + { left: 'right', right: 'left', below: 'top', above: 'bottom' }[side]);
+    popEl.style.setProperty('--arrow', (side === 'left' || side === 'right' ? clamp(ay - top, 14, ph - 14) : clamp(ax - left, 14, pw - 14)) + 'px');
+  }
+  popEl.dataset.side = side || 'anchor';
   const el = popEl;
   setTimeout(() => {
     if (popEl !== el) return;

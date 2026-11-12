@@ -680,3 +680,46 @@ test('drags end even if the browser loses the mouseup (Safari); axis menu beside
   assert.deepEqual(errors, []);
   await page.close();
 });
+
+test('axis quick menu opens next to the click: left for Y, below for X (right near the window bottom)', { timeout: 120000 }, async () => {
+  browser = browser || await chromium.launch();
+  const page = await browser.newPage({ viewport: { width: 1600, height: 1000 } });
+  const errors = [];
+  page.on('pageerror', e => errors.push(e.message));
+  await page.addInitScript(() => { try { localStorage.clear(); } catch {} });
+  await page.goto(BASE + '/');
+  await page.click('#btnDemo'); await page.waitForSelector('.plot-card canvas');
+  await page.evaluate(() => { const ws = window.thistleFlow.ws; ws.plots[1].x = 'FITC-A'; ws.plots[1].y = 'PE-A'; window.thistleFlow.renderAll(); });
+  const open = async (axis, plot = 1) => {
+    const cv = await page.locator('.plot-card canvas').nth(plot).boundingBox();
+    const pt = axis === 'y' ? [cv.x + 20, cv.y + 24 + 180] : [cv.x + 64 + 120, cv.y + cv.height - 20];
+    await page.mouse.click(...pt);
+    const pop = await page.locator('.popover').boundingBox();
+    const card = await page.locator('.plot-card').nth(plot).boundingBox();
+    const side = await page.getAttribute('.popover', 'data-side');
+    await page.keyboard.press('Escape');
+    return { pt, pop, card, side };
+  };
+  // Y axis: left of the plot, vertically lined up with the click
+  let r = await open('y');
+  assert.equal(r.side, 'left');
+  assert.ok(r.pop.x + r.pop.width <= r.card.x, 'left of the plot');
+  assert.ok(Math.abs(r.pop.y + r.pop.height / 2 - r.pt[1]) < 40, 'level with the click');
+  // X axis: below the plot, horizontally lined up with the click
+  r = await open('x');
+  assert.equal(r.side, 'below');
+  assert.ok(r.pop.y >= r.card.y + r.card.height, 'below the plot');
+  assert.ok(Math.abs(r.pop.x + r.pop.width / 2 - r.pt[0]) < 40, 'under the click');
+  // X axis of a plot at the bottom of the window: to the right instead
+  await page.setViewportSize({ width: 1600, height: 680 });
+  r = await open('x', 1);
+  assert.equal(r.side, 'right', 'no room below');
+  assert.ok(r.pop.x >= r.card.x + r.card.width);
+  // the menu is easy to spot: accent border and an arrow towards the axis
+  await page.mouse.click(r.pt[0], r.pt[1]);
+  const style = await page.evaluate(() => { const el = document.querySelector('.popover'); const cs = getComputedStyle(el); return { border: cs.borderTopWidth, arrow: getComputedStyle(el, '::before').display }; });
+  assert.deepEqual(style, { border: '2px', arrow: 'block' });
+  await page.screenshot({ path: OUT + '/e-menu-x-right.png' });
+  assert.deepEqual(errors, []);
+  await page.close();
+});
