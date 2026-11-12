@@ -2,7 +2,7 @@
 import { renderPlot, prepareCanvas, gateGeometry, MARGIN, THEMES, SERIES_COLORS, normalizeKind } from './render.js';
 import { makeTransform } from './transforms.js';
 import { trackDrag } from './ui.js';
-import { populationStats, pointInPolygon, gateFor, isCustom } from './gates.js';
+import { populationStats, pointInPolygon, gateFor, isCustom, isOneD } from './gates.js';
 
 export const fmtPct = v => (Number.isFinite(v) ? (v >= 10 ? v.toFixed(1) : v.toFixed(2)) + '%' : '–');
 
@@ -41,6 +41,17 @@ export function subsampleIdx(idx, max) {
 export const QUAD_NUM = { UL: 'Q1', UR: 'Q2', LR: 'Q3', LL: 'Q4' };
 export const plotGateName = g => (g.type === 'quad' && QUAD_NUM[g.q]) || g.name;
 
+// A plot's zoom is stored in data values ({ x: [lo, hi], y: [lo, hi] | null }) so it survives scale
+// changes; the renderer needs it in scale units.
+export function zoomUnits(ws, def) {
+  const z = def.zoom;
+  if (!z) return null;
+  const tx = makeTransform(ws.getCfg(def.x)), ty = def.y ? makeTransform(ws.getCfg(def.y)) : null;
+  const u = (t, r) => (r && t ? r.map(v => t.fwd(v)).sort((a, b) => a - b) : null);
+  const out = { x: u(tx, z.x), y: def.y ? u(ty, z.y) : null };
+  return out.x || out.y ? out : null;
+}
+
 // Colour of a sample in a quick overlay (same in the plots and the sample list)
 export const overlayColor = i => SERIES_COLORS[i % SERIES_COLORS.length];
 
@@ -60,7 +71,7 @@ export function buildSpec(ws, sample, def, w, h, opts = {}) {
   const series = [{ ux: sample.unit(x, cfgX), uy: y ? sample.unit(y, cfgY) : null, idx, fullIdx: pop.idx, color: isHist ? theme.hist : null }];
   const sel = opts.selectedGate ? eng.get(opts.selectedGate) : null;
   const gates = opts.noGates ? [] : eng.children(popId)
-    .filter(g => (isHist ? g.type === 'interval' && g.x === x : g.type !== 'interval' && g.x === x && g.y === y))
+    .filter(g => (isHist ? isOneD(g) && g.x === x : !isOneD(g) && g.x === x && g.y === y))
     .map(g => {
       const st = populationStats(eng, sample, g.id);
       const custom = isCustom(g, sample); // this sample has its own version of the gate
@@ -75,7 +86,8 @@ export function buildSpec(ws, sample, def, w, h, opts = {}) {
   const shown = idx.length < pop.count && kind !== 'smooth' ? ` · showing ${idx.length.toLocaleString()}` : '';
   return {
     w, h, theme, kind,
-    title: opts.title ?? `${sample.name} · ${popName} (${pop.count.toLocaleString()}${shown})`,
+    title: opts.title ?? `${sample.name} · ${popName} (${pop.count.toLocaleString()}${shown})${def.zoom ? ' · zoomed' : ''}`,
+    zoom: zoomUnits(ws, def),
     x: { name: x, label: sample.label(x), cfg: cfgX },
     y: y ? { name: y, label: sample.label(y), cfg: cfgY } : null,
     series, gates,
@@ -103,7 +115,7 @@ function buildOverlaySpec(ws, samples, def, w, h, opts) {
   });
   const sel = opts.selectedGate ? eng.get(opts.selectedGate) : null;
   const gates = opts.noGates ? [] : eng.children(popId)
-    .filter(g => (isHist ? g.type === 'interval' && g.x === x : g.type !== 'interval' && g.x === x && g.y === y))
+    .filter(g => (isHist ? isOneD(g) && g.x === x : !isOneD(g) && g.x === x && g.y === y))
     .map(g => ({
       gate: g, color: g.color, text: plotGateName(g),
       lines: [{ text: plotGateName(g), color: g.color }, ...list.map(({ s, color }) => ({ text: `${name(s)}${isCustom(g, s) ? ' ✎' : ''}  ${fmtPct(populationStats(eng, s, g.id).pctParent)}`, color }))],
@@ -112,7 +124,8 @@ function buildOverlaySpec(ws, samples, def, w, h, opts) {
   const first = list[0].s;
   return {
     w, h, theme: opts.theme || THEMES.light, kind: isHist ? 'histogram' : 'dot',
-    title: opts.title ?? `Overlay of ${list.length} samples · ${popId ? eng.get(popId).name : 'All Events'}`,
+    title: opts.title ?? `Overlay of ${list.length} samples · ${popId ? eng.get(popId).name : 'All Events'}${def.zoom ? ' · zoomed' : ''}`,
+    zoom: zoomUnits(ws, def),
     x: { name: x, label: first.label(x), cfg: cfgX },
     y: y ? { name: y, label: first.label(y), cfg: cfgY } : null,
     series, gates, labels: { mode: 'inside' },
@@ -184,6 +197,12 @@ export class PlotView {
     } else if (d.type === 'ellipse' && d.cur) {
       const pts = ellipsePts(d.start, d.cur);
       ctx.beginPath(); pts.forEach(([u, v], i) => (i ? ctx.lineTo(L.ux2px(u), L.uy2px(v)) : ctx.moveTo(L.ux2px(u), L.uy2px(v)))); ctx.closePath(); ctx.stroke();
+    } else if (d.type === 'zoom' && d.cur) {
+      ctx.setLineDash([3, 3]);
+      ctx.fillStyle = 'rgba(59,130,246,0.15)';
+      const x0 = L.ux2px(d.start[0]), x1 = L.ux2px(d.cur[0]);
+      const y0 = this.def.y ? L.uy2px(d.start[1]) : MARGIN.t, y1 = this.def.y ? L.uy2px(d.cur[1]) : MARGIN.t + L.ph;
+      ctx.fillRect(x0, y0, x1 - x0, y1 - y0); ctx.strokeRect(x0, y0, x1 - x0, y1 - y0);
     } else if (d.type === 'interval' && d.cur) {
       const y = L.uy2px(d.start[1]);
       ctx.beginPath(); ctx.moveTo(L.ux2px(d.start[0]), y); ctx.lineTo(L.ux2px(d.cur[0]), y); ctx.stroke();
@@ -225,6 +244,8 @@ export class PlotView {
           const [x, y] = geo.pts[i];
           if (Math.abs(clampX(x) - px) <= HANDLE && Math.abs(clampY(y) - py) <= HANDLE) return { gate: it.gate, mode: 'vertex', index: i };
         }
+      } else if (geo.kind === 'split') {
+        if (Math.abs(geo.cx - px) <= HANDLE && this.inPlot(px, py)) return { gate: it.gate, mode: 'split' };
       } else if (geo.kind === 'quad') {
         if (Math.abs(geo.cx - px) <= HANDLE + 2 && Math.abs(geo.cy - py) <= HANDLE + 2) return { gate: it.gate, mode: 'quad' };
       } else if (geo.kind === 'interval') {
@@ -237,6 +258,11 @@ export class PlotView {
       if (geo.kind === 'poly' && pointInPolygon(px, py, geo.pts)) return { gate: it.gate, mode: 'move' };
       if (geo.kind === 'interval' && px >= Math.min(geo.x0, geo.x1) && px <= Math.max(geo.x0, geo.x1) && Math.abs(py - geo.y) <= 8) return { gate: it.gate, mode: 'move' };
       if (geo.kind === 'quad' && (Math.abs(geo.cx - px) <= 4 || Math.abs(geo.cy - py) <= 4)) return { gate: it.gate, mode: 'quad' };
+    }
+    for (const it of items) { // clicking on one side of a split selects that side
+      const g = it.gate; if (g.type !== 'split' || !this.inPlot(px, py)) continue;
+      const geo = gateGeometry(this.L, this.spec, g);
+      if ((px < geo.cx) === (g.side === 'L')) return { gate: g, mode: 'select' };
     }
     for (const it of items) {
       const g = it.gate; if (g.type !== 'quad') continue;
@@ -254,7 +280,7 @@ export class PlotView {
     this.canvas.title = '';
     if (this.app.tool !== 'select') { this.canvas.style.cursor = 'crosshair'; return; }
     const h = this.hitTest(px, py);
-    this.canvas.style.cursor = !h ? 'default' : h.mode === 'move' || h.mode === 'label' ? 'move' : h.mode === 'select' ? 'pointer' : 'crosshair';
+    this.canvas.style.cursor = !h ? 'default' : h.mode === 'move' || h.mode === 'label' ? 'move' : h.mode === 'split' ? 'ew-resize' : h.mode === 'select' ? 'pointer' : 'crosshair';
   }
 
   onDown(e) {
@@ -278,11 +304,17 @@ export class PlotView {
     }
     this.app.plotClicked(this.def.id, e, { keepSelection: true });
     if (!this.inPlot(px, py)) return;
-    if (tool === 'interval') {
+    if (tool === 'zoom') {
+      this.drawing = { type: 'zoom', start: u, cur: null };
+    } else if (tool === 'split') {
+      if (!isHist) return this.app.toast('Split gates are drawn on histograms. Set Y to “Histogram”.');
+      this.app.createSplit(this.def, this.toData(u)[0]);
+      return;
+    } else if (tool === 'interval') {
       if (!isHist) return this.app.toast('Range gates are drawn on histograms. Set Y to “Histogram”.');
       this.drawing = { type: 'interval', start: u, cur: null };
     } else if (isHist) {
-      return this.app.toast('Use the Range tool on histograms.');
+      return this.app.toast('Use the Range or Split tool on histograms.');
     } else if (tool === 'quad') {
       this.app.createQuadrant(this.def, this.toData(u));
       return;
@@ -337,6 +369,8 @@ export class PlotView {
         if (d.index === 0 || d.index === 3) g.x0 = vx; else g.x1 = vx;
         if (d.index === 0 || d.index === 1) g.y0 = vy; else g.y1 = vy;
       } else { g.x0 = mvX(o.x0); g.x1 = mvX(o.x1); g.y0 = mvY(o.y0); g.y1 = mvY(o.y1); mvLabel(); }
+    } else if (g.type === 'split') {
+      g.cx = tx.inv(u[0]);
     } else if (g.type === 'quad') {
       g.cx = tx.inv(u[0]); g.cy = ty.inv(u[1]);
     } else if (g.type === 'interval') {
@@ -354,6 +388,14 @@ export class PlotView {
     if (this.drawing && this.drawing.type !== 'polygon') {
       const d = this.drawing; this.drawing = null;
       if (!d.cur) { this.draw(); return; }
+      if (d.type === 'zoom') {
+        const [ux0, ux1] = [d.start[0], d.cur[0]].sort((p, q) => p - q), [uy0, uy1] = [d.start[1], d.cur[1]].sort((p, q) => p - q);
+        const L = this.L, minW = 6 / L.pw * (L.px2ux(MARGIN.l + L.pw) - L.px2ux(MARGIN.l)), minH = 6 / L.ph * (L.px2uy(MARGIN.t) - L.px2uy(MARGIN.t + L.ph));
+        if (ux1 - ux0 < minW || (this.def.y && uy1 - uy0 < minH)) { this.draw(); return; } // a click, not a box
+        const tx = makeTransform(this.app.ws.getCfg(this.def.x)), ty = this.def.y ? makeTransform(this.app.ws.getCfg(this.def.y)) : null;
+        this.app.zoomPlot(this.def, { x: [tx.inv(ux0), tx.inv(ux1)], y: ty ? [ty.inv(uy0), ty.inv(uy1)] : null });
+        return;
+      }
       const a = snapUnit(d.start), b = snapUnit(d.cur);
       if (Math.abs(a[0] - b[0]) < 0.01 && (d.type === 'interval' || Math.abs(a[1] - b[1]) < 0.01)) { this.draw(); return; }
       if (d.type === 'rect') {

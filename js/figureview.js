@@ -62,6 +62,7 @@ export class FigureView {
     const clampX = x => Math.min(MARGIN.l + this.L.pw, Math.max(MARGIN.l, x));
     for (const it of this.spec.gates || []) {
       const geo = gateGeometry(this.L, this.spec, it.gate);
+      if (geo?.kind === 'split' && Math.abs(geo.cx - px) <= FIG_HANDLE && this.inPlot(px, py)) return { item: it, mode: 'split' };
       if (!geo || geo.kind !== 'interval') continue;
       if (Math.abs(clampX(geo.x0) - px) <= FIG_HANDLE && Math.abs(geo.y - py) <= 10) return { item: it, mode: 'iv0' };
       if (Math.abs(clampX(geo.x1) - px) <= FIG_HANDLE && Math.abs(geo.y - py) <= 10) return { item: it, mode: 'iv1' };
@@ -135,6 +136,7 @@ export class FigureView {
     const tx = makeTransform(this.app.ws.getCfg(g.x));
     const snap = v => (v <= 0.003 ? -0.3 : v >= 0.997 ? 1.3 : v);
     const du = [u[0] - d.start[0], u[1] - d.start[1]];
+    if (d.mode === 'split') { this.app.setGateGeometry(g, { ...g, cx: tx.inv(u[0]) }, null); this.app.gateChanged(g, { live: true }); this.draw(); return; }
     if (d.mode === 'iv0') g.x0 = tx.inv(snap(u[0]));
     else if (d.mode === 'iv1') g.x1 = tx.inv(snap(u[0]));
     else {

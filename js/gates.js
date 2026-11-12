@@ -19,7 +19,9 @@ function unitRange(t, a, b) {
 
 // ---- per-sample gate adjustments ----
 // A gate may carry overrides: { [sample.key]: geometry } (keyed by file name so they survive saving).
-const GEOM_KEYS = { rect: ['x0', 'x1', 'y0', 'y1'], polygon: ['pts'], quad: ['cx', 'cy'], interval: ['x0', 'x1', 'level'] };
+const GEOM_KEYS = { rect: ['x0', 'x1', 'y0', 'y1'], polygon: ['pts'], quad: ['cx', 'cy'], interval: ['x0', 'x1', 'level'], split: ['cx'] };
+// Gates that come in linked groups (moved together): quadrants (4) and splits (left/right)
+export const isGrouped = g => g.type === 'quad' || g.type === 'split';
 export function pickGeom(g) {
   const out = {};
   for (const k of GEOM_KEYS[g.type] || []) if (g[k] !== undefined) out[k] = JSON.parse(JSON.stringify(g[k]));
@@ -31,7 +33,8 @@ export function gateFor(g, sample) { return isCustom(g, sample) ? { ...g, ...g.o
 export const customSampleKeys = g => Object.keys(g.overrides || {});
 
 // Which channels a gate uses
-export function gateChannels(g) { return g.type === 'interval' ? [g.x] : [g.x, g.y]; }
+export const isOneD = g => g.type === 'interval' || g.type === 'split'; // histogram gates
+export function gateChannels(g) { return isOneD(g) ? [g.x] : [g.x, g.y]; }
 
 export class GateEngine {
   constructor(getCfg) {
@@ -52,7 +55,7 @@ export class GateEngine {
     if (!g) return;
     const ids = [id];
     // remove whole quadrant group together
-    if (g.type === 'quad') for (const o of this.list()) if (o.group === g.group && o.id !== id) ids.push(o.id);
+    if (isGrouped(g)) for (const o of this.list()) if (o.group === g.group && o.id !== id) ids.push(o.id);
     for (const gid of ids) {
       for (const c of this.children(gid)) this.remove(c.id);
       this.gates.delete(gid);
@@ -76,10 +79,11 @@ export class GateEngine {
     const N = sample.events;
     const out = new Uint8Array(N);
     if (!this.canApply(sample, g)) return out; // channels missing -> empty
-    if (g.type === 'rect' || g.type === 'quad' || g.type === 'interval') {
+    if (g.type === 'rect' || g.type === 'quad' || g.type === 'interval' || g.type === 'split') {
       let x0, x1, y0 = -Infinity, y1 = Infinity;
       if (g.type === 'rect') ({ x0, x1, y0, y1 } = g);
       else if (g.type === 'interval') ({ x0, x1 } = g);
+      else if (g.type === 'split') { x0 = g.side === 'L' ? -Infinity : g.cx; x1 = g.side === 'L' ? g.cx : Infinity; }
       else {
         const right = g.q === 'UR' || g.q === 'LR', up = g.q === 'UR' || g.q === 'UL';
         x0 = right ? g.cx : -Infinity; x1 = right ? Infinity : g.cx;
@@ -89,7 +93,7 @@ export class GateEngine {
       const tx = makeTransform(this.getCfg(g.x));
       const ux = sample.unit(g.x, this.getCfg(g.x));
       const [lox, hix] = unitRange(tx, x0, x1);
-      if (g.type === 'interval') {
+      if (isOneD(g)) {
         for (let i = 0; i < N; i++) { const v = ux[i]; out[i] = v >= lox && v < hix ? 1 : 0; }
         return out;
       }

@@ -2,7 +2,7 @@
 import { parseFCS, writeFCS } from './fcs.js';
 import { Sample } from './model.js';
 import { defaultTransformFor } from './transforms.js';
-import { GATE_COLORS, STAT_DEFS, channelStats, populationStats, pickGeom, isCustom, customSampleKeys } from './gates.js';
+import { GATE_COLORS, STAT_DEFS, channelStats, populationStats, pickGeom, isCustom, customSampleKeys, isGrouped, isOneD } from './gates.js';
 import { PlotView, buildSpec, shortLabel, fmtPct, subsampleIdx, overlayColor, QUAD_NUM, PLOT_SIZES, EVENT_LIMITS } from './plotview.js';
 import { renderPlot, prepareCanvas, SERIES_COLORS, THEMES, PLOT_KINDS, HIST_OFFSETS, DOT_SIZES, DEFAULT_DOT, normalizeKind } from './render.js';
 import { renderSVG, renderPDF } from './vector.js';
@@ -460,10 +460,13 @@ function renderGating() {
     },
       h('div', { class: 'plot-head' },
         h('select', { title: 'Population (parent gate)', onchange: e => applyPlots(p, q => { q.pop = e.target.value || null; }) }, popOptions(p.pop)),
-        h('select', { title: 'X axis', onchange: e => applyPlots(p, q => { q.x = e.target.value; }) }, channelOptions(p.x)),
-        h('select', { title: 'Y axis', onchange: e => applyPlots(p, q => { q.y = e.target.value || null; }, { full: true }) }, channelOptions(p.y, { allowHist: true })),
+        h('select', { title: 'X axis', onchange: e => applyPlots(p, q => { q.x = e.target.value; clearZoom(q); }, { full: true }) }, channelOptions(p.x)),
+        h('select', { title: 'Y axis', onchange: e => applyPlots(p, q => { q.y = e.target.value || null; clearZoom(q); }, { full: true }) }, channelOptions(p.y, { allowHist: true })),
         p.y ? h('select', { title: 'Plot type', onchange: e => applyPlots(p, q => { q.kind = e.target.value; }) }, kindOptions(p.kind)) : null,
-        h('span', { class: 'grow' }), btnSettings, btnExport,
+        h('span', { class: 'grow' }),
+        p.zoom ? h('button', { class: 'icon zoom-btn', title: 'Unzoom: back to the previous view', onclick: () => unzoomPlot(p) }, '↩') : null,
+        p.zoom ? h('button', { class: 'icon zoom-btn', title: 'Reset zoom: show the whole axis range', onclick: () => { clearZoom(p); renderGating(); } }, '⤢') : null,
+        btnSettings, btnExport,
         h('button', { class: 'icon', title: 'Close plot', onclick: () => { ws.plots = ws.plots.filter(q => q.id !== p.id); ws.selPlots.delete(p.id); renderGating(); } }, '×')),
       canvas);
     grid.append(card);
@@ -519,7 +522,7 @@ function axisMenu(p, axis, anchor) {
     };
     body.replaceChildren(...[
       h('div', { class: 'pop-title' }, `${axis.toUpperCase()} axis`, label ? h('span', { class: 'pop-sub' }, ` · ${label}`) : null, n > 1 ? h('span', { class: 'pop-sub' }, ` · ${n} selected plots`) : null),
-      h('label', {}, h('span', {}, 'Channel'), h('select', { onchange: e => { applyPlots(p, q => { q[axis] = e.target.value || null; }, { full: true }); draw(); } }, channelOptions(ch, { allowHist: axis === 'y' }))),
+      h('label', {}, h('span', {}, 'Channel'), h('select', { onchange: e => { applyPlots(p, q => { q[axis] = e.target.value || null; clearZoom(q); }, { full: true }); draw(); } }, channelOptions(ch, { allowHist: axis === 'y' }))),
       cfg ? h('div', { class: 'seg', role: 'group', 'aria-label': 'Scale' }, SCALE_KINDS.map(([k, l]) => h('button', { class: 'btn small' + (cfg.kind === k ? ' primary' : ''), onclick: () => setKind(k) }, l))) : null,
       cfg && (cfg.kind === 'linear' || cfg.kind === 'log') ? [num('min', 'Minimum'), num('max', 'Maximum')] : null,
       cfg && cfg.kind === 'arcsinh' ? [num('cofactor', 'Cofactor'), num('min', 'Minimum'), num('max', 'Maximum')] : null,
@@ -541,6 +544,21 @@ function autoW(ch, cfg) {
   negs.sort((a, b) => a - b);
   const r = negs[Math.floor(negs.length * 0.05)];
   return +Math.max(0, Math.min((cfg.M / 2) - 0.01, (cfg.M - Math.log10(cfg.T / Math.abs(r))) / 2)).toFixed(2);
+}
+
+// ---- zoom (view only: gates, percentages and statistics are unaffected) ----
+function clearZoom(q) { delete q.zoom; delete q.zoomStack; }
+app.zoomPlot = (def, zoom) => {
+  def.zoomStack = [...(def.zoomStack || []), def.zoom || null];
+  def.zoom = zoom;
+  setTool('select');
+  renderGating();
+};
+function unzoomPlot(def) {
+  const prev = (def.zoomStack || []).pop();
+  if (prev) def.zoom = prev; else clearZoom(def);
+  if (def.zoomStack && !def.zoomStack.length) delete def.zoomStack;
+  renderGating();
 }
 
 // ---- plot selection (shift-click, rubber band) ----
@@ -633,16 +651,21 @@ app.createQuadrant = (def, [cx, cy]) => {
 // (quadrant gates move together with their group).
 app.setGateGeometry = (base, w, sample) => {
   const ws = app.ws, geom = pickGeom(w);
-  const targets = base.type === 'quad' ? ws.engine.list().filter(q => q.group === base.group) : [base];
+  const targets = isGrouped(base) ? ws.engine.list().filter(q => q.group === base.group) : [base];
   for (const t of targets) {
     if (sample) t.overrides = { ...(t.overrides || {}), [sample.key]: { ...pickGeom(t), ...geom } };
     else Object.assign(t, geom);
   }
+  if (sample) { // remembered so that switching back to "All samples" can offer to share the change
+    const keys = app.sampleEdits.get(base.id) || new Set();
+    keys.add(sample.key); app.sampleEdits.set(base.id, keys);
+  }
 };
+app.sampleEdits = new Map(); // gate id -> sample keys adjusted while in "This sample" mode
 // Back to the global gate for one sample (key) or for every sample (key = null)
 function useGlobalGate(g, key) {
   const ws = app.ws;
-  const targets = g.type === 'quad' ? ws.engine.list().filter(q => q.group === g.group) : [g];
+  const targets = isGrouped(g) ? ws.engine.list().filter(q => q.group === g.group) : [g];
   for (const t of targets) {
     if (!t.overrides) continue;
     if (key) delete t.overrides[key]; else t.overrides = {};
@@ -666,6 +689,46 @@ async function revertSelectedGate() {
   useGlobalGate(g, choice === 'this' ? s.key : null);
   toast(choice === 'this' ? `“${g.name}” now uses the global gate for ${s.name}` : `“${g.name}” now uses the global gate for every sample`);
 }
+// Leaving "This sample" after adjusting gates: share the change with all samples, keep it, or stay
+async function switchGateEditMode(m) {
+  if (m === app.gateEditMode) return;
+  const ws = app.ws;
+  // only edits that still exist (not undone / reverted / deleted)
+  const edits = [...app.sampleEdits].map(([id, keys]) => [ws.engine.get(id), [...keys].filter(k => ws.engine.get(id)?.overrides?.[k])])
+    .filter(([g, keys]) => g && keys.length);
+  if (m === 'all' && edits.length) {
+    const keys = [...new Set(edits.flatMap(([, k]) => k))];
+    const nameOf = k => ws.samples.find(x => x.key === k)?.name || k;
+    const active = ws.activeSample();
+    const source = active && keys.includes(active.key) ? active.key : keys[0];
+    const gates = edits.map(([g]) => g.type === 'quad' || g.type === 'split' ? `${g.name} (and its linked gates)` : g.name);
+    const msg = keys.length === 1
+      ? `You adjusted ${gates.length === 1 ? 'a gate' : `${gates.length} gates`} (${gates.join(', ')}) for ${nameOf(source)} only. Apply ${gates.length === 1 ? 'this change' : 'these changes'} to all samples?`
+      : `You adjusted gates (${gates.join(', ')}) for ${keys.length} samples: ${keys.map(nameOf).join(', ')}. Use the version of ${nameOf(source)} for all samples?`;
+    const choice = await choose('Apply to all samples?', msg, [
+      { label: 'Cancel', value: null },
+      { label: keys.length === 1 ? `Keep for ${nameOf(source)} only` : 'Keep each sample’s own', value: 'keep' },
+      { label: 'Apply to all samples', value: 'apply', primary: true }]);
+    if (!choice) return; // stay in "This sample"
+    if (choice === 'apply') {
+      for (const [g, gkeys] of edits) {
+        const ov = g.overrides?.[source] ?? g.overrides?.[gkeys[0]];
+        if (ov) app.setGateGeometry(g, { ...g, ...ov }, null); // becomes the shared gate
+        const targets = isGrouped(g) ? ws.engine.list().filter(q => q.group === g.group) : [g];
+        for (const t of targets) {
+          for (const k of gkeys) if (t.overrides) delete t.overrides[k];
+          if (t.overrides && !Object.keys(t.overrides).length) delete t.overrides;
+        }
+        app.gateChanged(g, { live: true });
+      }
+      toast(`Applied to all samples`);
+    }
+  }
+  app.sampleEdits.clear();
+  setGateEditMode(m);
+  renderAll();
+}
+
 function setGateEditMode(m) {
   app.gateEditMode = m;
   $$('#gateEditMode button').forEach(b => b.classList.toggle('primary', b.dataset.mode === m));
@@ -679,6 +742,20 @@ function updateGateButtons() {
   b.disabled = !n;
   b.title = n ? `“${g.name}” is adjusted for ${n} sample(s): ${ws.samples.filter(s => isCustom(g, s)).map(s => s.name).join(', ')}` : 'The selected gate is the same for all samples';
 }
+
+// Split gate on a histogram: two linked gates, left (marker-) and right (marker+) of one line
+app.createSplit = (def, cx) => {
+  const ws = app.ws, s = ws.activeSample();
+  const m = shortLabel(s, def.x), group = uid('s'), color = nextColor();
+  let first;
+  for (const side of ['L', 'R']) {
+    const g = { id: uid('g'), name: `${m}${side === 'L' ? '-' : '+'}`, parent: def.pop || null, type: 'split', side, group, x: def.x, y: null, cx, color };
+    ws.engine.add(g); first = first || g;
+  }
+  ws.selectedGate = first.id;
+  setTool('select');
+  renderAll();
+};
 
 // During drags only descendants of the changed gate need recomputation.
 app.gateChanged = (g, { live = false } = {}) => {
@@ -796,7 +873,7 @@ function overlayGates(f) {
   const ws = app.ws, parent = overlayParent(f);
   if (parent === undefined) return [];
   const series = f.series.filter(se => ws.sampleById(se.sampleId)?.hasChannel(f.x));
-  return ws.engine.children(parent).filter(g => g.type === 'interval' && g.x === f.x).map(g => ({
+  return ws.engine.children(parent).filter(g => isOneD(g) && g.x === f.x).map(g => ({
     gate: g, color: g.color, text: g.name, selected: ws.selectedGate === g.id, labelPos: f.labelPos?.[g.id],
     lines: [{ text: g.name, color: g.color }, ...series.map(se => {
       const s = ws.sampleById(se.sampleId);
@@ -1516,7 +1593,7 @@ $('#btnAddPlot').addEventListener('click', () => {
 });
 $('#btnDeleteGate').addEventListener('click', () => app.ws.selectedGate && deleteGate(app.ws.selectedGate));
 $('#btnGlobalGate').addEventListener('click', revertSelectedGate);
-$$('#gateEditMode button').forEach(b => b.addEventListener('click', () => setGateEditMode(b.dataset.mode)));
+$$('#gateEditMode button').forEach(b => b.addEventListener('click', () => switchGateEditMode(b.dataset.mode)));
 $('#btnExportLayout').addEventListener('click', e => {
   if (!app.ws.figures.length) return toast('No figures in the layout');
   exportMenu(e.currentTarget, `${app.ws.name}_layout`, layoutComposite);
@@ -1560,7 +1637,7 @@ document.addEventListener('keydown', e => {
     return;
   }
   if (mod || e.altKey) return;
-  const map = { v: 'select', r: 'rect', p: 'polygon', e: 'ellipse', q: 'quad', i: 'interval' };
+  const map = { v: 'select', r: 'rect', p: 'polygon', e: 'ellipse', q: 'quad', i: 'interval', s: 'split', z: 'zoom' };
   if (map[e.key.toLowerCase()] && app.ws.tab === 'gating') setTool(map[e.key.toLowerCase()]);
 });
 

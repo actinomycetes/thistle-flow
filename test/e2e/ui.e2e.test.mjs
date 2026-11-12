@@ -723,3 +723,126 @@ test('axis quick menu opens next to the click: left for Y, below for X (right ne
   assert.deepEqual(errors, []);
   await page.close();
 });
+
+test('select-to-zoom with unzoom/reset; split gate; leaving "This sample" asks to apply to all', { timeout: 240000 }, async () => {
+  browser = browser || await chromium.launch();
+  const page = await browser.newPage({ viewport: { width: 1600, height: 1000 } });
+  const errors = [];
+  page.on('pageerror', e => errors.push(e.message));
+  await page.addInitScript(() => { try { localStorage.clear(); } catch {} });
+  const prompts = [];
+  page.on('dialog', d => d.accept(prompts.shift()));
+  const ev = f => page.evaluate(f);
+  await page.goto(BASE + '/');
+  await page.click('#btnDemo'); await page.waitForSelector('.plot-card canvas');
+  await ev(() => {
+    const ws = window.thistleFlow.ws;
+    ws.engine.add({ id: 'gL', name: 'Lymph', parent: null, type: 'rect', x: 'FSC-A', y: 'SSC-A', x0: 40000, x1: 80000, y0: 8000, y1: 38000, color: '#e6194b' });
+    ws.plots[1].x = 'FITC-A'; ws.plots[1].y = null; ws.plots[1].pop = 'gL';
+    window.thistleFlow.renderAll();
+  });
+  const box = async i => page.locator('.plot-card canvas').nth(i).boundingBox();
+  const at = (b, ux, uy) => [b.x + 64 + ux * (b.width - 78), b.y + 24 + (1 - uy) * (b.height - 72)];
+  const drag = async (b, from, to) => { await page.mouse.move(...at(b, ...from)); await page.mouse.down(); await page.mouse.move(...at(b, ...to), { steps: 6 }); await page.mouse.up(); };
+  const counts = id => page.evaluate(id => window.thistleFlow.ws.samples.map(s => window.thistleFlow.ws.engine.population(s, id).count), id);
+
+  // ---- zoom: drag a box on FSC/SSC; gates and statistics unchanged ----
+  const lymphBefore = await counts('gL');
+  let b = await box(0);
+  await page.click('[data-tool=zoom]');
+  await drag(b, [0.1, 0.02], [0.4, 0.2]);
+  let z = await ev(() => window.thistleFlow.ws.plots[0].zoom);
+  assert.ok(z && Math.abs(z.x[0] - 0.1 * 262144) < 3000 && Math.abs(z.x[1] - 0.4 * 262144) < 3000, JSON.stringify(z));
+  assert.ok(z.y[1] < 0.25 * 262144);
+  assert.equal(await ev(() => window.thistleFlow.tool), 'select', 'back to Select after zooming');
+  assert.match(await ev(() => [...window.thistleFlow.views.values()][0].spec.title), /zoomed/);
+  assert.deepEqual(await counts('gL'), lymphBefore, 'zoom does not change gates or statistics');
+  // the gate is drawn larger: its rectangle now spans most of the frame width
+  const gw = await ev(() => { const L = [...window.thistleFlow.views.values()][0].L; return (L.ux2px(80000 / 262144) - L.ux2px(40000 / 262144)) / L.pw; });
+  assert.ok(gw > 0.4, `gate width fraction ${gw}`);
+  await page.locator('.plot-card').nth(0).screenshot({ path: OUT + '/e-zoomed.png' });
+  // zoom again inside, then Unzoom goes back one step, Reset to the full range
+  b = await box(0);
+  await page.click('[data-tool=zoom]');
+  await drag(b, [0.2, 0.2], [0.6, 0.7]);
+  const z2 = await ev(() => window.thistleFlow.ws.plots[0].zoom);
+  assert.ok(z2.x[1] - z2.x[0] < z.x[1] - z.x[0], 'zoomed further in');
+  await page.locator('.plot-card').nth(0).locator('button[title^="Unzoom"]').click();
+  assert.deepEqual(await ev(() => window.thistleFlow.ws.plots[0].zoom), z, 'unzoom returns to the previous view');
+  await page.locator('.plot-card').nth(0).locator('button[title^="Reset zoom"]').click();
+  assert.equal(await ev(() => window.thistleFlow.ws.plots[0].zoom), undefined, 'reset shows everything');
+  assert.equal(await page.locator('.plot-card').nth(0).locator('button[title^="Unzoom"]').count(), 0);
+  // histograms zoom along X only
+  b = await box(1);
+  await page.click('[data-tool=zoom]');
+  await drag(b, [0.55, 0.5], [0.9, 0.6]);
+  z = await ev(() => window.thistleFlow.ws.plots[1].zoom);
+  assert.ok(z.x && !z.y, JSON.stringify(z));
+  await page.locator('.plot-card').nth(1).locator('button[title^="Reset zoom"]').click();
+  // changing the channel resets the zoom
+  await page.click('[data-tool=zoom]'); b = await box(0); await drag(b, [0.1, 0.1], [0.5, 0.5]);
+  await page.locator('.plot-card').nth(0).locator('select[title="X axis"]').selectOption('FSC-H');
+  assert.equal(await ev(() => window.thistleFlow.ws.plots[0].zoom), undefined);
+  await page.locator('.plot-card').nth(0).locator('select[title="X axis"]').selectOption('FSC-A');
+
+  // ---- split gate on the FITC histogram ----
+  b = await box(1);
+  await page.click('[data-tool=split]');
+  await page.mouse.click(...at(b, 0.6, 0.5));
+  const split = await ev(() => window.thistleFlow.ws.engine.list().filter(g => g.type === 'split').map(g => ({ id: g.id, name: g.name, side: g.side })));
+  assert.deepEqual(split.map(g => [g.name, g.side]), [['CD3-', 'L'], ['CD3+', 'R']]);
+  assert.equal(await ev(() => window.thistleFlow.tool), 'select');
+  const [cl, cr, cp] = [await counts(split[0].id), await counts(split[1].id), await counts('gL')];
+  assert.deepEqual(cl.map((v, i) => v + cr[i]), cp, 'left + right = parent for every sample');
+  assert.ok(cr[0] > 0.4 * cp[0], 'CD3+ T cells on the right');
+  // drag the line: both sides follow
+  const cx0 = await ev(() => window.thistleFlow.ws.engine.list().find(g => g.side === 'R').cx);
+  const lineScreen = await ev(() => {
+    const v = [...window.thistleFlow.views.values()][1];
+    // find the canvas x of the split line by scanning hit tests across the plot
+    for (let x = 70; x < v.w - 15; x++) { const h = v.hitTest(x, 150); if (h && h.mode === 'split') return x + 3; }
+    return null;
+  });
+  assert.ok(lineScreen, 'split line found');
+  await page.mouse.move(b.x + lineScreen, b.y + 150); await page.mouse.down(); await page.mouse.move(b.x + lineScreen + 40, b.y + 150, { steps: 5 }); await page.mouse.up();
+  const after = await ev(() => window.thistleFlow.ws.engine.list().filter(g => g.type === 'split').map(g => g.cx));
+  assert.ok(after[0] === after[1] && after[0] > cx0, `both sides moved: ${cx0} -> ${after}`);
+  await page.locator('.plot-card').nth(1).screenshot({ path: OUT + '/e-split.png' });
+
+  // ---- "This sample" edits, then "All samples": asks to apply ----
+  await page.click('#gateEditMode button[data-mode=sample]');
+  b = await box(0);
+  const edge = [80000 / 262144, 8000 / 262144];
+  await drag(b, edge, [0.22, edge[1]]);
+  const own = await counts('gL');
+  assert.ok(own[0] < lymphBefore[0] && own[1] === lymphBefore[1], 'adjusted for the active sample only');
+  // Cancel: stay in This sample
+  await page.click('#gateEditMode button[data-mode=all]');
+  assert.equal(await page.textContent('#modalTitle'), 'Apply to all samples?');
+  assert.match(await page.textContent('#modalBody'), /Lymph/);
+  await page.click('#modalBody button:has-text("Cancel")');
+  assert.equal(await ev(() => window.thistleFlow.gateEditMode), 'sample');
+  // Apply: the adjusted version becomes the shared gate for every sample
+  await page.click('#gateEditMode button[data-mode=all]');
+  await page.click('#modalBody button:has-text("Apply to all samples")');
+  assert.equal(await ev(() => window.thistleFlow.gateEditMode), 'all');
+  const shared = await counts('gL');
+  assert.equal(shared[0], own[0]);
+  assert.ok(shared[1] < lymphBefore[1], 'other samples now use the adjusted gate');
+  assert.equal(await ev(() => !!window.thistleFlow.ws.engine.get('gL').overrides), false, 'no per-sample versions left');
+  // Keep: the adjustment stays this sample's own
+  await page.click('#gateEditMode button[data-mode=sample]');
+  b = await box(0);
+  const edge2 = [(await ev(() => window.thistleFlow.ws.engine.get('gL').x1)) / 262144, 8000 / 262144];
+  await drag(b, edge2, [0.33, edge2[1]]);
+  await page.click('#gateEditMode button[data-mode=all]');
+  await page.click('#modalBody button:has-text("Keep for")');
+  assert.equal(await ev(() => window.thistleFlow.gateEditMode), 'all');
+  assert.equal(await ev(() => Object.keys(window.thistleFlow.ws.engine.get('gL').overrides || {}).length), 1);
+  // switching again without new edits does not ask
+  await page.click('#gateEditMode button[data-mode=sample]');
+  await page.click('#gateEditMode button[data-mode=all]');
+  assert.equal(await page.isHidden('#modal'), true);
+  assert.deepEqual(errors, []);
+  await page.close();
+});

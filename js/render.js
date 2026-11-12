@@ -34,16 +34,32 @@ export const DEFAULT_DOT = 1.2;
 
 export const SERIES_COLORS = ['#d62728', '#1f77b4', '#2ca02c', '#ff7f0e', '#9467bd', '#8c564b', '#e377c2', '#17becf', '#7f7f7f', '#bcbd22', '#000000'];
 
-// extraRight: room reserved right of the plot (series labels placed outside)
-export function layout(w, h, extraRight = 0) {
+// extraRight: room reserved right of the plot (series labels placed outside).
+// zoom: { x: [u0, u1], y: [v0, v1] } — the part of the axis scale (0..1 units) that is shown.
+// ux2px/uy2px/px2ux/px2uy convert scale units (zoom-aware); fx2px/fy2px convert fractions of the
+// visible frame (histogram bins, density grids); zx/zy give the frame fraction of a scale unit.
+export function layout(w, h, extraRight = 0, zoom = null) {
   const pw = w - MARGIN.l - MARGIN.r - extraRight, ph = h - MARGIN.t - MARGIN.b;
+  const [x0, x1] = zoom?.x || [0, 1], [y0, y1] = zoom?.y || [0, 1];
+  const zx = u => (u - x0) / (x1 - x0), zy = u => (u - y0) / (y1 - y0);
   return {
-    w, h, pw, ph,
-    ux2px: u => MARGIN.l + u * pw,
-    uy2px: u => MARGIN.t + (1 - u) * ph,
-    px2ux: px => (px - MARGIN.l) / pw,
-    px2uy: py => 1 - (py - MARGIN.t) / ph,
+    w, h, pw, ph, zoomed: !!(zoom?.x || zoom?.y), zx, zy,
+    ux2px: u => MARGIN.l + zx(u) * pw,
+    uy2px: u => MARGIN.t + (1 - zy(u)) * ph,
+    px2ux: px => x0 + ((px - MARGIN.l) / pw) * (x1 - x0),
+    px2uy: py => y0 + (1 - (py - MARGIN.t) / ph) * (y1 - y0),
+    fx2px: f => MARGIN.l + f * pw,
+    fy2px: f => MARGIN.t + (1 - f) * ph,
   };
+}
+
+// Frame fractions of one event; null if zoomed in and the event is outside the view
+// (without zoom, off-scale events pile up on the axes).
+function framePos(L, x, y) {
+  let fx = L.zx(x || 0), fy = L.zy(y || 0);
+  if (L.zoomed) { if (!(fx >= 0 && fx <= 1 && fy >= 0 && fy <= 1)) return null; }
+  else { fx = Math.min(1, Math.max(0, fx)); fy = Math.min(1, Math.max(0, fy)); }
+  return [fx, fy];
 }
 
 export function hexToRgb(hex) {
@@ -97,7 +113,7 @@ export function renderPlot(ctx, spec) {
   const T = spec.theme || THEMES.light;
   const kind = spec.kind === 'histogram' ? 'histogram' : normalizeKind(spec.kind);
   const dot = spec.dotSize || DEFAULT_DOT; // dot size in px
-  const L = layout(spec.w, spec.h, outsideLabelWidth(ctx, spec));
+  const L = layout(spec.w, spec.h, outsideLabelWidth(ctx, spec), spec.zoom);
   ctx.save();
   ctx.fillStyle = T.bg;
   ctx.fillRect(0, 0, spec.w, spec.h);
@@ -127,13 +143,15 @@ function truncate(ctx, s, maxW) {
 }
 
 // ---- 2D binning helpers ----
-function binGrid(s, nx, ny, idx = s.idx) {
+function binGrid(s, nx, ny, idx = s.idx, L = null) {
   const grid = new Float32Array(nx * ny);
   const { ux, uy } = s;
   for (let k = 0; k < idx.length; k++) {
     const i = idx[k];
-    let gx = Math.floor(ux[i] * nx), gy = Math.floor(uy[i] * ny);
-    if (!(gx >= 0)) gx = 0; else if (gx >= nx) gx = nx - 1; // pile off-scale events on the axes like FlowJo
+    const f = L ? framePos(L, ux[i], uy[i]) : [ux[i], uy[i]];
+    if (!f) continue;
+    let gx = Math.floor(f[0] * nx), gy = Math.floor(f[1] * ny);
+    if (!(gx >= 0)) gx = 0; else if (gx >= nx) gx = nx - 1; // off-scale events pile up on the axes
     if (!(gy >= 0)) gy = 0; else if (gy >= ny) gy = ny - 1;
     grid[gy * nx + gx]++;
   }
@@ -162,14 +180,16 @@ export function gaussianBlur(g, nx, ny, sigma) {
 function drawPseudo(ctx, L, s, size) {
   const cell = 2;
   const nx = Math.max(1, Math.floor(L.pw / cell)), ny = Math.max(1, Math.floor(L.ph / cell));
-  const d = gaussianBlur(binGrid(s, nx, ny, s.fullIdx || s.idx), nx, ny, 1.2);
+  const d = gaussianBlur(binGrid(s, nx, ny, s.fullIdx || s.idx, L), nx, ny, 1.2);
   let max = 0; for (let i = 0; i < d.length; i++) if (d[i] > max) max = d[i];
   const lmax = Math.log1p(max) || 1;
   const { ux, uy, idx } = s;
   const buckets = Array.from({ length: 64 }, () => []);
   for (let k = 0; k < idx.length; k++) {
     const i = idx[k];
-    const x = Math.min(1, Math.max(0, ux[i] || 0)), y = Math.min(1, Math.max(0, uy[i] || 0));
+    const f = framePos(L, ux[i], uy[i]);
+    if (!f) continue;
+    const [x, y] = f;
     const gx = Math.min(nx - 1, Math.floor(x * nx)), gy = Math.min(ny - 1, Math.floor(y * ny));
     buckets[Math.min(63, Math.floor(Math.log1p(d[gy * nx + gx]) / lmax * 63.999))].push(x, y);
   }
@@ -178,7 +198,7 @@ function drawPseudo(ctx, L, s, size) {
     if (!pts.length) return;
     const c = LUT[Math.round(b / 63 * 255)];
     ctx.fillStyle = `rgb(${c[0]},${c[1]},${c[2]})`;
-    for (let k = 0; k < pts.length; k += 2) ctx.fillRect(L.ux2px(pts[k]) - half, L.uy2px(pts[k + 1]) - half, size, size);
+    for (let k = 0; k < pts.length; k += 2) ctx.fillRect(L.fx2px(pts[k]) - half, L.fy2px(pts[k + 1]) - half, size, size);
   });
 }
 
@@ -186,7 +206,7 @@ function drawPseudo(ctx, L, s, size) {
 function drawSmooth(ctx, L, s) {
   const cell = 3;
   const nx = Math.max(1, Math.floor(L.pw / cell)), ny = Math.max(1, Math.floor(L.ph / cell));
-  const d = gaussianBlur(binGrid(s, nx, ny, s.fullIdx || s.idx), nx, ny, 1.6); // shading uses every event
+  const d = gaussianBlur(binGrid(s, nx, ny, s.fullIdx || s.idx, L), nx, ny, 1.6); // shading uses every event
   let max = 0; for (let i = 0; i < d.length; i++) if (d[i] > max) max = d[i];
   const img = makeImage(nx, ny);
   for (let gy = 0; gy < ny; gy++) for (let gx = 0; gx < nx; gx++) {
@@ -249,7 +269,7 @@ export function marchingSquares(d, nx, ny, level) {
 function drawContour(ctx, L, s, opt, T, size = DEFAULT_DOT) {
   const cell = 3;
   const nx = Math.max(4, Math.floor(L.pw / cell)), ny = Math.max(4, Math.floor(L.ph / cell));
-  const grid = binGrid(s, nx, ny, s.fullIdx || s.idx); // contour levels use every event; only outlier dots are thinned
+  const grid = binGrid(s, nx, ny, s.fullIdx || s.idx, L); // contour levels use every event; only outlier dots are thinned
   const d = gaussianBlur(grid, nx, ny, 1.6);
   const levels = contourLevels(grid, d, opt.step || 0.1);
   if (opt.outliers !== false && levels.length) {
@@ -258,16 +278,17 @@ function drawContour(ctx, L, s, opt, T, size = DEFAULT_DOT) {
     const { ux, uy, idx } = s, lo = levels[0];
     for (let k = 0; k < idx.length; k++) {
       const i = idx[k];
-      let gx = Math.floor(ux[i] * nx), gy = Math.floor(uy[i] * ny);
-      gx = Math.min(nx - 1, Math.max(0, gx || 0)); gy = Math.min(ny - 1, Math.max(0, gy || 0));
+      const f = framePos(L, ux[i], uy[i]);
+      if (!f) continue;
+      const gx = Math.min(nx - 1, Math.floor(f[0] * nx)), gy = Math.min(ny - 1, Math.floor(f[1] * ny));
       if (d[gy * nx + gx] >= lo) continue;
-      ctx.fillRect(L.ux2px(Math.min(1, Math.max(0, ux[i]))) - size / 2, L.uy2px(Math.min(1, Math.max(0, uy[i]))) - size / 2, size, size);
+      ctx.fillRect(L.fx2px(f[0]) - size / 2, L.fy2px(f[1]) - size / 2, size, size);
     }
   }
   ctx.strokeStyle = T.contour; ctx.lineWidth = 0.9;
   for (const lv of levels) {
     ctx.beginPath();
-    for (const [x1, y1, x2, y2] of marchingSquares(d, nx, ny, lv)) { ctx.moveTo(L.ux2px(x1), L.uy2px(y1)); ctx.lineTo(L.ux2px(x2), L.uy2px(y2)); }
+    for (const [x1, y1, x2, y2] of marchingSquares(d, nx, ny, lv)) { ctx.moveTo(L.fx2px(x1), L.fy2px(y1)); ctx.lineTo(L.fx2px(x2), L.fy2px(y2)); }
     ctx.stroke();
   }
 }
@@ -280,17 +301,17 @@ function drawDots(ctx, L, series, T, size = DEFAULT_DOT) {
     if (series.length > 1) ctx.globalAlpha = 0.6;
     for (let k = 0; k < idx.length; k++) {
       const i = idx[k];
-      const x = Math.min(1, Math.max(0, ux[i] || 0)), y = Math.min(1, Math.max(0, uy[i] || 0));
-      ctx.fillRect(L.ux2px(x) - half, L.uy2px(y) - half, size, size);
+      const f = framePos(L, ux[i], uy[i]);
+      if (f) ctx.fillRect(L.fx2px(f[0]) - half, L.fy2px(f[1]) - half, size, size);
     }
     ctx.globalAlpha = 1;
   });
 }
 
-export function histogramCounts(ux, idx, bins) {
+export function histogramCounts(ux, idx, bins, L = null) {
   const h = new Float64Array(bins);
   for (let k = 0; k < idx.length; k++) {
-    const u = ux[idx[k]];
+    const u = L ? L.zx(ux[idx[k]]) : ux[idx[k]];
     if (!(u >= 0 && u < 1)) continue;
     h[Math.floor(u * bins)]++;
   }
@@ -317,7 +338,7 @@ function drawHistograms(ctx, L, spec, T) {
   const n = spec.series.length;
   const offset = n > 1 ? (opt.offset || 0) : 0;
   const hs = spec.series.map(s => {
-    let h = histogramCounts(s.ux, s.idx, bins);
+    let h = histogramCounts(s.ux, s.idx, bins, L);
     if (opt.smooth) h = smoothHist(h);
     return h;
   });
@@ -330,13 +351,13 @@ function drawHistograms(ctx, L, spec, T) {
     if (!max) max = 1;
     const base = si * offset * bandH;
     ctx.beginPath();
-    ctx.moveTo(L.ux2px(0), L.uy2px(base));
+    ctx.moveTo(L.fx2px(0), L.fy2px(base));
     for (let b = 0; b < bins; b++) {
       const y = base + (h[b] / max) * bandH * 0.95;
-      ctx.lineTo(L.ux2px(b / bins), L.uy2px(y));
-      ctx.lineTo(L.ux2px((b + 1) / bins), L.uy2px(y));
+      ctx.lineTo(L.fx2px(b / bins), L.fy2px(y));
+      ctx.lineTo(L.fx2px((b + 1) / bins), L.fy2px(y));
     }
-    ctx.lineTo(L.ux2px(1), L.uy2px(base));
+    ctx.lineTo(L.fx2px(1), L.fy2px(base));
     ctx.closePath();
     const color = s.color || T.hist;
     if (opt.fill !== false) {
@@ -356,8 +377,8 @@ function drawAxes(ctx, L, spec, T) {
   ctx.font = '10px Helvetica, Arial, sans-serif'; ctx.fillStyle = T.text;
   const tx = makeTransform(spec.x.cfg);
   ctx.textAlign = 'center'; ctx.textBaseline = 'top';
-  for (const t of tx.ticks()) {
-    const u = tx.fwd(t.v); if (u < -0.001 || u > 1.001) continue;
+  for (const t of axisTicks(tx, spec.x.cfg, L.px2ux(MARGIN.l), L.px2ux(MARGIN.l + L.pw))) {
+    const u = tx.fwd(t.v), f = L.zx(u); if (f < -0.001 || f > 1.001) continue;
     const px = Math.round(L.ux2px(u)) + 0.5;
     ctx.beginPath(); ctx.moveTo(px, MARGIN.t + L.ph); ctx.lineTo(px, MARGIN.t + L.ph + (t.major ? 6 : 3)); ctx.stroke();
     if (t.label) ctx.fillText(t.label, px, MARGIN.t + L.ph + 8);
@@ -380,14 +401,20 @@ function drawAxes(ctx, L, spec, T) {
     drawYLabel(ctx, L, isMode ? 'Normalized to Mode' : 'Count', T);
   } else {
     const ty = makeTransform(spec.y.cfg);
-    for (const t of ty.ticks()) {
-      const u = ty.fwd(t.v); if (u < -0.001 || u > 1.001) continue;
+    for (const t of axisTicks(ty, spec.y.cfg, L.px2uy(MARGIN.t + L.ph), L.px2uy(MARGIN.t))) {
+      const u = ty.fwd(t.v), f = L.zy(u); if (f < -0.001 || f > 1.001) continue;
       const py = Math.round(L.uy2px(u)) + 0.5;
       ctx.beginPath(); ctx.moveTo(MARGIN.l - (t.major ? 6 : 3), py); ctx.lineTo(MARGIN.l, py); ctx.stroke();
       if (t.label) ctx.fillText(t.label, MARGIN.l - 8, py);
     }
     drawYLabel(ctx, L, spec.y.label, T);
   }
+}
+
+// Ticks for the visible part of an axis: linear axes get fresh round numbers for a zoomed range
+function axisTicks(t, cfg, u0, u1) {
+  if (cfg.kind === 'linear' && (u0 > 0.001 || u1 < 0.999)) return makeTransform({ ...cfg, min: t.inv(u0), max: t.inv(u1) }).ticks();
+  return t.ticks();
 }
 
 function drawYLabel(ctx, L, text, T) {
@@ -431,9 +458,9 @@ function drawSeriesLabels(ctx, L, spec, T) {
       if (!s.label) return;
       const tw = ctx.measureText(s.label).width, b = spec._bands[i];
       let cx, cy;
-      if (mode === 'outside') { cx = MARGIN.l + L.pw + 8 + tw / 2; cy = clamp(L.uy2px(b.base + b.bandH * 0.3), MARGIN.t + 7, MARGIN.t + L.ph - 7); }
+      if (mode === 'outside') { cx = MARGIN.l + L.pw + 8 + tw / 2; cy = clamp(L.fy2px(b.base + b.bandH * 0.3), MARGIN.t + 7, MARGIN.t + L.ph - 7); }
       else {
-        [cx, cy] = s.labelPos ? [L.ux2px(s.labelPos[0]), L.uy2px(s.labelPos[1])] : [L.ux2px(1) - 6 - tw / 2, L.uy2px(b.base + b.bandH * 0.35) - 7];
+        [cx, cy] = s.labelPos ? [L.ux2px(s.labelPos[0]), L.uy2px(s.labelPos[1])] : [L.fx2px(1) - 6 - tw / 2, L.fy2px(b.base + b.bandH * 0.35) - 7];
         cx = clamp(cx, MARGIN.l + tw / 2 + 4, MARGIN.l + L.pw - tw / 2 - 4); cy = clamp(cy, MARGIN.t + 9, MARGIN.t + L.ph - 9);
         ctx.fillStyle = T.labelBg; ctx.fillRect(cx - tw / 2 - 3, cy - 8, tw + 6, 16);
       }
@@ -467,13 +494,14 @@ function drawSeriesLabels(ctx, L, spec, T) {
 // ---- gates ----
 export function gateGeometry(L, spec, g) {
   const tx = makeTransform(spec.x.cfg);
-  const X = v => L.ux2px(v === -Infinity ? -0.05 : v === Infinity ? 1.05 : tx.fwd(v));
+  const X = v => (v === -Infinity ? L.fx2px(-0.05) : v === Infinity ? L.fx2px(1.05) : L.ux2px(tx.fwd(v)));
+  if (g.type === 'split') return { kind: 'split', cx: X(g.cx) };
   if (g.type === 'interval') {
     const lvl = g.level ?? 0.85;
-    return { kind: 'interval', x0: X(g.x0), x1: X(g.x1), y: L.uy2px(lvl) };
+    return { kind: 'interval', x0: X(g.x0), x1: X(g.x1), y: L.fy2px(lvl) };
   }
   const ty = makeTransform(spec.y.cfg);
-  const Y = v => L.uy2px(v === -Infinity ? -0.05 : v === Infinity ? 1.05 : ty.fwd(v));
+  const Y = v => (v === -Infinity ? L.fy2px(-0.05) : v === Infinity ? L.fy2px(1.05) : L.uy2px(ty.fwd(v)));
   if (g.type === 'rect') return { kind: 'poly', pts: [[X(g.x0), Y(g.y0)], [X(g.x1), Y(g.y0)], [X(g.x1), Y(g.y1)], [X(g.x0), Y(g.y1)]] };
   if (g.type === 'polygon') return { kind: 'poly', pts: g.pts.map(([x, y]) => [X(x), Y(y)]) };
   if (g.type === 'quad') return { kind: 'quad', cx: X(g.cx), cy: Y(g.cy) };
@@ -518,6 +546,12 @@ function drawGate(ctx, L, spec, item, T) {
     if (selected) { ctx.fillStyle = color; ctx.fillRect(geo.cx - 4, geo.cy - 4, 8, 8); }
     const left = MARGIN.l + 6 + tw / 2, right = MARGIN.l + L.pw - 6 - tw / 2, top = MARGIN.t + 11, bottom = MARGIN.t + L.ph - 11;
     def = { UL: [left, top], UR: [right, top], LL: [left, bottom], LR: [right, bottom] }[g.q];
+  } else if (geo.kind === 'split') {
+    // one vertical line dividing the histogram; each side's label sits in the middle of its side
+    ctx.beginPath(); ctx.moveTo(geo.cx, MARGIN.t); ctx.lineTo(geo.cx, MARGIN.t + L.ph); ctx.stroke();
+    if (selected) { ctx.fillStyle = color; ctx.fillRect(geo.cx - 4, MARGIN.t + L.ph / 2 - 4, 8, 8); }
+    const lineX = cx(geo.cx);
+    def = [g.side === 'L' ? (MARGIN.l + lineX) / 2 : (lineX + MARGIN.l + L.pw) / 2, MARGIN.t + 11 + bh / 2];
   } else if (geo.kind === 'interval') {
     ctx.beginPath();
     ctx.moveTo(geo.x0, geo.y - 8); ctx.lineTo(geo.x0, geo.y + 8);

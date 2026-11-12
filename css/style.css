@@ -239,3 +239,4 @@ body.reordering, body.reordering * { cursor: grabbing !important; user-select: n
 .badge.custom { background: #3b2f14; color: #fbbf24; }
 :root[data-theme="light"] .badge.custom { background: #fef3c7; color: #92400e; }
 .pop-actions { display: flex; justify-content: flex-end; margin-top: 4px; }
+.zoom-btn { color: var(--accent) !important; font-weight: 700; }

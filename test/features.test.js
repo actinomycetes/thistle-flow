@@ -204,3 +204,29 @@ test('per-sample gate adjustments: only that sample changes; saved with the work
   ws.undoStep('gating');
   assert.ok(isCustom(ws.engine.get('g1'), ws.samples[1]));
 });
+
+test('split gate: left + right cover the parent exactly; per-sample line position', () => {
+  const ws = demoWorkspace(2);
+  ws.engine.add({ ...lymph });
+  const base = { parent: 'g1', type: 'split', group: 'S1', x: 'FITC-A', y: null, cx: 1000, color: '#000' };
+  ws.engine.add({ ...base, id: 'sL', name: 'CD3-', side: 'L' });
+  ws.engine.add({ ...base, id: 'sR', name: 'CD3+', side: 'R' });
+  for (const s of ws.samples) {
+    const parent = ws.engine.population(s, 'g1').count;
+    const l = ws.engine.population(s, 'sL').count, r = ws.engine.population(s, 'sR').count;
+    assert.equal(l + r, parent, 'every parent event is on exactly one side');
+    assert.ok(l > 0 && r > 0);
+  }
+  // removing one side removes its partner
+  const ws2 = demoWorkspace(1);
+  ws2.engine.add({ ...base, parent: null, id: 'a', side: 'L' }); ws2.engine.add({ ...base, parent: null, id: 'b', side: 'R' });
+  ws2.engine.remove('a');
+  assert.equal(ws2.engine.list().length, 0);
+  // per-sample line position
+  const b = ws.samples[1];
+  const before = ws.engine.population(b, 'sR').count;
+  for (const id of ['sL', 'sR']) ws.engine.get(id).overrides = { [b.key]: { cx: 3000 } };
+  ws.engine.invalidate();
+  assert.ok(ws.engine.population(b, 'sR').count < before);
+  assert.equal(ws.engine.population(b, 'sL').count + ws.engine.population(b, 'sR').count, ws.engine.population(b, 'g1').count);
+});
