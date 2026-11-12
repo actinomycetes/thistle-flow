@@ -24,7 +24,10 @@ const css = readFileSync(join(root, 'css', 'style.css'), 'utf8');
 let html = readFileSync(join(root, 'index.html'), 'utf8');
 html = html.replace(/<link rel="stylesheet" href="css\/style.css">/, () => `<style>\n${css}</style>`);
 html = html.replace(/<script type="module" src="js\/app.js"><\/script>/, () => `<script>\n${js.replace(/<\/script/gi, '<\\/script')}</script>`);
-// a single file has no help.html next to it: link to the hosted manual
-html = html.replace('href="help.html"', 'href="https://actinomycetes.github.io/thistle-flow/help.html"');
+// a single file has no help.html next to it: the help panel shows a built-in copy of the manual,
+// and "Open in a new tab" links to the hosted manual
+const help = readFileSync(join(root, 'help.html'), 'utf8');
+html = html.split('href="help.html"').join('href="https://actinomycetes.github.io/thistle-flow/help.html"');
+html = html.replace('<script>\n(() => {', () => `<script>window.__HELP_HTML__ = ${JSON.stringify(help).replace(/<\/(script)/gi, '<\\/$1')};</script>\n<script>\n(() => {`);
 writeFileSync(join(root, 'dist', 'thistle-flow.html'), html);
 console.log(`dist/thistle-flow.html written (${(html.length / 1024).toFixed(0)} KB)`);

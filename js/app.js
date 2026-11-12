@@ -1542,7 +1542,7 @@ app.metaChanged = () => { app.ws.engine.invalidate(); app.scheduleCommit(); rend
 
 function setTool(t) {
   app.tool = t;
-  $$('#tools button').forEach(b => b.classList.toggle('active', b.dataset.tool === t));
+  $$('[data-tool]').forEach(b => b.classList.toggle('active', b.dataset.tool === t));
   for (const v of app.views.values()) v.cancel();
 }
 app.setTool = setTool;
@@ -1599,7 +1599,32 @@ $('#btnExportLayout').addEventListener('click', e => {
   exportMenu(e.currentTarget, `${app.ws.name}_layout`, layoutComposite);
 });
 $$('.tabs button[data-tab]').forEach(b => b.addEventListener('click', () => switchTab(b.dataset.tab)));
-$$('#tools button').forEach(b => b.addEventListener('click', () => setTool(b.dataset.tool)));
+$$('[data-tool]').forEach(b => b.addEventListener('click', () => setTool(b.dataset.tool)));
+
+// ---------- help (shown over the app so nothing is lost) ----------
+function openHelp() {
+  const ov = $('#helpOv'), fr = $('#helpFrame');
+  if (!fr.dataset.loaded) {
+    fr.addEventListener('load', () => { try { fr.contentDocument.documentElement.dataset.theme = app.theme; } catch { /* other origin */ } });
+    if (window.__HELP_HTML__) fr.srcdoc = window.__HELP_HTML__; // single-file build: manual built in
+    else fr.src = 'help.html';
+    fr.dataset.loaded = '1';
+  } else { try { fr.contentDocument.documentElement.dataset.theme = app.theme; } catch { /* ignore */ } }
+  ov.hidden = false;
+  $('#helpClose').focus();
+}
+function closeHelp() {
+  $('#helpOv').hidden = true;
+  $('#helpLink').focus(); // give the keyboard back to the app (shortcuts, F1)
+}
+app.openHelp = openHelp;
+$('#helpLink').addEventListener('click', e => {
+  if (e.ctrlKey || e.metaKey || e.shiftKey || e.button === 1) return; // still opens a new tab on request
+  e.preventDefault(); openHelp();
+});
+$('#helpClose').addEventListener('click', closeHelp);
+$('#helpOv').addEventListener('mousedown', e => { if (e.target.id === 'helpOv') closeHelp(); });
+window.addEventListener('message', e => { if (e.data && e.data.thistleFlow === 'closeHelp') closeHelp(); });
 $$('[data-addfig]').forEach(b => b.addEventListener('click', () => addFigure(b.dataset.addfig)));
 $('#modalClose').addEventListener('click', closeModal);
 $('#modal').addEventListener('mousedown', e => { if (e.target.id === 'modal') closeModal(); });
@@ -1611,7 +1636,8 @@ document.addEventListener('input', () => app.scheduleCommit(600));
 document.addEventListener('keydown', e => {
   const typing = /INPUT|SELECT|TEXTAREA/.test(document.activeElement?.tagName);
   const mod = e.ctrlKey || e.metaKey;
-  if (e.key === 'F1') { e.preventDefault(); window.open($('#helpLink').href, '_blank', 'noopener'); return; }
+  if (e.key === 'F1') { e.preventDefault(); openHelp(); return; }
+  if (e.key === 'Escape' && !$('#helpOv').hidden) { closeHelp(); return; }
   if (mod && !typing && e.key.toLowerCase() === 'z') { e.preventDefault(); e.shiftKey ? redo() : undo(); return; }
   if (mod && !typing && e.key.toLowerCase() === 'y') { e.preventDefault(); redo(); return; }
   if (mod && e.key.toLowerCase() === 's') { e.preventDefault(); app.saveWorkspace(); return; }

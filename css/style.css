@@ -240,3 +240,20 @@ body.reordering, body.reordering * { cursor: grabbing !important; user-select: n
 :root[data-theme="light"] .badge.custom { background: #fef3c7; color: #92400e; }
 .pop-actions { display: flex; justify-content: flex-end; margin-top: 4px; }
 .zoom-btn { color: var(--accent) !important; font-weight: 700; }
+
+/* Gating toolbar: two tiers of named groups */
+.toolbar.two-tier { flex-direction: column; align-items: stretch; gap: 6px; }
+.tb-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.tb-group { display: inline-flex; align-items: center; gap: 4px; border: 1px solid var(--border); border-radius: 7px; padding: 3px 6px; background: var(--panel-2); }
+.tb-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin-right: 3px; white-space: nowrap; }
+.tb-group .tools { display: inline-flex; gap: 2px; }
+.tb-group .tools button { padding: 3px 9px; }
+.tb-group label.inline { font-size: 12px; }
+.tb-row .toolbar-info { margin-left: auto; }
+
+/* Help panel over the app (keeps the analysis in place) */
+.help-ov { position: fixed; inset: 0; z-index: 70; background: rgba(0,0,0,.55); display: flex; align-items: center; justify-content: center; padding: 16px; }
+.help-ov[hidden] { display: none; }
+.help-box { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; width: min(1000px, 100%); height: min(90vh, 100%); display: flex; flex-direction: column; box-shadow: 0 20px 60px rgba(0,0,0,.45); overflow: hidden; }
+.help-head { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--border); }
+.help-box iframe { flex: 1; border: none; width: 100%; background: var(--bg); }

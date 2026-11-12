@@ -348,6 +348,13 @@ test('single-file build opens from disk and runs', { timeout: 120000 }, async ()
   await page.waitForSelector('.plot-card canvas');
   assert.equal(await page.evaluate(() => window.thistleFlow.ws.samples.length), 3);
   assert.match(await page.getAttribute('#helpLink', 'href'), /^https:\/\/actinomycetes\.github\.io\/thistle-flow\/help\.html$/);
+  // the help panel shows the built-in manual (works offline)
+  await page.click('#helpLink');
+  await page.frameLocator('#helpFrame').locator('h1:has-text("Help and manual")').waitFor();
+  assert.ok(await page.getAttribute('#helpFrame', 'srcdoc'));
+  await page.frameLocator('#helpFrame').locator('#backToApp').click();
+  await page.waitForSelector('#helpOv', { state: 'hidden', timeout: 5000 });
+  assert.equal(await page.evaluate(() => window.thistleFlow.ws.samples.length), 3);
   assert.deepEqual(errors, []);
   await page.close();
 });
@@ -843,6 +850,58 @@ test('select-to-zoom with unzoom/reset; split gate; leaving "This sample" asks t
   await page.click('#gateEditMode button[data-mode=sample]');
   await page.click('#gateEditMode button[data-mode=all]');
   assert.equal(await page.isHidden('#modal'), true);
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
+test('help opens over the app and closing it keeps the data; grouped two-tier gating toolbar', { timeout: 120000 }, async () => {
+  browser = browser || await chromium.launch();
+  const page = await browser.newPage({ viewport: { width: 1600, height: 1000 } });
+  const errors = [];
+  page.on('pageerror', e => errors.push(e.message));
+  await page.addInitScript(() => { try { localStorage.clear(); } catch {} });
+  const ev = f => page.evaluate(f);
+  await page.goto(BASE + '/');
+  await page.click('#btnDemo'); await page.waitForSelector('.plot-card canvas');
+
+  // toolbar: two rows of named groups, tools still work
+  const groups = await page.$$eval('#tab-gating .tb-row', rows => rows.map(r => [...r.querySelectorAll('.tb-label')].map(l => l.textContent)));
+  assert.deepEqual(groups, [['Mouse', 'Draw gate · 2-D', 'Draw gate · histogram'], ['Selected gate', 'Gate edits apply to', 'Plots']]);
+  await page.click('[data-tool=zoom]');
+  assert.equal(await ev(() => window.thistleFlow.tool), 'zoom');
+  assert.equal(await page.locator('[data-tool=zoom].active').count(), 1);
+  await page.keyboard.press('v');
+  assert.equal(await page.locator('[data-tool=select].active').count(), 1);
+  await page.locator('#tab-gating .toolbar').screenshot({ path: OUT + '/e-toolbar.png' });
+
+  // Help opens as a panel; "Close help" inside it returns with everything in place
+  await ev(() => { window.thistleFlow.ws.engine.add({ id: 'gH', name: 'Kept', parent: null, type: 'rect', x: 'FSC-A', y: 'SSC-A', x0: 40000, x1: 80000, y0: 8000, y1: 38000, color: '#e6194b' }); window.thistleFlow.renderAll(); });
+  await page.click('#helpLink');
+  assert.equal(await page.isVisible('#helpOv'), true);
+  const frame = page.frameLocator('#helpFrame');
+  await frame.locator('h1:has-text("Help and manual")').waitFor();
+  assert.equal(await frame.locator('#backToApp').textContent(), '✕ Close help');
+  await frame.locator('#backToApp').click();
+  await page.waitForSelector('#helpOv', { state: 'hidden', timeout: 5000 }); // closed via a message from the panel
+  assert.equal(await ev(() => window.thistleFlow.ws.samples.length), 3, 'samples kept');
+  assert.equal(await ev(() => window.thistleFlow.ws.engine.get('gH')?.name), 'Kept', 'analysis kept');
+  // F1 and Esc
+  await page.keyboard.press('F1');
+  assert.equal(await page.isVisible('#helpOv'), true);
+  await page.keyboard.press('Escape');
+  assert.equal(await page.isHidden('#helpOv'), true);
+
+  // standalone help page reached from the app in the same tab: "Back to the app" goes back in history
+  await ev(() => { location.href = 'help.html'; });
+  await page.waitForURL(/help\.html$/);
+  assert.equal(await page.textContent('#backToApp'), '← Back to the app');
+  await page.click('#backToApp');
+  await page.waitForURL(u => !/help\.html/.test(String(u)));
+  // opened on its own (no app behind it): the button opens the app
+  await page.goto(BASE + '/help.html');
+  await page.click('#backToApp');
+  await page.waitForURL(u => !/help\.html/.test(String(u)));
+  assert.equal(await page.isVisible('#btnDemo'), true);
   assert.deepEqual(errors, []);
   await page.close();
 });
