@@ -260,3 +260,21 @@ body.reordering, body.reordering * { cursor: grabbing !important; user-select: n
 .tb-sub { font-size: 10.5px; color: var(--muted); margin: 0 2px 0 2px; }
 .tb-sep { width: 1px; align-self: stretch; background: var(--border); margin: 2px 4px; }
 .seg-group[hidden] { display: none; }
+/* compensation editor with live preview */
+.comp-layout { width: min(1500px, 88vw); }
+.comp-cols { display: flex; gap: 18px; align-items: flex-start; flex-wrap: wrap; }
+.comp-left { flex: 0 1 auto; max-width: min(660px, 46vw); min-width: 320px; display: flex; flex-direction: column; gap: 6px; }
+.comp-right { flex: 1 1 420px; min-width: 320px; display: flex; flex-direction: column; gap: 6px; }
+.comp-grid-wrap { overflow: auto; max-height: 64vh; }
+.comp-grid { display: grid; width: max-content; gap: 3px; align-items: center; justify-items: center; }
+.comp-colhead, .comp-rowhead { font-size: 10.5px; color: var(--muted); max-width: 104px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.comp-rowhead { justify-self: end; padding-right: 4px; }
+.comp-corner { display: flex; flex-direction: column; font-size: 10px; color: var(--muted); }
+.comp-diag { display: flex; align-items: center; justify-content: center; text-align: center; font-size: 10.5px; color: var(--muted); border: 1px dashed var(--border); box-sizing: border-box; padding: 2px; overflow: hidden; }
+.comp-mini { cursor: pointer; display: block; }
+.comp-focus-wrap { display: flex; flex-direction: column; gap: 4px; }
+.matrix input.sel { outline: 2px solid #3b82f6; outline-offset: -2px; }
+.comp-status { color: var(--warn, #d97706); }
+.strategy-row { align-items: center; max-width: none; }
+.strategy-arrow { font-size: 22px; color: var(--muted); padding: 0 2px; }
+.strategy-step { display: inline-flex; align-items: center; gap: 2px; }

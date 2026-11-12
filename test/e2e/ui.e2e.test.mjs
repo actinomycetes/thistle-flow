@@ -1013,3 +1013,85 @@ test('gate previews follow the cursor; double-click resets zoom; spider and offs
   assert.deepEqual(errors, []);
   await page.close();
 });
+
+test('Layout gating strategy for one sample; compensation editor with live preview plots', { timeout: 240000 }, async () => {
+  browser = browser || await chromium.launch();
+  const page = await browser.newPage({ viewport: { width: 1600, height: 1000 } });
+  const errors = [];
+  page.on('pageerror', e => errors.push(e.message));
+  await page.addInitScript(() => { try { localStorage.clear(); } catch {} });
+  const ev = f => page.evaluate(f);
+  await page.goto(BASE + '/');
+  await page.click('#btnDemo'); await page.waitForSelector('.plot-card canvas');
+  await ev(() => {
+    const e = window.thistleFlow.ws.engine;
+    e.add({ id: 'gC', name: 'Cells', parent: null, type: 'rect', x: 'FSC-A', y: 'SSC-A', x0: 30000, x1: 120000, y0: 3000, y1: 60000, color: '#e6194b' });
+    e.add({ id: 'gS', name: 'Singlets', parent: 'gC', type: 'polygon', x: 'FSC-A', y: 'FSC-H', pts: [[30000, 20000], [120000, 90000], [120000, 130000], [30000, 35000]], color: '#3cb44b' });
+    e.add({ id: 'gT', name: 'CD3+', parent: 'gS', type: 'interval', x: 'FITC-A', x0: 1000, x1: 262144, color: '#4363d8' });
+    for (const q of ['UL', 'UR', 'LR', 'LL']) e.add({ id: 'q' + q, name: q, parent: 'gT', type: 'quad', q, group: 'QQ', x: 'PE-A', y: 'APC-A', cx: 800, cy: 800, color: '#f58231' });
+    e.add({ id: 'gX', name: 'Other', parent: 'gS', type: 'rect', x: 'FSC-A', y: 'SSC-A', x0: 1, x1: 2, y0: 1, y1: 2, color: '#000' });
+    window.thistleFlow.ws.selectedGate = 'qLR';
+    window.thistleFlow.renderAll();
+  });
+
+  // ---- gating strategy ----
+  await page.click('.tabs [data-tab=layout], [data-tab=layout]');
+  await page.click('[data-addfig=strategy]');
+  const card = page.locator('.figure-card').last();
+  await card.locator('canvas').nth(3).waitFor();
+  const steps = await card.locator('canvas').evaluateAll(cs => cs.map(c => ({ title: c._figView.spec?.title, x: c._figView.spec?.x.name, y: c._figView.spec?.y?.name ?? null, gates: c._figView.spec?.gates.map(g => g.gate.id) })));
+  assert.deepEqual(steps.map(s => [s.x, s.y]), [['FSC-A', 'SSC-A'], ['FSC-A', 'FSC-H'], ['FITC-A', null], ['PE-A', 'APC-A']]);
+  assert.match(steps[0].title, /^All Events/); assert.match(steps[1].title, /^Cells/); assert.match(steps[3].title, /^CD3\+/);
+  assert.deepEqual(steps[0].gates, ['gC'], 'only the gate on the path');
+  assert.deepEqual(steps[3].gates.sort(), ['qLL', 'qLR', 'qUL', 'qUR'], 'linked quadrants together');
+  assert.equal(await card.locator('.strategy-arrow').count(), 3);
+  // another sample, and a last plot of the final population
+  const second = await ev(() => window.thistleFlow.ws.samples[1].key);
+  await card.locator('label:has-text("Sample") select').selectOption(second);
+  await card.locator('label:has-text("Then show") select').selectOption('BV421-A');
+  await card.locator('canvas').nth(4).waitFor();
+  assert.match(await card.locator('.fig-title').textContent(), new RegExp(second.replace(/\.fcs$/i, '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+  const last = await card.locator('canvas').nth(4).evaluate(c => ({ x: c._figView.spec.x.name, y: c._figView.spec.y, n: c._figView.spec.gates.length, title: c._figView.spec.title }));
+  assert.deepEqual([last.x, last.y, last.n], ['BV421-A', null, 0]);
+  assert.match(last.title, /^LR/);
+  await card.locator('label:has-text("Other gates too") input').check();
+  assert.ok((await card.locator('canvas').nth(0).evaluate(c => c._figView.spec.gates.length)) >= 1);
+  assert.ok(await card.locator('canvas').nth(1).evaluate(c => c._figView.spec.gates.length) >= 1);
+  await card.screenshot({ path: OUT + '/g-strategy.png' });
+  // saved with the workspace
+  assert.match(await ev(() => JSON.stringify(window.thistleFlow.ws.serialize().figures)), /"kind":"strategy"/);
+
+  // ---- compensation with preview ----
+  await page.click('#btnComp');
+  await page.waitForSelector('.comp-mini');
+  const n = await ev(() => window.thistleFlow.ws.activeSample().spill.names.length);
+  assert.equal(await page.locator('.comp-mini').count(), n * (n - 1), 'one preview plot per off-diagonal matrix value');
+  const before = await ev(() => window.thistleFlow.ws.activeSample().spill.matrix[0][1]);
+  const pic = () => page.locator('.comp-mini[data-i="0"][data-j="1"]').evaluate(c => c.toDataURL());
+  const pic0 = await pic();
+  await page.click('.comp-mini[data-i="0"][data-j="1"]');
+  assert.equal(await page.evaluate(() => document.activeElement.dataset.i + ',' + document.activeElement.dataset.j), '0,1', 'clicking a plot selects its matrix value');
+  for (let k = 0; k < 8; k++) await page.keyboard.press('Shift+ArrowDown');
+  await page.waitForTimeout(200);
+  const edited = +(await page.inputValue('.matrix input[data-i="0"][data-j="1"]'));
+  assert.ok(Math.abs(edited - (before - 0.08)) < 1e-9, `nudged ${before} -> ${edited}`);
+  assert.notEqual(await pic(), pic0, 'preview redrawn with the edited value');
+  assert.equal(await ev(() => window.thistleFlow.ws.activeSample().spill.matrix[0][1]), before, 'not applied yet');
+  assert.match(await page.textContent('.comp-status'), /not applied/);
+  assert.match(await page.textContent('.comp-focus-wrap'), /→/);
+  await page.locator('.matrix input[data-i="1"][data-j="0"]').fill('0.3');
+  assert.match(await page.textContent('.comp-focus-wrap'), /0\.3/, 'typing selects and previews that value');
+  await page.click('#compView [data-view=raw]');
+  await page.waitForTimeout(100);
+  await page.screenshot({ path: OUT + '/g-comp-raw.png' });
+  await page.click('#compView [data-view=edited]');
+  await page.click('button:has-text("↺ Reset edits")');
+  assert.equal(+(await page.inputValue('.matrix input[data-i="0"][data-j="1"]')), +before.toFixed(5));
+  await page.locator('.matrix input[data-i="0"][data-j="1"]').fill(String(before - 0.05));
+  await page.click('button:has-text("Apply to this sample")');
+  assert.ok(Math.abs(await ev(() => window.thistleFlow.ws.activeSample().spill.matrix[0][1]) - (before - 0.05)) < 1e-9, 'applied');
+  assert.equal(await page.textContent('.comp-status'), '');
+  await page.screenshot({ path: OUT + '/g-comp.png' });
+  assert.deepEqual(errors, []);
+  await page.close();
+});

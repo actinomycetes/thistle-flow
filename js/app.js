@@ -12,6 +12,7 @@ import { createZip, readZip, isZip } from './zip.js';
 import { Workspace } from './workspace.js';
 import { renderProperties } from './properties.js';
 import { FigureView } from './figureview.js';
+import { CompPreview } from './compview.js';
 import { APP_NAME, APP_VERSION } from './version.js';
 
 const MODE_NAMES = { gating: 'Gating', layout: 'Layout', stats: 'Statistics', properties: 'Properties' };
@@ -815,6 +816,11 @@ function drawComposite(ctx, comp) {
     ctx.fillText(t.text, t.x, t.y);
   }
   for (const it of comp.items) { ctx.save(); ctx.translate(it.x, it.y); renderPlot(ctx, it.spec); ctx.restore(); }
+  for (const a of comp.arrows || []) { // gating-strategy arrows (drawn, not text, so they work in PDF)
+    ctx.strokeStyle = '#444'; ctx.fillStyle = '#444'; ctx.lineWidth = 1.6;
+    ctx.beginPath(); ctx.moveTo(a.x0, a.y); ctx.lineTo(a.x1 - 6, a.y); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(a.x1, a.y); ctx.lineTo(a.x1 - 8, a.y - 4.5); ctx.lineTo(a.x1 - 8, a.y + 4.5); ctx.closePath(); ctx.fill();
+  }
 }
 async function exportComposite(comp, baseName, fmt) {
   if (!comp || !comp.items.length) return toast('Nothing to export', true);
@@ -850,7 +856,12 @@ function addFigure(kind) {
   const x = fl[0] || ws.allChannels()[0];
   const pop = ws.selectedGate || null;
   const f = { id: uid('f'), kind, x, y: kind === 'overlay-hist' ? null : (fl[1] || ws.allChannels()[1]), pop, title: '', mode: 'mode', offset: 0, smooth: true, fill: true, w: 440, h: 340, plotKind: 'pseudo' };
-  if (kind !== 'batch') f.series = ws.samples.map((s, i) => ({ sampleId: s.id, pop, color: SERIES_COLORS[i % SERIES_COLORS.length] }));
+  if (kind === 'strategy') {
+    // the gating path of one sample: All events -> ... -> the selected (or deepest) population
+    let target = pop;
+    if (!target) { let g = ws.engine.children(null)[0]; while (g) { target = g.id; g = ws.engine.children(g.id)[0]; } }
+    Object.assign(f, { pop: target || null, sampleKey: (ws.activeSample() || ws.samples[0]).key, w: 230, h: 220, x: null, y: null });
+  } else if (kind !== 'batch') f.series = ws.samples.map((s, i) => ({ sampleId: s.id, pop, color: SERIES_COLORS[i % SERIES_COLORS.length] }));
   else { f.w = 230; f.h = 220; f.y = ws.plots.find(p => p.id === ws.focusedPlot)?.y ?? f.y; }
   ws.figures.push(f);
   renderFigures();
@@ -935,12 +946,56 @@ function batchSpec(f, s, theme) {
   return spec;
 }
 
+// ---- gating strategy: one plot per gate on the way to a population, for one sample ----
+function strategySample(f) { const ws = app.ws; return ws.samples.find(s => s.key === f.sampleKey) || ws.activeSample() || ws.samples[0]; }
+// Steps: each gate on the path shown on its parent's events, on the gate's own axes; optionally one
+// more plot of the final population on chosen channels (e.g. the markers of interest).
+function strategySteps(f) {
+  const ws = app.ws;
+  const path = f.pop && ws.engine.get(f.pop) ? ws.engine.path(f.pop) : [];
+  const steps = path.map(g => ({ pop: g.parent || null, x: g.x, y: isOneD(g) ? null : g.y, gate: g }));
+  if (f.endX) steps.push({ pop: path.length ? f.pop : null, x: f.endX, y: f.endY || null, gate: null });
+  return steps;
+}
+function strategySpec(f, step, s, theme) {
+  const ws = app.ws, eng = ws.engine;
+  let only = null; // just the gate on the path (with its linked quadrants / split side), unless all gates are wanted
+  if (step.gate && !f.allGates) only = new Set(step.gate.group ? eng.list().filter(g => g.group === step.gate.group).map(g => g.id) : [step.gate.id]);
+  if (!step.gate && !f.allGates) only = new Set();
+  const name = step.pop ? eng.get(step.pop).name : 'All Events';
+  const spec = buildSpec(ws, s, { pop: step.pop, x: step.x, y: step.y, kind: f.plotKind, maxEvents: f.maxEvents, dotSize: f.dotSize }, f.w, f.h, {
+    theme, title: `${name} (${eng.population(s, step.pop).count.toLocaleString()})`,
+    noGates: f.showGates === false, onlyGates: only, selectedGate: null,
+  });
+  if (spec) {
+    for (const it of spec.gates) it.labelPos = f.labelPos?.[it.gate.id];
+    spec.gateLabels = f.gateLabels !== false;
+  }
+  return spec;
+}
+
 // Composite (for export) of a figure, laid out as on screen
 function figureComposite(f, out) {
   const base = out.getBoundingClientRect();
   const items = [], texts = [];
   let W = 0, H = 0;
-  if (f.kind === 'batch') {
+  const arrows = [];
+  if (f.kind === 'strategy') {
+    const s = strategySample(f), steps = strategySteps(f);
+    const t = out.querySelector('.fig-title');
+    if (t) { texts.push({ text: t.textContent, x: 0, y: 0 }); H = 18; }
+    for (const c of out.querySelectorAll('canvas')) {
+      const r = c.getBoundingClientRect(), step = steps[+c.dataset.step];
+      const spec = step && s && strategySpec(f, step, s, THEMES.light);
+      if (!spec) continue;
+      const x = r.left - base.left, y = r.top - base.top;
+      items.push({ spec, x, y }); W = Math.max(W, x + f.w); H = Math.max(H, y + f.h);
+    }
+    for (const a of out.querySelectorAll('.strategy-arrow')) {
+      const r = a.getBoundingClientRect();
+      arrows.push({ x0: r.left - base.left + 3, x1: r.right - base.left - 3, y: r.top - base.top + r.height / 2 });
+    }
+  } else if (f.kind === 'batch') {
     if (f.title) { texts.push({ text: f.title, x: 0, y: 0 }); H = 18; }
     for (const c of out.querySelectorAll('canvas')) {
       const r = c.getBoundingClientRect();
@@ -955,7 +1010,7 @@ function figureComposite(f, out) {
     if (spec.series.length) items.push({ spec, x: 0, y: 0 });
     W = f.w; H = f.h;
   }
-  return { w: Math.ceil(W), h: Math.ceil(H), items, texts };
+  return { w: Math.ceil(W), h: Math.ceil(H), items, texts, arrows };
 }
 
 function renderFigures() {
@@ -964,7 +1019,7 @@ function renderFigures() {
   root.innerHTML = '';
   if (!ws.figures.length) {
     root.append(h('div', { class: 'empty-state' }, h('h2', {}, 'Layouts & overlays'),
-      h('p', {}, 'Build publication-style figures: overlay histograms of several samples/populations (normalised to mode, with half or full offset), overlay dot plots coloured by sample, or a batch row showing the same plot for every sample. Export each figure or the whole layout as PNG, SVG or PDF.')));
+      h('p', {}, 'Build publication-style figures: overlay histograms of several samples/populations (normalised to mode, with half or full offset), overlay dot plots coloured by sample, or a batch row showing the same plot for every sample, or the gating strategy of one sample (All Events → singlets → … → your population). Export each figure or the whole layout as PNG, SVG or PDF.')));
     return;
   }
   for (const f of ws.figures) root.append(figureCard(f));
@@ -980,17 +1035,32 @@ function figureCard(f) {
   const resetLabelsBtn = () => h('button', { class: 'btn small', title: 'Put all labels of this figure back in their default places', onclick: () => {
     delete f.labelPos; delete f.legendPos; (f.series || []).forEach(se => delete se.labelPos); redraw();
   } }, 'Reset label positions');
-  const kindName = { 'overlay-hist': 'Histogram overlay', 'overlay-dot': 'Dot-plot overlay', batch: 'Batch' }[f.kind];
+  const kindName = { 'overlay-hist': 'Histogram overlay', 'overlay-dot': 'Dot-plot overlay', batch: 'Batch', strategy: 'Gating strategy' }[f.kind];
   const btnExport = h('button', { class: 'btn small' }, 'Export ▾');
   btnExport.addEventListener('click', () => exportMenu(btnExport, f.title || kindName, () => figureComposite(f, out)));
   ctrl.append(h('div', { style: 'display:flex;align-items:center;gap:6px' }, h('b', { style: 'flex:1' }, kindName), btnExport,
     h('button', { class: 'icon', title: 'Remove', onclick: () => { ws.figures = ws.figures.filter(x => x !== f); renderFigures(); } }, '×')));
   ctrl.append(field('Title', h('input', { type: 'text', value: f.title, placeholder: '(optional)', oninput: e => { f.title = e.target.value; redraw(); } })));
-  ctrl.append(field('X', h('select', { onchange: e => { f.x = e.target.value; redraw(); } }, channelOptions(f.x))));
-  if (f.kind !== 'overlay-hist') ctrl.append(field('Y', h('select', { onchange: e => { f.y = e.target.value || null; redraw(); } }, channelOptions(f.y, { allowHist: f.kind === 'batch' }))));
+  if (f.kind === 'strategy') {
+    ctrl.append(field('Sample', h('select', { onchange: e => { f.sampleKey = e.target.value; redraw(); } },
+      ws.samples.map(s => h('option', { value: s.key, selected: s === strategySample(f) }, s.name)))));
+    ctrl.append(field('Down to', h('select', { title: 'The population to reach: one plot is drawn for every gate on the way, starting from All Events', onchange: e => { f.pop = e.target.value || null; redraw(); } }, popOptions(f.pop))));
+    const endY = h('select', { disabled: !f.endX, onchange: e => { f.endY = e.target.value || null; redraw(); } }, channelOptions(f.endY, { allowHist: true }));
+    ctrl.append(field('Then show', h('select', { title: 'Optional last plot of the final population, e.g. the markers of interest', onchange: e => { f.endX = e.target.value || null; endY.disabled = !f.endX; if (f.endX && f.endY === undefined) { f.endY = null; } redraw(); } },
+      h('option', { value: '', selected: !f.endX }, '(nothing more)'), channelOptions(f.endX))));
+    ctrl.append(field('against', endY));
+  } else ctrl.append(field('X', h('select', { onchange: e => { f.x = e.target.value; redraw(); } }, channelOptions(f.x))));
+  if (f.kind !== 'overlay-hist' && f.kind !== 'strategy') ctrl.append(field('Y', h('select', { onchange: e => { f.y = e.target.value || null; redraw(); } }, channelOptions(f.y, { allowHist: f.kind === 'batch' }))));
   if (f.kind !== 'overlay-hist') ctrl.append(field('Dot size', h('select', { onchange: e => { f.dotSize = +e.target.value; redraw(); } }, dotSizeOptions(f.dotSize))));
   if (f.kind !== 'overlay-hist') ctrl.append(field('Events', h('select', { title: 'Events shown per plot / series', onchange: e => { f.maxEvents = e.target.value === 'default' ? undefined : +e.target.value; redraw(); } }, eventLimitOptions(f.maxEvents, { withDefault: true }))));
-  if (f.kind === 'batch') {
+  if (f.kind === 'strategy') {
+    ctrl.append(field('Style', h('select', { onchange: e => { f.plotKind = e.target.value; redraw(); } }, kindOptions(f.plotKind))));
+    ctrl.append(h('div', { style: 'display:flex;gap:12px;flex-wrap:wrap' },
+      h('label', {}, h('input', { type: 'checkbox', checked: f.showGates !== false, onchange: e => { f.showGates = e.target.checked; redraw(); } }), 'Gates'),
+      h('label', { title: 'Also draw the other gates on the same axes (otherwise only the gate on the path)' }, h('input', { type: 'checkbox', checked: !!f.allGates, onchange: e => { f.allGates = e.target.checked; redraw(); } }), 'Other gates too'),
+      h('label', {}, h('input', { type: 'checkbox', checked: f.gateLabels !== false, onchange: e => { f.gateLabels = e.target.checked; redraw(); } }), 'Gate labels'),
+      resetLabelsBtn()));
+  } else if (f.kind === 'batch') {
     ctrl.append(field('Population', h('select', { onchange: e => { f.pop = e.target.value || null; redraw(); } }, popOptions(f.pop))));
     ctrl.append(field('Style', h('select', { onchange: e => { f.plotKind = e.target.value; redraw(); } }, kindOptions(f.plotKind))));
     ctrl.append(h('div', { style: 'display:flex;gap:12px' },
@@ -1101,6 +1171,20 @@ function updateRangeRow(f, row) {
 function drawFigure(f, out) {
   const ws = app.ws, theme = THEMES[app.theme];
   out.innerHTML = '';
+  if (f.kind === 'strategy') {
+    const s = strategySample(f), steps = strategySteps(f);
+    out.append(h('div', { class: 'fig-title' }, f.title || `Gating strategy · ${s.name.replace(/\.fcs$/i, '')}`));
+    if (!steps.length) { out.append(h('p', { class: 'hint' }, 'Choose the population to reach in “Down to” (or a channel in “Then show”).')); return; }
+    const row = h('div', { class: 'batch-grid strategy-row' });
+    steps.forEach((step, i) => {
+      const c = h('canvas', { 'data-step': i, title: step.gate ? `${step.gate.name}: drag its label to move it` : 'Final population' });
+      // each arrow stays with the plot it points to when the row wraps
+      row.append(h('span', { class: 'strategy-step' }, i ? h('span', { class: 'strategy-arrow', 'aria-hidden': 'true' }, '→') : '', c));
+      new FigureView(app, f, c, () => strategySpec(f, step, s, theme) || `${s.name}: channel missing`, { onLabelDone: () => drawFigure(f, out) }).draw();
+    });
+    out.append(row);
+    return;
+  }
   if (f.kind === 'batch') {
     const grid = h('div', { class: 'batch-grid' });
     if (f.title) out.append(h('div', { class: 'fig-title' }, f.title));
@@ -1122,7 +1206,7 @@ function drawFigure(f, out) {
 function layoutComposite() {
   const gap = 24;
   let y = 0, W = 0;
-  const items = [], texts = [];
+  const items = [], texts = [], arrows = [];
   for (const card of $$('#figures .figure-card')) {
     const f = app.ws.figures.find(x => x.id === card.dataset.fig);
     if (!f) continue;
@@ -1130,9 +1214,10 @@ function layoutComposite() {
     if (!c.items.length) continue;
     c.items.forEach(it => items.push({ ...it, y: it.y + y }));
     c.texts.forEach(t => texts.push({ ...t, y: t.y + y }));
+    (c.arrows || []).forEach(a => arrows.push({ ...a, y: a.y + y }));
     W = Math.max(W, c.w); y += c.h + gap;
   }
-  return { w: W, h: Math.max(0, y - gap), items, texts };
+  return { w: W, h: Math.max(0, y - gap), items, texts, arrows };
 }
 
 // ---------- statistics ----------
@@ -1247,15 +1332,20 @@ function copyStats() {
 }
 
 // ---------- compensation & axis scales ----------
+// Matrix editor with a live preview: every edit (typed, or nudged with the arrow keys) redraws the
+// preview plots with the edited matrix before anything is applied to the samples.
 function openComp() {
   const ws = app.ws;
   if (!ws.samples.length) return toast('Load samples first');
   let s = ws.activeSample();
-  const body = h('div');
+  const st = { pop: ws.selectedGate || null, maxEvents: 5000, view: 'edited', sel: null };
+  const body = h('div', { class: 'comp-layout' });
+  let m = null, preview = null;
   const draw = () => {
     body.innerHTML = '';
-    body.append(h('div', { class: 'row' }, h('label', {}, 'Sample'),
-      h('select', { onchange: e => { s = ws.sampleById(e.target.value); draw(); } }, ws.samples.map(x => h('option', { value: x.id, selected: x === s }, x.name)))));
+    const top = h('div', { class: 'row' }, h('label', {}, 'Sample'),
+      h('select', { onchange: e => { s = ws.sampleById(e.target.value); st.sel = null; draw(); } }, ws.samples.map(x => h('option', { value: x.id, selected: x === s }, x.name))));
+    body.append(top);
     if (!s.spill) {
       body.append(h('p', {}, 'This file has no embedded spillover matrix ($SPILLOVER / SPILL). Spectral instruments (e.g. Sony ID7000/SA3800) usually export already-unmixed data, which needs no compensation.'),
         h('button', { class: 'btn', onclick: () => {
@@ -1266,39 +1356,95 @@ function openComp() {
       return;
     }
     const missing = s.spillMissing();
-    if (missing.length) body.append(h('p', { style: 'color:var(--danger)' },
-      `The embedded matrix refers to channel(s) not found in this file: ${missing.join(', ')}. Compensation cannot be applied until the names match (edit via Import CSV).`));
-    const m = s.spill.matrix.map(r => [...r]);
-    const inputs = m.map((row, i) => row.map((v, j) => h('input', {
-      type: 'text', value: +v.toFixed(5), class: i !== j && v !== 0 ? 'nz' : '',
-      onchange: e => { const val = parseFloat(e.target.value); if (Number.isFinite(val)) m[i][j] = val; e.target.className = i !== j && m[i][j] !== 0 ? 'nz' : ''; },
-    })));
-    body.append(
+    if (missing.length) {
+      body.append(h('p', { style: 'color:var(--danger)' },
+        `The embedded matrix refers to channel(s) not found in this file: ${missing.join(', ')}. Compensation cannot be applied until the names match (edit via Import CSV).`));
+    }
+    const names = s.spill.names;
+    m = s.spill.matrix.map(r => [...r]);
+    const status = h('span', { class: 'hint comp-status' });
+    const changed = () => m.some((r, i) => r.some((v, j) => v !== s.spill.matrix[i][j]));
+    const refreshStatus = () => { status.textContent = changed() ? '● Edited: not applied yet' : ''; };
+    const nz = (i, j) => (i !== j && m[i][j] !== 0 ? 'nz' : '');
+    const setVal = (i, j, v, inp) => {
+      m[i][j] = Math.round(v * 1e6) / 1e6;
+      if (inp) { inp.value = +m[i][j].toFixed(5); }
+      inputs[i][j].className = nz(i, j) + (st.sel && st.sel[0] === i && st.sel[1] === j ? ' sel' : '');
+      refreshStatus(); preview?.update();
+    };
+    const pick = (i, j, { focusInput = false } = {}) => {
+      if (i === j) return;
+      if (st.sel) inputs[st.sel[0]][st.sel[1]].classList.remove('sel');
+      st.sel = [i, j]; inputs[i][j].classList.add('sel');
+      preview?.select(i, j);
+      if (focusInput) inputs[i][j].focus();
+    };
+    const inputs = m.map((row, i) => row.map((v, j) => {
+      const inp = h('input', { type: 'text', value: +v.toFixed(5), class: nz(i, j), 'data-i': i, 'data-j': j,
+        title: i === j ? 'Diagonal (1)' : `${ws.channelLabel(names[i])} spill into ${ws.channelLabel(names[j])}. ↑/↓ nudge by 0.001 (Shift ×10, Alt ÷10)` });
+      inp.addEventListener('focus', () => pick(i, j));
+      inp.addEventListener('input', () => { const val = parseFloat(inp.value); if (Number.isFinite(val)) setVal(i, j, val); });
+      inp.addEventListener('change', () => { inp.value = +m[i][j].toFixed(5); });
+      inp.addEventListener('keydown', e => {
+        if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
+        e.preventDefault();
+        const step = (e.shiftKey ? 0.01 : e.altKey ? 0.0001 : 0.001) * (e.key === 'ArrowUp' ? 1 : -1);
+        setVal(i, j, m[i][j] + step, inp);
+      });
+      return inp;
+    }));
+    const matrixTable = h('div', { style: 'overflow:auto;max-height:42vh' }, h('table', { class: 'matrix' },
+      h('tr', {}, h('th', { title: 'Rows: fluorochrome (source). Columns: detector.' }, 'from ↓  into →'), names.map(n => h('th', {}, ws.channelLabel(n)))),
+      names.map((n, i) => h('tr', {}, h('th', {}, ws.channelLabel(n)), inputs[i].map(inp => h('td', {}, inp))))));
+    const opts = h('div', { class: 'row comp-opts' },
+      h('label', {}, 'Preview'),
+      h('select', { title: 'Population whose events are previewed', onchange: e => { st.pop = e.target.value || null; preview.pop = st.pop; preview.prepare(); preview.update(); } }, popOptions(st.pop)),
+      h('select', { title: 'Events shown in each preview plot', onchange: e => { st.maxEvents = +e.target.value; preview.maxEvents = st.maxEvents; preview.prepare(); preview.update(); } },
+        [2000, 5000, 10000, 20000].map(n => h('option', { value: n, selected: n === st.maxEvents }, `${n.toLocaleString()} events`))),
+      h('span', { class: 'seg-group', id: 'compView' },
+        ...[['edited', 'Edited matrix'], ['raw', 'Uncompensated']].map(([v, l]) => h('button', { class: 'btn small' + (st.view === v ? ' primary' : ''), 'data-view': v, onclick: e => {
+          st.view = v; preview.view = v; preview.update();
+          e.target.parentNode.querySelectorAll('button').forEach(b => b.classList.toggle('primary', b.dataset.view === v));
+        } }, l))));
+    const actions = h('div', { class: 'row' },
+      h('button', { class: 'btn primary', onclick: () => { s.setSpill({ names, matrix: m.map(r => [...r]) }); afterDataChange(); refreshStatus(); toast('Matrix applied'); } }, 'Apply to this sample'),
+      h('button', { class: 'btn', onclick: () => {
+        let n = 0;
+        for (const o of ws.samples) if (names.every(c => o.hasChannel(c))) { o.setSpill({ names: [...names], matrix: m.map(r => [...r]) }); o.setCompEnabled(true); n++; }
+        afterDataChange(); refreshStatus(); toast(`Matrix applied to ${n} sample(s)`);
+      } }, 'Apply to all samples'),
+      h('button', { class: 'btn', title: 'Undo the edits not yet applied', onclick: () => {
+        m.forEach((r, i) => r.forEach((_, j) => setVal(i, j, s.spill.matrix[i][j], inputs[i][j])));
+      } }, '↺ Reset edits'),
+      h('button', { class: 'btn', onclick: () => {
+        const csv = [['', ...names].join(','), ...names.map((n, i) => [n, ...m[i]].join(','))].join('\n');
+        saveFile(`spillover_${safeName(s.name)}_${dateStamp()}.csv`, csv, 'csv');
+      } }, 'Export CSV'),
+      h('label', { class: 'btn' }, 'Import CSV', h('input', { type: 'file', accept: '.csv,.txt', hidden: true, onchange: async e => {
+        try {
+          const rows = (await e.target.files[0].text()).trim().split(/\r?\n/).map(l => l.split(/[,\t]/).map(x => x.trim().replace(/^"|"$/g, '')));
+          const nm = rows[0].slice(1); const mat = rows.slice(1).map(r => r.slice(1).map(Number));
+          if (!nm.every(c => s.hasChannel(c))) throw new Error('matrix channels not found in sample: ' + nm.filter(c => !s.hasChannel(c)).join(', '));
+          if (mat.length !== nm.length || mat.some(r => r.length !== nm.length || r.some(v => !Number.isFinite(v)))) throw new Error('matrix must be square and numeric');
+          s.setSpill({ names: nm, matrix: mat }); s.setCompEnabled(true); afterDataChange(); draw();
+        } catch (err) { toast('Import failed: ' + err.message, true); }
+      } })), status);
+    const left = h('div', { class: 'comp-left' },
       h('div', { class: 'row' }, h('label', {}, 'Compensation'), h('label', {}, h('input', { type: 'checkbox', checked: s.compEnabled, onchange: e => { s.setCompEnabled(e.target.checked); afterDataChange(); } }), ' apply to this sample')),
-      h('p', { class: 'hint' }, 'Spillover fractions: row = fluorochrome (source), column = detector. Diagonal should be 1.'),
-      h('div', { style: 'overflow:auto;max-height:50vh' }, h('table', { class: 'matrix' },
-        h('tr', {}, h('th', {}, ''), s.spill.names.map(n => h('th', {}, ws.channelLabel(n)))),
-        s.spill.names.map((n, i) => h('tr', {}, h('th', {}, ws.channelLabel(n)), inputs[i].map(inp => h('td', {}, inp)))))),
-      h('div', { class: 'row' },
-        h('button', { class: 'btn primary', onclick: () => { s.setSpill({ names: s.spill.names, matrix: m }); afterDataChange(); toast('Matrix applied'); } }, 'Apply to this sample'),
-        h('button', { class: 'btn', onclick: () => {
-          let n = 0;
-          for (const o of ws.samples) if (s.spill.names.every(c => o.hasChannel(c))) { o.setSpill({ names: [...s.spill.names], matrix: m.map(r => [...r]) }); o.setCompEnabled(true); n++; }
-          afterDataChange(); toast(`Matrix applied to ${n} sample(s)`);
-        } }, 'Apply to all samples'),
-        h('button', { class: 'btn', onclick: () => {
-          const csv = [['', ...s.spill.names].join(','), ...s.spill.names.map((n, i) => [n, ...m[i]].join(','))].join('\n');
-          saveFile(`spillover_${safeName(s.name)}_${dateStamp()}.csv`, csv, 'csv');
-        } }, 'Export CSV'),
-        h('label', { class: 'btn' }, 'Import CSV', h('input', { type: 'file', accept: '.csv,.txt', hidden: true, onchange: async e => {
-          try {
-            const rows = (await e.target.files[0].text()).trim().split(/\r?\n/).map(l => l.split(/[,\t]/).map(x => x.trim().replace(/^"|"$/g, '')));
-            const names = rows[0].slice(1); const mat = rows.slice(1).map(r => r.slice(1).map(Number));
-            if (!names.every(c => s.hasChannel(c))) throw new Error('matrix channels not found in sample: ' + names.filter(c => !s.hasChannel(c)).join(', '));
-            if (mat.length !== names.length || mat.some(r => r.length !== names.length || r.some(v => !Number.isFinite(v)))) throw new Error('matrix must be square and numeric');
-            s.setSpill({ names, matrix: mat }); s.setCompEnabled(true); afterDataChange(); draw();
-          } catch (err) { toast('Import failed: ' + err.message, true); }
-        } }))));
+      h('p', { class: 'hint' }, 'Spillover fractions: row = fluorochrome (source), column = detector; 0.15 = 15%. The diagonal should be 1. Click a value (or a preview plot) and use ↑/↓ to nudge it: the preview updates as you type, and nothing changes in the samples until you apply.'),
+      matrixTable, actions);
+    body.append(h('div', { class: 'comp-cols' }, left, h('div', { class: 'comp-right' }, opts)));
+    if (missing.length) { body.querySelector('.comp-right').append(h('p', { class: 'hint' }, 'Preview needs every matrix channel in the file.')); return; }
+    preview = new CompPreview({ ws, sample: s, names, matrix: m, pop: st.pop, maxEvents: st.maxEvents, view: st.view, theme: THEMES[app.theme] || THEMES.dark,
+      onPick: (i, j) => pick(i, j, { focusInput: true }) });
+    body.querySelector('.comp-right').append(
+      h('div', { class: 'hint-box' }, 'Each plot shows the row channel (X) against the column channel (Y), for the matrix value in the same place. Cells positive only for the row dye should lie flat: if they slope up, raise the value; if they bend down below the rest, lower it.'),
+      preview.el);
+    left.append(preview.focusEl);
+    preview.updateNow();
+    const first = st.sel || (names.length > 1 ? [0, 1] : null);
+    if (first) pick(...first);
+    refreshStatus();
   };
   draw();
   openModal('Compensation', body, { wide: true });

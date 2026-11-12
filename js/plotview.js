@@ -71,6 +71,7 @@ export function buildSpec(ws, sample, def, w, h, opts = {}) {
   const series = [{ ux: sample.unit(x, cfgX), uy: y ? sample.unit(y, cfgY) : null, idx, fullIdx: pop.idx, color: isHist ? theme.hist : null }];
   const sel = opts.selectedGate ? eng.get(opts.selectedGate) : null;
   const gates = opts.noGates ? [] : eng.children(popId)
+    .filter(g => !opts.onlyGates || opts.onlyGates.has(g.id))
     .filter(g => (isHist ? isOneD(g) && g.x === x : !isOneD(g) && g.x === x && g.y === y))
     .map(g => {
       const st = populationStats(eng, sample, g.id);
