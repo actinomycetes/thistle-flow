@@ -909,7 +909,7 @@ test('help opens over the app and closing it keeps the data; grouped two-tier ga
   await page.close();
 });
 
-test('gate previews follow the cursor; double-click resets zoom; spider and offset quadrants', { timeout: 240000 }, async () => {
+test('gate previews follow the cursor; double-click resets zoom; angled and staggered quadrants', { timeout: 240000 }, async () => {
   browser = browser || await chromium.launch();
   const page = await browser.newPage({ viewport: { width: 1600, height: 1000 } });
   const errors = [];
@@ -958,7 +958,7 @@ test('gate previews follow the cursor; double-click resets zoom; spider and offs
   assert.equal(await ev(() => window.thistleFlow.ws.plots[0].zoom), undefined, 'double-click resets the zoom');
   assert.equal(await ev(() => window.thistleFlow.tool), 'zoom', 'still zooming');
 
-  // ---- quadrant: standard, then spider and offset ----
+  // ---- quadrant: standard, then angled and staggered ----
   b = await box(2);
   await page.click('[data-tool=quad]');
   await page.mouse.click(...at(b, 0.35, 0.35));
@@ -985,9 +985,9 @@ test('gate previews follow the cursor; double-click resets zoom; spider and offs
   await page.mouse.move(b.x + grab[0] + 8, b.y + grab[1]); await page.mouse.down();
   await page.mouse.move(b.x + grab[0], b.y + grab[1], { steps: 4 }); await page.mouse.up(); // back
 
-  await page.click('#quadStyle [data-qmode=spider]');
-  assert.equal(await ev(() => window.thistleFlow.ws.engine.list().filter(g => g.type === 'quad').every(g => g.quadMode === 'spider')), true, 'whole group');
-  assert.deepEqual(await counts(), std, 'spider starts as the straight cross');
+  await page.click('#quadStyle [data-qmode=angled]');
+  assert.equal(await ev(() => window.thistleFlow.ws.engine.list().filter(g => g.type === 'quad').every(g => g.quadMode === 'angled')), true, 'whole group');
+  assert.deepEqual(await counts(), std, 'angled starts as the straight cross');
   const findArm = arm => page.evaluate(([v, arm]) => {
     const pv = eval(v);
     for (let y = 20; y < pv.h - 40; y += 2) for (let x = 60; x < pv.w - 10; x += 2) { const h = pv.hitTest(x, y); if (h?.mode === 'arm' && h.arm === arm) return [x, y]; }
@@ -1001,27 +1001,27 @@ test('gate previews follow the cursor; double-click resets zoom; spider and offs
   const ang = await ev(() => window.thistleFlow.ws.engine.list().find(g => g.type === 'quad').angles.right);
   assert.ok(ang > 10 && ang < 85, 'right arm turned anticlockwise: ' + ang);
   const sp = await counts();
-  assert.equal(sum(sp), total, 'spider quadrants still cover every event once');
+  assert.equal(sum(sp), total, 'angled quadrants still cover every event once');
   assert.notDeepEqual(sp, std);
-  await page.locator('.plot-card').nth(2).screenshot({ path: OUT + '/f-spider.png' });
+  await page.locator('.plot-card').nth(2).screenshot({ path: OUT + '/f-angled.png' });
 
-  await page.click('#quadStyle [data-qmode=offset]');
-  assert.deepEqual(await counts(), std, 'offset starts as the straight cross');
+  await page.click('#quadStyle [data-qmode=staggered]');
+  assert.deepEqual(await counts(), std, 'staggered starts as the straight cross');
   b = await box(2);
   hnd = await findArm('up');
   assert.ok(hnd, 'up-arm handle found');
   await page.mouse.move(b.x + hnd[0], b.y + hnd[1]); await page.mouse.down();
   await page.mouse.move(b.x + hnd[0] - 50, b.y + hnd[1], { steps: 6 }); await page.mouse.up(); // slide the up arm left
   const of = await counts();
-  assert.equal(sum(of), total, 'offset quadrants still cover every event once');
+  assert.equal(sum(of), total, 'staggered quadrants still cover every event once');
   assert.notDeepEqual(of, std);
   // only the upper quadrants change when the up arm slides
   const names = await ev(() => window.thistleFlow.ws.engine.list().filter(g => g.type === 'quad').map(g => g.q));
   names.forEach((q, i) => { if (q[0] === 'L') assert.equal(of[i], std[i], q + ' unchanged'); });
-  await page.locator('.plot-card').nth(2).screenshot({ path: OUT + '/f-offset.png' });
+  await page.locator('.plot-card').nth(2).screenshot({ path: OUT + '/f-staggered.png' });
   // undo / workspace keep the style
   const json = await ev(() => JSON.stringify(window.thistleFlow.ws.serialize ? window.thistleFlow.ws.serialize() : {}));
-  assert.match(json, /"quadMode":"offset"/);
+  assert.match(json, /"quadMode":"staggered"/);
   await page.click('#quadStyle [data-qmode=standard]');
   assert.deepEqual(await counts(), std, 'back to the straight cross');
   await page.click('.plot-card >> nth=0'); // another gate selected / none: style switch hidden

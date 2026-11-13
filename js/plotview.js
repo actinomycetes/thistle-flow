@@ -150,7 +150,7 @@ function buildOverlaySpec(ws, samples, def, w, h, opts) {
 
 const HANDLE = 6;
 
-// Angle (degrees) for a spider arm dragged towards `want`, kept between its clockwise neighbour `cw`
+// Angle (degrees) for an angled-quadrant arm dragged towards `want`, kept between its clockwise neighbour `cw`
 // and anticlockwise neighbour `acw` (5° clear of each); beyond either end it stops at the nearer end.
 export function clampArmAngle(want, cw, acw) {
   const norm = v => ((v % 360) + 360) % 360;
@@ -461,14 +461,14 @@ export class PlotView {
       g.cx = tx.inv(u[0]);
     } else if (g.type === 'quad') {
       const m = quadMode(o);
-      if (d.mode === 'arm' && m === 'spider') {
+      if (d.mode === 'arm' && m === 'angled') {
         // turn one arm, keeping it between its neighbours so the four quadrants stay in order
         const c = [tx.fwd(o.cx), ty.fwd(o.cy)];
         const a = { ...DEFAULT_ANGLES, ...(o.angles || {}) }, i = ARMS.indexOf(d.arm);
         const cw = a[ARMS[(i + 1) % 4]], acw = a[ARMS[(i + 3) % 4]];
         const want = Math.atan2(u[1] - c[1], u[0] - c[0]) * 180 / Math.PI;
         g.angles = { ...a, [d.arm]: Math.round(clampArmAngle(want, cw, acw) * 10) / 10 };
-      } else if (d.mode === 'arm' && m === 'offset') {
+      } else if (d.mode === 'arm' && m === 'staggered') {
         const off = { up: o.cx, down: o.cx, right: o.cy, left: o.cy, ...(o.offsets || {}) };
         const s = snapUnit(u);
         off[d.arm] = d.arm === 'up' || d.arm === 'down' ? tx.inv(s[0]) : ty.inv(s[1]);
@@ -476,7 +476,7 @@ export class PlotView {
       } else {
         // move by the drag (the quadrant may have been grabbed by an arm, far from its centre)
         g.cx = mvX(o.cx); g.cy = mvY(o.cy);
-        if (m === 'offset' && o.offsets) { // the staggered arms move with the centre
+        if (m === 'staggered' && o.offsets) { // the staggered arms move with the centre
           const [dx, dy] = du;
           const ox = v => tx.inv(tx.fwd(v) + dx), oy = v => ty.inv(ty.fwd(v) + dy);
           const f = o.offsets;

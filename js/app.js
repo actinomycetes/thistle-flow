@@ -684,7 +684,7 @@ app.createQuadrant = (def, [cx, cy]) => {
   renderAll();
 };
 
-// Quadrant style: standard (straight cross), spider (each arm at its own angle) or offset (staggered arms).
+// Quadrant style: standard (straight cross), angled (each arm at its own angle) or staggered (each arm slides on its own).
 // Switching style starts from the straight cross at the current centre. Follows "Gate edits apply to".
 app.setQuadMode = mode => {
   const ws = app.ws, g = ws.selectedGate && ws.engine.get(ws.selectedGate);
@@ -693,12 +693,12 @@ app.setQuadMode = mode => {
   const eff = gateFor(g, perSample || null);
   if (quadMode(eff) === mode) return;
   const w = { ...eff, quadMode: mode, angles: null, offsets: null };
-  if (mode === 'spider') w.angles = { up: 90, right: 0, down: 270, left: 180 };
-  if (mode === 'offset') w.offsets = { up: eff.cx, down: eff.cx, right: eff.cy, left: eff.cy };
+  if (mode === 'angled') w.angles = { up: 90, right: 0, down: 270, left: 180 };
+  if (mode === 'staggered') w.offsets = { up: eff.cx, down: eff.cx, right: eff.cy, left: eff.cy };
   app.setGateGeometry(g, w, perSample || null);
   app.gateChanged(g);
   app.scheduleCommit?.();
-  if (mode !== 'standard') app.toast(mode === 'spider' ? 'Spider quadrant: drag the round handles to turn each arm.' : 'Offset quadrant: drag the round handles to slide each arm on its own.');
+  if (mode !== 'standard') app.toast(mode === 'angled' ? 'Angled quadrant: drag the round handles to turn each arm.' : 'Staggered quadrant: drag the round handles to slide each arm on its own.');
 };
 
 // ---- per-sample gates ----
@@ -795,7 +795,7 @@ function updateGateButtons() {
   const n = g ? customSampleKeys(g).length : 0;
   const b = $('#btnGlobalGate');
   b.disabled = !n;
-  // quadrant style (Standard / Spider / Offset) for the selected quadrant group, as it applies to the active sample
+  // quadrant style (Standard / Angled / Staggered) for the selected quadrant group, as it applies to the active sample
   const qs = $('#quadStyle');
   if (qs) {
     const s = ws.activeSample(), eff = g && g.type === 'quad' ? gateFor(g, s) : null;

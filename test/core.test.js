@@ -83,7 +83,7 @@ test('demo file: compensation recovers single-stain, gating and stats work', () 
   assert.ok(peRaw > 500, 'uncompensated PE median in CD8 ' + peRaw);
 });
 
-test('quadrant styles: spider and offset quadrants tile the parent; defaults equal the straight cross', async () => {
+test('quadrant styles: angled and staggered quadrants tile the parent; defaults equal the straight cross', async () => {
   const { quadArms, quadRegion, pointInPolygon } = await import('../js/gates.js');
   const [ds] = parseFCS(makeDemoFile('q.fcs', 0.5, 7, 20000), 'q.fcs');
   const s = new Sample(ds);
@@ -97,21 +97,21 @@ test('quadrant styles: spider and offset quadrants tile the parent; defaults equ
   const std = counts({});
   const sum = c => Object.values(c).reduce((a, b) => a + b, 0);
   assert.equal(sum(std), N);
-  // default spider / offset = the standard cross
-  assert.deepEqual(counts({ quadMode: 'spider', angles: { up: 90, right: 0, down: 270, left: 180 } }), std);
-  assert.deepEqual(counts({ quadMode: 'offset', offsets: { up: 800, down: 800, right: 800, left: 800 } }), std);
+  // default angled / staggered = the standard cross
+  assert.deepEqual(counts({ quadMode: 'angled', angles: { up: 90, right: 0, down: 270, left: 180 } }), std);
+  assert.deepEqual(counts({ quadMode: 'staggered', offsets: { up: 800, down: 800, right: 800, left: 800 } }), std);
   // reshaped: every event still in exactly one quadrant
-  const sp = counts({ quadMode: 'spider', angles: { up: 70, right: 20, down: 250, left: 170 } });
+  const sp = counts({ quadMode: 'angled', angles: { up: 70, right: 20, down: 250, left: 170 } });
   assert.equal(sum(sp), N); assert.notDeepEqual(sp, std);
-  const of = counts({ quadMode: 'offset', offsets: { up: 3000, down: 300, right: 2000, left: 200 } });
+  const of = counts({ quadMode: 'staggered', offsets: { up: 3000, down: 300, right: 2000, left: 200 } });
   assert.equal(sum(of), N); assert.notDeepEqual(of, std);
   // offset: up arm moved left, so UL shrinks and UR grows by the same events; the lower half is unchanged
-  const of2 = counts({ quadMode: 'offset', offsets: { up: 10, down: 800, right: 800, left: 800 } });
+  const of2 = counts({ quadMode: 'staggered', offsets: { up: 10, down: 800, right: 800, left: 800 } });
   assert.ok(of2.UL < std.UL && of2.UR > std.UR && of2.UL + of2.UR === std.UL + std.UR, JSON.stringify([of2, std]));
   assert.ok(of2.LR === std.LR && of2.LL === std.LL);
   // geometry: regions tile an extended grid for awkward settings too
   const id = { fwd: v => v, inv: v => v };
-  const g = { cx: 0.3, cy: 0.7, quadMode: 'offset', offsets: { up: 0.1, down: 0.6, right: 0.9, left: 0.2 } };
+  const g = { cx: 0.3, cy: 0.7, quadMode: 'staggered', offsets: { up: 0.1, down: 0.6, right: 0.9, left: 0.2 } };
   const arms = quadArms(g, id, id);
   for (let x = -0.3; x < 1.3; x += 0.031) for (let y = -0.3; y < 1.3; y += 0.029) {
     const n = ['UR', 'LR', 'LL', 'UL'].filter(q => pointInPolygon(x, y, quadRegion(arms, q))).length;

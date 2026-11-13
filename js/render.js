@@ -552,21 +552,21 @@ function drawGate(ctx, L, spec, item, T) {
     const xs = geo.pts.map(p => cx(p[0]));
     def = [(Math.min(...xs) + Math.max(...xs)) / 2, top[1] - 10];
   } else if (geo.kind === 'quad') {
-    // four arms from the centre (straight for standard, angled for spider, stepped for offset)
+    // four arms from the centre (straight for standard, at their own angles for angled, stepped for staggered)
     ctx.beginPath();
     for (const k in geo.arms) geo.arms[k].forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
     ctx.stroke();
     if (selected) {
       ctx.fillStyle = color; ctx.fillRect(geo.cx - 4, geo.cy - 4, 8, 8);
       ctx.setLineDash([]); ctx.lineWidth = 1.5; ctx.fillStyle = T.bg || '#fff';
-      for (const k in geo.handles) { // round handles to turn (spider) or slide (offset) each arm
+      for (const k in geo.handles) { // round handles to turn (angled) or slide (staggered) each arm
         const [x, y] = geo.handles[k];
         ctx.beginPath(); ctx.arc(x, y, 4.5, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
       }
     }
     const left = MARGIN.l + 6 + tw / 2, right = MARGIN.l + L.pw - 6 - tw / 2, top = MARGIN.t + 11, bottom = MARGIN.t + L.ph - 11;
     def = { UL: [left, top], UR: [right, top], LL: [left, bottom], LR: [right, bottom] }[g.q];
-    if (geo.mode === 'spider') { // between the quadrant's two arms
+    if (geo.mode === 'angled') { // between the quadrant's two arms
       const a = { ...DEFAULT_ANGLES, ...(g.angles || {}) }, [ka, kb] = QUAD_REGION_ARMS[g.q];
       const r = d => d * Math.PI / 180, ang = r(a[kb]) + ((r(a[ka]) - r(a[kb])) % (2 * Math.PI) + 2 * Math.PI) % (2 * Math.PI) / 2;
       const R = Math.min(L.pw, L.ph) * 0.36;

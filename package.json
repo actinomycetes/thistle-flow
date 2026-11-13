@@ -1,6 +1,6 @@
 {
   "name": "thistle-flow",
-  "version": "0.15.1",
+  "version": "0.15.2",
   "private": true,
   "type": "module",
   "description": "Lightweight browser-based flow cytometry (FCS) analysis",
@@ -10,7 +10,8 @@
     "start": "python3 -m http.server 8080",
     "test": "node --test test/*.test.js",
     "test:e2e": "node --test test/e2e/*.test.mjs",
-    "build": "node tools/build.mjs"
+    "build": "node tools/build.mjs",
+    "validate": "bash tools/validate/run.sh"
   },
   "devDependencies": {
     "playwright": "^1.48.0"

@@ -45,8 +45,8 @@ export const customSampleKeys = g => Object.keys(g.overrides || {});
 // ---- quadrant geometry ----
 // A quadrant group has a centre (cx, cy) and four arms: up, right, down, left (clockwise).
 //  standard: arms along the axes through the centre;
-//  spider:   straight arms at independent angles (degrees, in display units, anticlockwise from +x);
-//  offset:   staggered arms: the up/down arms run vertically at their own x (offsets.up / .down) and
+//  angled:   straight arms at independent angles (degrees, in display units, anticlockwise from +x);
+//  staggered: arms: the up/down arms run vertically at their own x (offsets.up / .down) and
 //            the right/left arms horizontally at their own y (offsets.right / .left), each joined to
 //            the centre by a step (values in data units).
 // Each quadrant is the region between two neighbouring arms, closed along a frame that extends well
@@ -55,7 +55,9 @@ export const ARMS = ['up', 'right', 'down', 'left'];
 export const QUAD_REGION_ARMS = { UR: ['up', 'right'], LR: ['right', 'down'], LL: ['down', 'left'], UL: ['left', 'up'] };
 export const DEFAULT_ANGLES = { up: 90, right: 0, down: 270, left: 180 };
 const B0 = -0.5, B1 = 1.5; // extended frame in display units
-export const quadMode = g => g.quadMode || 'standard';
+// 'spider' and 'offset' are the names used before v0.15.2 (saved workspaces still use them)
+const LEGACY_QMODE = { spider: 'angled', offset: 'staggered' };
+export const quadMode = g => LEGACY_QMODE[g.quadMode] || g.quadMode || 'standard';
 
 function rayToFrame([x, y], deg) {
   const dx = Math.cos(deg * Math.PI / 180), dy = Math.sin(deg * Math.PI / 180);
@@ -69,11 +71,11 @@ function rayToFrame([x, y], deg) {
 export function quadArms(g, tx, ty) {
   const c = [tx.fwd(g.cx), ty.fwd(g.cy)];
   const m = quadMode(g);
-  if (m === 'spider') {
+  if (m === 'angled') {
     const a = { ...DEFAULT_ANGLES, ...(g.angles || {}) };
     return { c, arms: Object.fromEntries(ARMS.map(k => [k, [c, rayToFrame(c, a[k])]])) };
   }
-  if (m === 'offset') {
+  if (m === 'staggered') {
     const o = g.offsets || {};
     const xu = tx.fwd(o.up ?? g.cx), xd = tx.fwd(o.down ?? g.cx), yr = ty.fwd(o.right ?? g.cy), yl = ty.fwd(o.left ?? g.cy);
     // each arm leaves the centre along its own direction until it is past the neighbouring arms' jogs,
@@ -110,7 +112,7 @@ export function quadRegion(armsObj, q) {
   return [...A, ...walk, ...B.slice().reverse().slice(0, -1)];
 }
 
-// Handles for reshaping (display units): one on each arm (spider: along the arm; offset: on its outer part)
+// Handles for reshaping (display units): one on each arm (angled: along the arm; staggered: on its outer part)
 export function quadHandles(g, tx, ty) {
   const { c, arms } = quadArms(g, tx, ty);
   const m = quadMode(g);
@@ -119,7 +121,7 @@ export function quadHandles(g, tx, ty) {
   const out = {};
   for (const k of ARMS) {
     const a = arms[k];
-    if (m === 'spider') {
+    if (m === 'angled') {
       const deg = { ...DEFAULT_ANGLES, ...(g.angles || {}) }[k] * Math.PI / 180;
       out[k] = [clip(c[0] + 0.28 * Math.cos(deg)), clip(c[1] + 0.28 * Math.sin(deg))];
     } else {

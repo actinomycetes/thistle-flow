@@ -45,7 +45,7 @@ test('a gate edge snapped to an axis includes every event piled up on that axis'
   assert.deepEqual(ids(eng, s, 'r'), [0, 1, 3], 'events beyond the right axis are drawn on it, inside the gate');
 });
 
-test('spider and offset quadrants cover events far off scale, like the standard cross', () => {
+test('angled and staggered quadrants cover events far off scale, like the standard cross', () => {
   const X = [50000, 250000, -60000, 20000, 1e7, -1e7], Y = [80000, 80000, 20000, 250000, -1e7, 1e7];
   const s = sampleOf([X, Y]);
   const run = geom => {
@@ -55,8 +55,8 @@ test('spider and offset quadrants cover events far off scale, like the standard 
   };
   const std = run({});
   assert.equal(Object.values(std).flat().length, X.length);
-  assert.deepEqual(run({ quadMode: 'spider', angles: { up: 90, right: 0, down: 270, left: 180 } }), std);
-  assert.deepEqual(run({ quadMode: 'offset', offsets: { up: 30000, down: 30000, right: 50000, left: 50000 } }), std);
+  assert.deepEqual(run({ quadMode: 'angled', angles: { up: 90, right: 0, down: 270, left: 180 } }), std);
+  assert.deepEqual(run({ quadMode: 'staggered', offsets: { up: 30000, down: 30000, right: 50000, left: 50000 } }), std);
 });
 
 test('NaN events are in no gate; ±Infinity events are in exactly one quadrant and one split side', () => {
@@ -64,11 +64,11 @@ test('NaN events are in no gate; ±Infinity events are in exactly one quadrant a
     const s = sampleOf([[NaN, Infinity, -Infinity, 1000], [1000, Infinity, -Infinity, NaN]]);
     const eng = new GateEngine(() => cfg);
     for (const q of ['UL', 'UR', 'LR', 'LL']) eng.add({ id: q, name: q, parent: null, type: 'quad', q, group: 'G', x: 'P1', y: 'P2', cx: 500, cy: 500 });
-    for (const q of ['UL', 'UR', 'LR', 'LL']) eng.add({ id: 's' + q, name: q, parent: null, type: 'quad', q, group: 'S', x: 'P1', y: 'P2', cx: 500, cy: 500, quadMode: 'spider', angles: { up: 80, right: 10, down: 260, left: 190 } });
+    for (const q of ['UL', 'UR', 'LR', 'LL']) eng.add({ id: 's' + q, name: q, parent: null, type: 'quad', q, group: 'S', x: 'P1', y: 'P2', cx: 500, cy: 500, quadMode: 'angled', angles: { up: 80, right: 10, down: 260, left: 190 } });
     for (const side of ['L', 'R']) eng.add({ id: side, name: side, parent: null, type: 'split', side, group: 'X', x: 'P1', cx: 500 });
     const inQ = pre => ['UL', 'UR', 'LR', 'LL'].map(q => ids(eng, s, pre + q)).flat().sort();
     assert.deepEqual(inQ(''), [1, 2], `${cfg.kind}: standard quadrants`);
-    assert.deepEqual(inQ('s'), [1, 2], `${cfg.kind}: spider quadrants`);
+    assert.deepEqual(inQ('s'), [1, 2], `${cfg.kind}: angled quadrants`);
     assert.deepEqual([...ids(eng, s, 'L'), ...ids(eng, s, 'R')].sort(), [1, 2, 3], `${cfg.kind}: split`);
   }
 });
@@ -167,7 +167,7 @@ test('histograms pile off-scale events into the end bins (like 2-D plots) unless
   assert.deepEqual([...h], [2, 0, 1, 3]);
 });
 
-test('spider arm dragged a little past its clockwise neighbour stops next to it (not on the far side)', () => {
+test('angled-quadrant arm dragged a little past its clockwise neighbour stops next to it (not on the far side)', () => {
   // up arm between right (0°) and left (180°): cursor at -10° -> 5°, not 175°
   assert.equal(clampArmAngle(-10, 0, 180), 5);
   // right arm between down (270°) and up (90°): cursor at 260° -> 275°
@@ -198,4 +198,17 @@ test('shipped files do not name other analysis software (trademarks)', () => {
     const text = fs.readFileSync(new URL('../' + f, import.meta.url), 'utf8');
     assert.ok(!/flow\s*jo|tree\s*star/i.test(text), `${f} names another analysis program`);
   }
+});
+
+test('quadrant styles saved under their old names (spider, offset) still work', () => {
+  const s = sampleOf([[50000, 250000, -60000, 20000], [80000, 80000, 20000, 250000]]);
+  const run = geom => {
+    const eng = new GateEngine(lin(100000));
+    for (const q of ['UL', 'UR', 'LR', 'LL']) eng.add({ id: q, name: q, parent: null, type: 'quad', q, group: 'G', x: 'P1', y: 'P2', cx: 30000, cy: 50000, ...geom });
+    return ['UL', 'UR', 'LR', 'LL'].map(q => ids(eng, s, q));
+  };
+  const angles = { up: 80, right: 20, down: 250, left: 170 }, offsets = { up: 60000, down: 10000, right: 30000, left: 70000 };
+  assert.deepEqual(run({ quadMode: 'spider', angles }), run({ quadMode: 'angled', angles }));
+  assert.deepEqual(run({ quadMode: 'offset', offsets }), run({ quadMode: 'staggered', offsets }));
+  assert.notDeepEqual(run({ quadMode: 'angled', angles }), run({}));
 });

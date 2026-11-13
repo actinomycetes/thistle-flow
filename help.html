@@ -9,7 +9,7 @@
   catch { document.documentElement.dataset.theme = 'dark'; }
 </script>
 <link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2024%2026%22%3E%3Cg%20stroke%3D%22%23a855f7%22%20stroke-width%3D%221.6%22%20stroke-linecap%3D%22round%22%3E%3Cpath%20d%3D%22M12%2010V2%22%2F%3E%3Cpath%20d%3D%22M12%2010L7%203%22%2F%3E%3Cpath%20d%3D%22M12%2010L17%203%22%2F%3E%3Cpath%20d%3D%22M12%2010L4.5%206%22%2F%3E%3Cpath%20d%3D%22M12%2010L19.5%206%22%2F%3E%3Cpath%20d%3D%22M12%2010L9.5%202.3%22%2F%3E%3Cpath%20d%3D%22M12%2010L14.5%202.3%22%2F%3E%3C%2Fg%3E%3Cellipse%20cx%3D%2212%22%20cy%3D%2213.5%22%20rx%3D%225%22%20ry%3D%224.2%22%20fill%3D%22%2322c55e%22%2F%3E%3Cg%20fill%3D%22%2315803d%22%3E%3Ccircle%20cx%3D%229.7%22%20cy%3D%2212.7%22%20r%3D%22.95%22%2F%3E%3Ccircle%20cx%3D%2212.3%22%20cy%3D%2211.9%22%20r%3D%22.95%22%2F%3E%3Ccircle%20cx%3D%2214.7%22%20cy%3D%2213.3%22%20r%3D%22.95%22%2F%3E%3Ccircle%20cx%3D%2210.8%22%20cy%3D%2215.3%22%20r%3D%22.95%22%2F%3E%3Ccircle%20cx%3D%2213.5%22%20cy%3D%2215.5%22%20r%3D%22.95%22%2F%3E%3C%2Fg%3E%3Cpath%20d%3D%22M12%2017.5V25%22%20stroke%3D%22%2316a34a%22%20stroke-width%3D%221.8%22%20stroke-linecap%3D%22round%22%2F%3E%3Cpath%20d%3D%22M12%2021.5c-2.5-.5-4.5-2-5.5-4M12%2021c2.5-.5%204.3-1.8%205.3-3.8%22%20stroke%3D%22%2316a34a%22%20stroke-width%3D%221.4%22%20fill%3D%22none%22%20stroke-linecap%3D%22round%22%2F%3E%3C%2Fsvg%3E">
-<title>Thistle Flow v0.15.1 (Beta) — Help</title>
+<title>Thistle Flow v0.15.2 (Beta) — Help</title>
 <style>
   /* Thistle Plot palette: dark by default, light when the system asks for it */
   :root { --bg: #0f172a; --surf: #1e293b; --surf2: #263347; --text: #e2e8f0; --muted: #94a3b8; --border: #334155; --accent: #3b82f6; --code: #263347; --badge-bg: #1d3461; --note-bg: #1a2744; --note-bd: #2a4080; --note-tx: #93c5fd; color-scheme: dark; }
@@ -44,13 +44,13 @@
   <svg width="24" height="26" viewBox="0 0 24 26" aria-hidden="true" style="flex:none"><g stroke="#a855f7" stroke-width="1.6" stroke-linecap="round"><path d="M12 10V2"/><path d="M12 10L7 3"/><path d="M12 10L17 3"/><path d="M12 10L4.5 6"/><path d="M12 10L19.5 6"/><path d="M12 10L9.5 2.3"/><path d="M12 10L14.5 2.3"/></g><ellipse cx="12" cy="13.5" rx="5" ry="4.2" fill="#22c55e"/><g fill="#15803d"><circle cx="9.7" cy="12.7" r=".95"/><circle cx="12.3" cy="11.9" r=".95"/><circle cx="14.7" cy="13.3" r=".95"/><circle cx="10.8" cy="15.3" r=".95"/><circle cx="13.5" cy="15.5" r=".95"/></g><path d="M12 17.5V25" stroke="#16a34a" stroke-width="1.8" stroke-linecap="round"/><path d="M12 21.5c-2.5-.5-4.5-2-5.5-4M12 21c2.5-.5 4.3-1.8 5.3-3.8" stroke="#16a34a" stroke-width="1.4" fill="none" stroke-linecap="round"/></svg>
   <span class="title">Thistle Flow</span>
   <span class="badge beta">BETA</span>
-  <span class="badge">v0.15.1</span>
+  <span class="badge">v0.15.2</span>
   <a class="app" id="backToApp" href="./">← Back to the app</a>
 </header>
 <main>
 <h1>Help and manual</h1>
 <p class="muted">Lightweight flow cytometry analysis in your browser; your data never leaves your computer. Sister app of <a href="https://actinomycetes.github.io/thistle-plot/">Thistle Plot</a> (statistics and figures). <a href="https://github.com/actinomycetes/thistle-flow">Source on GitHub</a>.</p>
-<div class="note">Thistle Flow is a <b>beta (v0.15.1)</b>. Check important results against an established package before you rely on them in a publication.</div>
+<div class="note">Thistle Flow is a <b>beta (v0.15.2)</b>. Check important results against an established package before you rely on them in a publication.</div>
 
 <nav class="toc">
   <a href="#start">Getting started</a>
@@ -93,14 +93,14 @@
 <ul>
   <li>first row, <b>Plots</b>: <b>Select</b> (move and reshape gates and labels) or <b>Zoom</b>, <b>Add plot</b>, and how many events each 2-D plot shows;</li>
   <li>first row, <b>Gate edits apply to</b>: All samples or This sample, with <b>↺ Use global gate</b> next to it for a gate adjusted for some samples;</li>
-  <li>second row, <b>Gate</b>: the gate tools for 2-D plots (Rectangle, Polygon, Ellipse, Quadrant) and for histograms (Range, Split), <b>Delete</b> for the selected gate, and the <b>Quadrant</b> style (Standard, Spider, Offset) when a quadrant is selected.</li>
+  <li>second row, <b>Gate</b>: the gate tools for 2-D plots (Rectangle, Polygon, Ellipse, Quadrant) and for histograms (Range, Split), <b>Delete</b> for the selected gate, and the <b>Quadrant</b> style (Standard, Angled, Staggered) when a quadrant is selected.</li>
 </ul>
 <table>
   <tr><th>Tool</th><th>How to draw</th></tr>
   <tr><td>Rectangle <kbd>R</kbd></td><td>Drag a box.</td></tr>
   <tr><td>Polygon <kbd>P</kbd></td><td>Click each corner. Double-click, or click the first point, to close. Right-click cancels.</td></tr>
   <tr><td>Ellipse <kbd>E</kbd></td><td>Drag the bounding box. It becomes an editable polygon.</td></tr>
-  <tr><td>Quadrant <kbd>Q</kbd></td><td>Click the centre. Four linked gates are created. In Gating plots they are labelled <b>Q1</b> (upper left), <b>Q2</b> (upper right), <b>Q3</b> (lower right) and <b>Q4</b> (lower left) with their %, so the numbers stay readable. The gate tree shows the full names, e.g. “Q1 · CD4- CD8+”, and Statistics uses the full names. While the tool is on, dashed lines follow the cursor to show where the quadrant will go. Select a quadrant to choose its style in the toolbar: <b>✚ Standard</b> (a straight cross), <b>✳ Spider</b> (drag the round handle on each arm to turn it to its own angle, for tilted or diagonal populations) or <b>⌗ Offset</b> (drag the round handle on each arm to slide it on its own, so the upper and lower halves, or the left and right halves, can have different cut-offs). The four quadrants always cover every event exactly once. Dragging the centre moves the whole quadrant.</td></tr>
+  <tr><td>Quadrant <kbd>Q</kbd></td><td>Click the centre. Four linked gates are created. In Gating plots they are labelled <b>Q1</b> (upper left), <b>Q2</b> (upper right), <b>Q3</b> (lower right) and <b>Q4</b> (lower left) with their %, so the numbers stay readable. The gate tree shows the full names, e.g. “Q1 · CD4- CD8+”, and Statistics uses the full names. While the tool is on, dashed lines follow the cursor to show where the quadrant will go. Select a quadrant to choose its style in the toolbar: <b>✚ Standard</b> (a straight cross), <b>✳ Angled</b> (drag the round handle on each arm to turn it to its own angle, for tilted or diagonal populations) or <b>⌗ Staggered</b> (drag the round handle on each arm to slide it on its own, so the upper and lower halves, or the left and right halves, can have different cut-offs). The four quadrants always cover every event exactly once. Dragging the centre moves the whole quadrant.</td></tr>
   <tr><td>Range <kbd>I</kbd></td><td>On a histogram, drag across the range.</td></tr>
   <tr><td>✨ Auto <kbd>A</kbd></td><td>Click inside a population (a cluster of events) on a 2-D plot: a polygon gate is drawn around it, following the density of the events and stopping where the population meets a neighbouring one. While the tool is on, the outline follows the cursor so you see what you will get. <b>Shift</b>-click makes a tighter gate around the core. The result is an ordinary polygon: check it and drag its corners if needed. Events piled up on the axes (off scale) are not used to find populations.</td></tr>
   <tr><td>Split <kbd>S</kbd></td><td>On a histogram, click where to divide it. Two linked gates are made: left (e.g. CD3-) and right (CD3+). They always add up to the parent. Drag the line to move both; click one side to select it.</td></tr>
@@ -216,8 +216,10 @@
   <li><b>Geo. Mean (values &gt; 0)</b> uses only the events above 0, because a geometric mean is not defined for zero or negative values. After compensation many events can be negative, so this value can be higher than the median: prefer the median for compensated fluorescence.</li>
   <li>Events with a missing value (NaN) in a channel are left out of that channel's statistics and are in no gate.</li>
 </ul>
+<h3>Checking the calculations with your own files</h3>
+<p>A script compares how Thistle Flow reads and compensates your FCS files with independent open-source software (flowio and flowutils) and prints OK or CHECK for each file. Your files are only read on your own computer. The step-by-step guide is in the code repository: <a href="https://github.com/actinomycetes/thistle-flow/blob/main/tools/validate/README.md" target="_blank" rel="noopener">tools/validate/README.md</a>.</p>
 <h3>How gates treat off-scale events</h3>
-<p>Events beyond the ends of an axis are drawn piled up on that axis (and in the first or last bar of a histogram). Gates treat them the same way: an event far below the axis counts as lying just below it. So when you drag a gate edge onto an axis, the gate includes the whole pile you see there, and the four parts of a quadrant (standard, spider or offset) and the two sides of a split always add up to the parent. An event exactly on a gate edge counts as inside when it is on the lower or left edge.</p>
+<p>Events beyond the ends of an axis are drawn piled up on that axis (and in the first or last bar of a histogram). Gates treat them the same way: an event far below the axis counts as lying just below it. So when you drag a gate edge onto an axis, the gate includes the whole pile you see there, and the four parts of a quadrant (standard, angled or staggered) and the two sides of a split always add up to the parent. An event exactly on a gate edge counts as inside when it is on the lower or left edge.</p>
 
 <h2 id="props">Properties (acquisition info)</h2>
 <p>The <b>Properties</b> tab, also opened from the ⓘ button next to a sample, shows:</p>
@@ -267,7 +269,7 @@
   <tr><td><kbd>F1</kbd></td><td>This help</td></tr>
 </table>
 
-<h2 id="limits">Known limitations of v0.15.1 (beta)</h2>
+<h2 id="limits">Known limitations of v0.15.2 (beta)</h2>
 <ul>
   <li>Time is shown in the instrument's units (not converted to seconds with <code>$TIMESTEP</code>).</li>
   <li>FCS files with ASCII data, 24-bit or non-byte-aligned integer data cannot be read. An FCS 3.0 <code>$COMP</code> matrix without channel names is not applied (you are told when a file has one).</li>
@@ -279,6 +281,7 @@
 <p>All releases are beta (0.x).</p>
 <table>
   <tr><th>Version</th><th>Name</th><th>Changes</th></tr>
+  <tr><td>0.15.2 (13 Nov 2026)</td><td>Thistle Flow</td><td>Quadrant styles renamed <b>✳ Angled</b> (was Spider) and <b>⌗ Staggered</b> (was Offset); workspaces saved earlier open unchanged. <code>tools/validate/run.sh</code> can check your own FCS files and prints OK or CHECK for each file</td></tr>
   <tr><td>0.15.1 (13 Nov 2026)</td><td>Thistle Flow</td><td>Calculation review before 1.0, checked against independent software (flowio, flowutils, numpy). Fixes: events beyond an axis now count in a gate whose edge was dragged onto that axis, as drawn; spider and offset quadrants include events far off scale (all quadrants add up to the parent); events exactly on a gate edge are counted consistently on biexponential and arcsinh axes; log axes keep values below their minimum in order; missing (NaN) values are left out of statistics and gates; a spillover matrix that cannot be inverted is refused or switches compensation off with a message (it was silently ignored); matrices written in percent are read correctly; a damaged <code>$SPILLOVER</code> falls back to <code>SPILL</code>; files whose header and TEXT data offsets disagree, or that hold fewer events than <code>$TOT</code>, are read correctly with a note; channels with <code>$PnR</code> 1 are no longer read as 0; exported FCS files carry the right range for log-amplified channels; histograms show off-scale events in their end bars; dragging a quadrant by an arm no longer jumps its centre to the cursor; spider arms stop at the nearer neighbour; out-of-range scale settings are refused with the reason; the biexponential (Logicle) scale code was rewritten from its published definition</td></tr>
   <tr><td>0.15.0 (13 Nov 2026)</td><td>Thistle Flow</td><td>Compensation: <b>Overlay uncompensated</b> draws the uncompensated events under the compensated ones in the preview plots; <b>⟲ Matrix from file</b> restores the matrix stored in the FCS file; matrix values are shaded as a heat map; the preview plots fit the window width; the empty space next to Delete in the Gating toolbar is gone (the Quadrant style switch appears only when a quadrant is selected)</td></tr>
   <tr><td>0.14.1 (12 Nov 2026)</td><td>Thistle Flow</td><td>Selecting a quadrant no longer makes the Gating toolbar wrap onto another line and move the plots (the Quadrant style switch keeps its place when hidden)</td></tr>

@@ -1,36 +1,53 @@
-import json, sys, os, glob, numpy as np, flowio
-out = sys.argv[1]
-for meta_f in sorted(f for f in glob.glob(out + '/*.json') if not f.endswith('.comp.json')):
-    m = json.load(open(meta_f)); f = m['file']; name = os.path.basename(f)
+"""Compare the event values Thistle Flow reads (dump_fcs.mjs) with an independent reading.
+
+Reference: flowio reads the raw values from the file; they are then decoded by the FCS standard's rules
+(integer bit mask from $PnR, log amplification $PnE, gain $PnG for integer data only, as FCS 3.2 says).
+flowio's own preprocessing is also shown: it differs on purpose for Time ($TIMESTEP, seconds) and for
+$PnG on floating-point data.
+"""
+import json, sys, os, glob, warnings
+import numpy as np, flowio
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from fcsref import standard_decode
+
+warnings.filterwarnings('ignore')
+TOL = 1e-6   # relative; float32 storage gives ~6e-8
+
+
+def rel(a, b):
+    return float(np.max(np.abs(a - b) / np.maximum(1.0, np.abs(b)))) if len(b) else 0.0
+
+
+ok = check = 0
+for mf in sorted(f for f in glob.glob(sys.argv[1] + '/*.json') if not f.endswith('.comp.json')):
+    m = json.load(open(mf)); name = os.path.basename(m['file'])
     if 'error' in m:
-        print(f'{name}: TF ERROR {m["error"]}'); continue
-    tf = np.fromfile(meta_f[:-5] + '.bin', dtype=np.float64).reshape(m['events'], len(m['names']))
+        print(f'CHECK  {name}: Thistle Flow could not read it: {m["error"]}'); check += 1; continue
     try:
-        fd = flowio.FlowData(f, ignore_offset_discrepancy=True)
+        fd = flowio.FlowData(m['file'], ignore_offset_discrepancy=True, ignore_offset_error=True)
     except Exception as e:
-        print(f'{name}: flowio error {e}'); continue
-    try: ref = fd.as_array(preprocess=True)
-    except Exception:
-        # flowio cannot preprocess (e.g. $TIMESTEP is not a number): decode its raw values per the FCS
-        # standard instead ($PnR bit mask, $PnE log amplification, $PnG gain for integer data)
-        t = fd.text; ref = fd.as_array(preprocess=False).astype(float)
-        for i in range(ref.shape[1]):
-            f1, f2 = [float(v) for v in t.get(f'p{i+1}e', '0,0').split(',')]
-            r = float(t[f'p{i+1}r']); g = float(t.get(f'p{i+1}g', '1') or 1) or 1
-            if t.get('datatype', 'F').upper() == 'I':
-                v = np.bitwise_and(ref[:, i].astype(np.int64), 2 ** int(np.ceil(np.log2(r))) - 1).astype(float) if r > 1 else ref[:, i]
-                ref[:, i] = (f2 if f2 > 0 else 1) * 10 ** (f1 * v / r) if f1 > 0 else v / g
-    raw = fd.as_array(preprocess=False)
-    ver = fd.header['version']
-    line = f'{name} (FCS{ver}, {fd.event_count} ev, {fd.channel_count} ch): TF {m["events"]} ev'
+        try:
+            fd = flowio.read_multiple_data_sets(m['file'], ignore_offset_discrepancy=True, ignore_offset_error=True)[0]
+        except Exception as e2:
+            print(f'  ?    {name}: flowio could not read it ({e2}); Thistle Flow read {m["events"]} events'); continue
+    tf = np.fromfile(mf[:-5] + '.bin', dtype=np.float64).reshape(m['events'], len(m['names']))
+    ref = standard_decode(fd)
     if ref.shape != tf.shape:
-        print(line, 'SHAPE', ref.shape, tf.shape); continue
-    worst = []
-    for j, n in enumerate(m['names']):
-        a, b = tf[:, j], ref[:, j]
-        rel = np.max(np.abs(a - b) / np.maximum(1e-9, np.abs(b))) if len(b) else 0
-        # time is scaled by $TIMESTEP in flowio preprocessing; TF keeps raw time
-        rel_raw = np.max(np.abs(a - raw[:, j]) / np.maximum(1e-9, np.abs(raw[:, j]))) if len(b) else 0
-        worst.append((min(rel, rel_raw), n, rel, rel_raw))
-    worst.sort(reverse=True)
-    print(line, '| worst rel. diff vs flowio (preprocessed / raw):', ', '.join(f'{n} {r:.2e}/{rr:.2e}' for _, n, r, rr in worst[:3]))
+        print(f'CHECK  {name}: {tf.shape[0]} events × {tf.shape[1]} channels in Thistle Flow, {ref.shape[0]} × {ref.shape[1]} in flowio'); check += 1; continue
+    worst = max(((rel(tf[:, j], ref[:, j]), n) for j, n in enumerate(m['names'])), default=(0, ''))
+    notes = list(m.get('warnings') or [])
+    try:
+        pre = fd.as_array(preprocess=True)
+        diff = [n for j, n in enumerate(m['names']) if rel(tf[:, j], pre[:, j]) > TOL]
+        if diff:
+            notes.append('differs from flowio preprocessing only in ' + ', '.join(diff[:4]) + (' …' if len(diff) > 4 else '')
+                         + ' (Time units / gain on float data; see README)')
+    except Exception:
+        pass
+    verdict = 'OK   ' if worst[0] <= TOL else 'CHECK'
+    ok += worst[0] <= TOL; check += worst[0] > TOL
+    print(f'{verdict}  {name} (FCS{fd.header["version"]}, {tf.shape[0]:,} events, {tf.shape[1]} channels): '
+          f'largest difference {worst[0]:.1e}' + (f' in {worst[1]}' if worst[0] > TOL else ''))
+    for n in notes:
+        print(f'         note: {n}')
+print(f'\n{ok} file(s) OK, {check} to check' + ('' if not check else ' (send the CHECK lines to the maintainer)'))
