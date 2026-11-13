@@ -781,7 +781,7 @@ function updateGateButtons() {
   const qs = $('#quadStyle');
   if (qs) {
     const s = ws.activeSample(), eff = g && g.type === 'quad' ? gateFor(g, s) : null;
-    qs.style.visibility = eff ? 'visible' : 'hidden'; // keeps its place, so the toolbar never reflows and moves the plots
+    qs.hidden = !eff;
     if (eff) qs.querySelectorAll('button').forEach(x => x.classList.toggle('primary', x.dataset.qmode === quadMode(eff)));
   }
   b.title = n ? `“${g.name}” is adjusted for ${n} sample(s): ${ws.samples.filter(s => isCustom(g, s)).map(s => s.name).join(', ')}` : 'The selected gate is the same for all samples';
@@ -1394,10 +1394,19 @@ function renderComp(root) {
     const changed = () => m.some((r, i) => r.some((v, j) => v !== s.spill.matrix[i][j]));
     const refreshStatus = () => { status.textContent = changed() ? '● Edited: not applied yet' : ''; };
     const nz = (i, j) => (i !== j && m[i][j] !== 0 ? 'nz' : '');
+    // heat map: yellow to orange for larger spillover values, blue for negative ones
+    const heat = (inp, i, j) => {
+      const v = m[i][j];
+      if (i === j || !v) { inp.style.background = ''; inp.style.color = ''; return; }
+      const t = Math.min(1, Math.sqrt(Math.abs(v) / 0.6));
+      inp.style.background = v < 0 ? `rgba(59,130,246,${0.2 + 0.6 * t})` : `hsla(${48 - 24 * t}, 95%, 55%, ${0.18 + 0.72 * t})`;
+      inp.style.color = t > 0.45 ? '#111827' : '';
+    };
     const setVal = (i, j, v, inp) => {
       m[i][j] = Math.round(v * 1e6) / 1e6;
       if (inp) { inp.value = +m[i][j].toFixed(5); }
       inputs[i][j].className = nz(i, j) + (st.sel && st.sel[0] === i && st.sel[1] === j ? ' sel' : '');
+      heat(inputs[i][j], i, j);
       refreshStatus(); preview?.update();
     };
     const pick = (i, j, { focusInput = false } = {}) => {
@@ -1419,11 +1428,14 @@ function renderComp(root) {
         const step = (e.shiftKey ? 0.01 : e.altKey ? 0.0001 : 0.001) * (e.key === 'ArrowUp' ? 1 : -1);
         setVal(i, j, m[i][j] + step, inp);
       });
+      heat(inp, i, j);
       return inp;
     }));
     const matrixTable = h('div', { style: 'overflow:auto;max-height:42vh' }, h('table', { class: 'matrix' },
       h('tr', {}, h('th', { title: 'Rows: fluorochrome (source). Columns: detector.' }, 'from ↓  into →'), names.map(n => h('th', {}, ws.channelLabel(n)))),
       names.map((n, i) => h('tr', {}, h('th', {}, ws.channelLabel(n)), inputs[i].map(inp => h('td', {}, inp))))));
+    const overlayBox = h('input', { type: 'checkbox', id: 'compOverlay', checked: !!st.overlay, disabled: st.view === 'raw',
+      onchange: e => { st.overlay = e.target.checked; preview.overlay = st.overlay; preview.update(); } });
     const opts = h('div', { class: 'row comp-opts' },
       h('label', {}, 'Preview'),
       h('select', { title: 'Population whose events are previewed', onchange: e => { st.pop = e.target.value || null; preview.pop = st.pop; preview.prepare(); preview.update(); } }, popOptions(st.pop)),
@@ -1433,7 +1445,10 @@ function renderComp(root) {
         ...[['edited', 'Edited matrix'], ['raw', 'Uncompensated']].map(([v, l]) => h('button', { class: 'btn small' + (st.view === v ? ' primary' : ''), 'data-view': v, onclick: e => {
           st.view = v; preview.view = v; preview.update();
           e.target.parentNode.querySelectorAll('button').forEach(b => b.classList.toggle('primary', b.dataset.view === v));
-        } }, l))));
+          overlayBox.disabled = v === 'raw';
+        } }, l))),
+      h('label', { title: 'Draw the uncompensated events (grey) under the compensated ones (cyan) to see what the matrix changes' },
+        overlayBox, ' Overlay uncompensated'));
     const actions = h('div', { class: 'row' },
       h('button', { class: 'btn primary', onclick: () => { s.setSpill({ names, matrix: m.map(r => [...r]) }); delete st.edits[s.id]; afterDataChange(); toast('Matrix applied'); } }, 'Apply to this sample'),
       h('button', { class: 'btn', onclick: () => {
@@ -1442,9 +1457,21 @@ function renderComp(root) {
         for (const o of ws.samples) if (names.every(c => o.hasChannel(c))) { o.setSpill({ names: [...names], matrix: mat.map(r => [...r]) }); o.setCompEnabled(true); delete st.edits[o.id]; n++; }
         afterDataChange(); toast(`Matrix applied to ${n} sample(s)`);
       } }, 'Apply to all samples'),
-      h('button', { class: 'btn', title: 'Undo the edits not yet applied', onclick: () => {
+      h('button', { class: 'btn', title: 'Undo the edits not yet applied (back to the matrix in use)', onclick: () => {
         m.forEach((r, i) => r.forEach((_, j) => setVal(i, j, s.spill.matrix[i][j], inputs[i][j])));
       } }, '↺ Reset edits'),
+      h('button', { class: 'btn', id: 'btnCompFile', disabled: !s.spillFile,
+        title: s.spillFile ? 'Put back the matrix stored in this FCS file (the file itself is never changed); click Apply to use it' : 'This file has no stored matrix',
+        onclick: () => {
+          const f = s.spillFile;
+          if (f.names.length === names.length && f.names.every((n, i) => n === names[i])) {
+            m.forEach((r, i) => r.forEach((_, j) => setVal(i, j, f.matrix[i][j], inputs[i][j])));
+            toast('Matrix from the FCS file loaded: click Apply to use it');
+          } else { // the matrix in use has other channels (e.g. imported): restore the file's one directly
+            s.setSpill(JSON.parse(JSON.stringify(f))); delete st.edits[s.id]; afterDataChange();
+            toast('Matrix from the FCS file restored (↶ Undo to go back)');
+          }
+        } }, '⟲ Matrix from file'),
       h('button', { class: 'btn', onclick: () => {
         const csv = [['', ...names].join(','), ...names.map((n, i) => [n, ...m[i]].join(','))].join('\n');
         saveFile(`spillover_${safeName(s.name)}_${dateStamp()}.csv`, csv, 'csv');
@@ -1460,7 +1487,7 @@ function renderComp(root) {
       } })), status);
     const left = h('div', { class: 'comp-left' },
       h('div', { class: 'row' }, h('label', {}, 'Compensation'), h('label', {}, h('input', { type: 'checkbox', checked: s.compEnabled, onchange: e => { s.setCompEnabled(e.target.checked); afterDataChange(); } }), ' apply to this sample')),
-      h('p', { class: 'hint' }, 'Spillover fractions: row = fluorochrome (source), column = detector; 0.15 = 15%. The diagonal should be 1. Click a value (or a preview plot) and use ↑/↓ to nudge it: the preview updates as you type, and nothing changes in the samples until you apply.'),
+      h('p', { class: 'hint' }, 'Spillover fractions: row = fluorochrome (source), column = detector; 0.15 = 15%. The diagonal should be 1. Larger values are shaded yellow to orange, negative ones blue. Click a value (or a preview plot) and use ↑/↓ to nudge it: the preview updates as you type, and nothing changes in the samples until you apply. ⟲ Matrix from file puts back the matrix stored in the FCS file (files are never changed).'),
       matrixTable, actions);
     body.append(h('div', { class: 'comp-cols' }, left, h('div', { class: 'comp-right' }, opts)));
     if (missing.length) { body.querySelector('.comp-right').append(h('p', { class: 'hint' }, 'Preview needs every matrix channel in the file.')); return; }
@@ -1470,6 +1497,7 @@ function renderComp(root) {
       h('div', { class: 'hint-box' }, 'Each plot shows the row channel (X) against the column channel (Y), for the matrix value in the same place. Cells positive only for the row dye should lie flat: if they slope up, raise the value; if they bend down below the rest, lower it.'),
       preview.el);
     left.append(preview.focusEl);
+    preview.fit(body.querySelector('.comp-right').clientWidth);
     preview.updateNow();
     const first = st.sel || (names.length > 1 ? [0, 1] : null);
     if (first) pick(...first);

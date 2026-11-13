@@ -978,8 +978,7 @@ test('gate previews follow the cursor; double-click resets zoom; spider and offs
     for (let y = 20; y < pv.h - 40; y += 2) for (let x = 60; x < pv.w - 10; x += 2) { const h = pv.hitTest(x, y); if (h?.mode === 'arm' && h.arm === arm) return [x, y]; }
     return null;
   }, [view(2), arm]);
-  b = await box(2); // the toolbar must not have moved the plot, but measure again to be safe
-  const toolbarH = await page.locator('#tools').evaluate(e => e.offsetHeight);
+  b = await box(2); // the style switch can make the toolbar wrap on narrow windows: measure again
   let hnd = await findArm('right');
   assert.ok(hnd, 'right-arm handle found');
   await page.mouse.move(b.x + hnd[0], b.y + hnd[1]); await page.mouse.down();
@@ -1013,7 +1012,6 @@ test('gate previews follow the cursor; double-click resets zoom; spider and offs
   await page.click('.plot-card >> nth=0'); // another gate selected / none: style switch hidden
   await ev(() => window.thistleFlow.selectGate(null));
   assert.equal(await page.isVisible('#quadStyle'), false);
-  assert.equal(await page.locator('#tools').evaluate(e => e.offsetHeight), toolbarH, 'toolbar height unchanged when the quadrant style hides');
   assert.deepEqual(errors, []);
   await page.close();
 });
@@ -1093,12 +1091,28 @@ test('Layout gating strategy for one sample; compensation editor with live previ
   await page.waitForTimeout(100);
   await page.screenshot({ path: OUT + '/g-comp-raw.png' });
   await page.click('#compView [data-view=edited]');
+  // overlay: uncompensated events under the compensated ones, in the grid and the large plot
+  const pic1 = await pic();
+  await page.check('#compOverlay');
+  await page.waitForTimeout(150);
+  assert.notEqual(await pic(), pic1, 'overlay redraws the preview');
+  await page.screenshot({ path: OUT + '/g-comp-overlay.png' });
+  await page.uncheck('#compOverlay');
+  // heat map: larger values are shaded
+  assert.notEqual(await page.locator('.matrix input[data-i="0"][data-j="1"]').evaluate(e => e.style.background), '');
   await page.click('button:has-text("↺ Reset edits")');
   assert.equal(+(await page.inputValue('.matrix input[data-i="0"][data-j="1"]')), +before.toFixed(5));
   await page.locator('.matrix input[data-i="0"][data-j="1"]').fill(String(before - 0.05));
   await page.click('button:has-text("Apply to this sample")');
   assert.ok(Math.abs(await ev(() => window.thistleFlow.ws.activeSample().spill.matrix[0][1]) - (before - 0.05)) < 1e-9, 'applied');
   assert.equal(await page.textContent('.comp-status'), '');
+  // the matrix stored in the FCS file can always be put back (the file is never changed)
+  const fileVal = await ev(() => window.thistleFlow.ws.activeSample().spillFile.matrix[0][1]);
+  assert.ok(Math.abs(fileVal - before) < 1e-12, 'the file matrix is unchanged by applying');
+  await page.click('#btnCompFile');
+  assert.equal(+(await page.inputValue('.matrix input[data-i="0"][data-j="1"]')), +fileVal.toFixed(5));
+  assert.match(await page.textContent('.comp-status'), /not applied/);
+  await page.click('button:has-text("↺ Reset edits")');
   // applying is undoable in the Compensation tab
   await page.waitForTimeout(100);
   await page.click('#btnUndo');

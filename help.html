@@ -9,7 +9,7 @@
   catch { document.documentElement.dataset.theme = 'dark'; }
 </script>
 <link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2024%2026%22%3E%3Cg%20stroke%3D%22%23a855f7%22%20stroke-width%3D%221.6%22%20stroke-linecap%3D%22round%22%3E%3Cpath%20d%3D%22M12%2010V2%22%2F%3E%3Cpath%20d%3D%22M12%2010L7%203%22%2F%3E%3Cpath%20d%3D%22M12%2010L17%203%22%2F%3E%3Cpath%20d%3D%22M12%2010L4.5%206%22%2F%3E%3Cpath%20d%3D%22M12%2010L19.5%206%22%2F%3E%3Cpath%20d%3D%22M12%2010L9.5%202.3%22%2F%3E%3Cpath%20d%3D%22M12%2010L14.5%202.3%22%2F%3E%3C%2Fg%3E%3Cellipse%20cx%3D%2212%22%20cy%3D%2213.5%22%20rx%3D%225%22%20ry%3D%224.2%22%20fill%3D%22%2322c55e%22%2F%3E%3Cg%20fill%3D%22%2315803d%22%3E%3Ccircle%20cx%3D%229.7%22%20cy%3D%2212.7%22%20r%3D%22.95%22%2F%3E%3Ccircle%20cx%3D%2212.3%22%20cy%3D%2211.9%22%20r%3D%22.95%22%2F%3E%3Ccircle%20cx%3D%2214.7%22%20cy%3D%2213.3%22%20r%3D%22.95%22%2F%3E%3Ccircle%20cx%3D%2210.8%22%20cy%3D%2215.3%22%20r%3D%22.95%22%2F%3E%3Ccircle%20cx%3D%2213.5%22%20cy%3D%2215.5%22%20r%3D%22.95%22%2F%3E%3C%2Fg%3E%3Cpath%20d%3D%22M12%2017.5V25%22%20stroke%3D%22%2316a34a%22%20stroke-width%3D%221.8%22%20stroke-linecap%3D%22round%22%2F%3E%3Cpath%20d%3D%22M12%2021.5c-2.5-.5-4.5-2-5.5-4M12%2021c2.5-.5%204.3-1.8%205.3-3.8%22%20stroke%3D%22%2316a34a%22%20stroke-width%3D%221.4%22%20fill%3D%22none%22%20stroke-linecap%3D%22round%22%2F%3E%3C%2Fsvg%3E">
-<title>Thistle Flow v0.14.1 (Beta) — Help</title>
+<title>Thistle Flow v0.15.0 (Beta) — Help</title>
 <style>
   /* Thistle Plot palette: dark by default, light when the system asks for it */
   :root { --bg: #0f172a; --surf: #1e293b; --surf2: #263347; --text: #e2e8f0; --muted: #94a3b8; --border: #334155; --accent: #3b82f6; --code: #263347; --badge-bg: #1d3461; --note-bg: #1a2744; --note-bd: #2a4080; --note-tx: #93c5fd; color-scheme: dark; }
@@ -44,13 +44,13 @@
   <svg width="24" height="26" viewBox="0 0 24 26" aria-hidden="true" style="flex:none"><g stroke="#a855f7" stroke-width="1.6" stroke-linecap="round"><path d="M12 10V2"/><path d="M12 10L7 3"/><path d="M12 10L17 3"/><path d="M12 10L4.5 6"/><path d="M12 10L19.5 6"/><path d="M12 10L9.5 2.3"/><path d="M12 10L14.5 2.3"/></g><ellipse cx="12" cy="13.5" rx="5" ry="4.2" fill="#22c55e"/><g fill="#15803d"><circle cx="9.7" cy="12.7" r=".95"/><circle cx="12.3" cy="11.9" r=".95"/><circle cx="14.7" cy="13.3" r=".95"/><circle cx="10.8" cy="15.3" r=".95"/><circle cx="13.5" cy="15.5" r=".95"/></g><path d="M12 17.5V25" stroke="#16a34a" stroke-width="1.8" stroke-linecap="round"/><path d="M12 21.5c-2.5-.5-4.5-2-5.5-4M12 21c2.5-.5 4.3-1.8 5.3-3.8" stroke="#16a34a" stroke-width="1.4" fill="none" stroke-linecap="round"/></svg>
   <span class="title">Thistle Flow</span>
   <span class="badge beta">BETA</span>
-  <span class="badge">v0.14.1</span>
+  <span class="badge">v0.15.0</span>
   <a class="app" id="backToApp" href="./">← Back to the app</a>
 </header>
 <main>
 <h1>Help and manual</h1>
 <p class="muted">Lightweight flow cytometry analysis in your browser; your data never leaves your computer. Sister app of <a href="https://actinomycetes.github.io/thistle-plot/">Thistle Plot</a> (statistics and figures). <a href="https://github.com/actinomycetes/thistle-flow">Source on GitHub</a>.</p>
-<div class="note">Thistle Flow is a <b>beta (v0.14.1)</b>. Check important results against an established package before you rely on them in a publication.</div>
+<div class="note">Thistle Flow is a <b>beta (v0.15.0)</b>. Check important results against an established package before you rely on them in a publication.</div>
 
 <nav class="toc">
   <a href="#start">Getting started</a>
@@ -170,7 +170,9 @@
 <p>Next to the matrix, the Compensation window shows a grid of small <b>preview plots</b>, one for each value in the matrix and in the same place: the plot in row <i>A</i> and column <i>B</i> shows channel A (X) against channel B (Y), the pair that the value “A into B” corrects. A larger plot with axes shows the selected value. Click a value or a plot to select it, then type a new value or nudge it with <kbd>↑</kbd> / <kbd>↓</kbd> (0.001; with <kbd>Shift</kbd> 0.01, with <kbd>Alt</kbd> 0.0001). The plots are redrawn as you edit, but <b>nothing changes in your samples until you click Apply</b> (“● Edited: not applied yet” reminds you); <b>↺ Reset edits</b> goes back to the applied matrix.</p>
 <ul>
   <li>Cells stained only with dye A should lie <b>flat</b> in channel B, level with the unstained cells. If they slope <b>up</b>, too little is subtracted: raise the value. If they bend <b>down</b> below the unstained cells, too much is subtracted: lower it. The dashed lines mark zero.</li>
-  <li><b>Preview</b> chooses the population shown (for example Singlets, or a single-stained control) and the number of events; <b>Uncompensated</b> shows the raw data for comparison.</li>
+  <li><b>Preview</b> chooses the population shown (for example Singlets, or a single-stained control) and the number of events; <b>Uncompensated</b> shows the raw data instead. Tick <b>Overlay uncompensated</b> to draw the uncompensated events (grey) underneath the compensated ones (cyan) in every preview plot, so you can see what the matrix moves.</li>
+  <li>Matrix values are shaded like a heat map: larger spillover values yellow to orange, negative values blue, to spot the biggest corrections quickly.</li>
+  <li><b>↺ Reset edits</b> goes back to the matrix in use. <b>⟲ Matrix from file</b> puts back the matrix stored in the FCS file when it was acquired (Thistle Flow never changes your FCS files, so this is always available); click Apply to use it.</li>
   <li>Gates are not redrawn in the preview; after applying, check the gated populations in Gating.</li>
 </ul>
 
@@ -258,7 +260,7 @@
   <tr><td><kbd>F1</kbd></td><td>This help</td></tr>
 </table>
 
-<h2 id="limits">Known limitations of v0.14.1 (beta)</h2>
+<h2 id="limits">Known limitations of v0.15.0 (beta)</h2>
 <ul>
   <li>Gates are shared by all samples in a workspace. There are no per-sample gate adjustments yet.</li>
   <li>FlowJo <code>.wsp</code> and Gating-ML files cannot be imported. There are no derived parameters and no tSNE/UMAP.</li>
@@ -269,6 +271,7 @@
 <p>All releases are beta (0.x).</p>
 <table>
   <tr><th>Version</th><th>Name</th><th>Changes</th></tr>
+  <tr><td>0.15.0 (13 Nov 2026)</td><td>Thistle Flow</td><td>Compensation: <b>Overlay uncompensated</b> draws the uncompensated events under the compensated ones in the preview plots; <b>⟲ Matrix from file</b> restores the matrix stored in the FCS file; matrix values are shaded as a heat map; the preview plots fit the window width; the empty space next to Delete in the Gating toolbar is gone (the Quadrant style switch appears only when a quadrant is selected)</td></tr>
   <tr><td>0.14.1 (12 Nov 2026)</td><td>Thistle Flow</td><td>Selecting a quadrant no longer makes the Gating toolbar wrap onto another line and move the plots (the Quadrant style switch keeps its place when hidden)</td></tr>
   <tr><td>0.14.0 (12 Nov 2026)</td><td>Thistle Flow</td><td><b>✨ Auto</b> gate tool: click a population to get a polygon gate around it (outline preview under the cursor, Shift for a tighter gate); <b>Compensation</b> is now a tab next to Gating, keeping unapplied edits and with its own undo; <b>Axis scales</b> moved to the Plots group of the Gating toolbar; header buttons renamed <b>Open FCS file(s)</b>, <b>Save workspace</b> and <b>Load workspace</b>; FCS 2 files show a warning about their lower resolution and dynamic range; plots show exactly the number of events set in “Show”, and plot titles shorten the name rather than the counts (a cut-off “showing 4,93…” looked like 493); fixed the compensation browser test in Firefox and Safari</td></tr>
   <tr><td>0.13.0 (12 Nov 2026)</td><td>Thistle Flow</td><td>Layout <b>＋ Gating strategy</b>: for one sample, a row of plots from All Events through each gate (e.g. cells, singlets, a marker) down to a chosen population, with an optional last plot on other channels; the Compensation window has <b>preview plots</b> for every matrix value, redrawn live while you type or nudge values with ↑/↓, a larger plot for the selected value, an uncompensated view and ↺ Reset edits, before anything is applied</td></tr>

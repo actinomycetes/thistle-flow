@@ -61,16 +61,41 @@ function drawMini(canvas, ux, uy, size, theme, zero, selected) {
   ctx.strokeRect(selected ? 1.5 : 0.5, selected ? 1.5 : 0.5, size - (selected ? 3 : 1), size - (selected ? 3 : 1));
 }
 
+// Two-layer dot plot: uncompensated events underneath, compensated on top (overlay mode).
+export const OVERLAY_COLORS = { raw: { dark: '#94a3b8', light: '#111827' }, comp: { dark: '#22d3ee', light: '#06b6d4' } };
+function drawMiniOverlay(canvas, layers, size, theme, zero, selected) {
+  const dpr = window.devicePixelRatio || 1;
+  canvas.width = Math.round(size * dpr); canvas.height = Math.round(size * dpr);
+  canvas.style.width = size + 'px'; canvas.style.height = size + 'px';
+  const ctx = canvas.getContext('2d');
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.fillStyle = theme.bg; ctx.fillRect(0, 0, size, size);
+  const c = v => (v < 0 ? 0 : v > 1 ? 1 : v);
+  for (const { ux, uy, color, alpha } of layers) {
+    ctx.fillStyle = color; ctx.globalAlpha = alpha;
+    for (let k = 0; k < ux.length; k++) ctx.fillRect(c(ux[k]) * (size - 1), (1 - c(uy[k])) * (size - 1), 1, 1);
+  }
+  ctx.globalAlpha = 1;
+  ctx.strokeStyle = theme.muted; ctx.lineWidth = 1; ctx.setLineDash([3, 3]);
+  ctx.beginPath();
+  if (zero[0] > 0.01 && zero[0] < 0.99) { ctx.moveTo(zero[0] * size, 0); ctx.lineTo(zero[0] * size, size); }
+  if (zero[1] > 0.01 && zero[1] < 0.99) { ctx.moveTo(0, (1 - zero[1]) * size); ctx.lineTo(size, (1 - zero[1]) * size); }
+  ctx.stroke(); ctx.setLineDash([]);
+  ctx.strokeStyle = selected ? '#3b82f6' : theme.axis; ctx.lineWidth = selected ? 3 : 1;
+  ctx.strokeRect(selected ? 1.5 : 0.5, selected ? 1.5 : 0.5, size - (selected ? 3 : 1), size - (selected ? 3 : 1));
+}
+
 export class CompPreview {
   // opts: { ws, sample, names, matrix (edited live by the caller), pop, maxEvents, view: 'edited'|'raw',
+  //         overlay (uncompensated events drawn under the compensated ones),
   //         theme, onPick(i, j) }
   constructor(opts) {
-    Object.assign(this, { maxEvents: 5000, view: 'edited', sel: null }, opts);
+    Object.assign(this, { maxEvents: 5000, view: 'edited', overlay: false, sel: null }, opts);
     const n = this.names.length;
     this.size = Math.max(54, Math.min(104, Math.floor(600 / Math.max(1, n))));
     this.cells = [];
     const label = nm => this.ws.channelLabel(nm);
-    const grid = h('div', { class: 'comp-grid', style: `grid-template-columns: auto repeat(${n}, ${this.size}px)` });
+    const grid = this.grid = h('div', { class: 'comp-grid', style: `grid-template-columns: auto repeat(${n}, ${this.size}px)` });
     grid.append(h('div', { class: 'comp-corner' }, h('span', {}, 'X: row'), h('span', {}, 'Y: column')));
     this.names.forEach(nm => grid.append(h('div', { class: 'comp-colhead', title: nm }, label(nm))));
     this.names.forEach((ri, i) => {
@@ -90,8 +115,20 @@ export class CompPreview {
     this.prepare();
   }
 
+  // Size the small plots to the width available (call once the grid is on the page)
+  fit(width) {
+    const n = this.names.length, head = 116;
+    const size = Math.max(46, Math.min(104, Math.floor((width - head) / n) - 3));
+    if (size === this.size) return;
+    this.size = size;
+    this.grid.style.gridTemplateColumns = `auto repeat(${n}, ${size}px)`;
+    for (const d of this.grid.querySelectorAll('.comp-diag')) { d.style.width = size + 'px'; d.style.height = size + 'px'; }
+    if (this.u) this.cells.forEach((row, i) => row.forEach((c, j) => this._cell(i, j)));
+  }
+
   // events to show (a subsample of the chosen population); recomputed when sample/population/limit change
   prepare() {
+    this.uRaw = null;
     const pop = this.ws.engine.population(this.sample, this.pop && this.ws.engine.get(this.pop) ? this.pop : null);
     this.idx = subsampleIdx(pop.idx, this.maxEvents);
     this.popCount = pop.count;
@@ -108,23 +145,36 @@ export class CompPreview {
   }
   updateNow() { if (this._raf) { cancelAnimationFrame?.(this._raf); this._raf = null; } this._draw(); }
 
+  get overlaying() { return this.overlay && this.view !== 'raw'; }
+
+  _units(vals) { return vals.map((col, j) => { const t = this.tf[j], u = new Float32Array(col.length); for (let k = 0; k < col.length; k++) u[k] = t.fwd(col[k]); return u; }); }
+
   _draw() {
-    const vals = compensateSubset(this.sample, this.names, this.matrix, this.idx, { raw: this.view === 'raw' });
-    this.u = vals.map((col, j) => { const t = this.tf[j], u = new Float32Array(col.length); for (let k = 0; k < col.length; k++) u[k] = t.fwd(col[k]); return u; });
-    const theme = this.theme || THEMES.dark;
-    this.cells.forEach((row, i) => row.forEach((c, j) => {
-      if (c) drawMini(c, this.u[i], this.u[j], this.size, theme, [this.zero[i], this.zero[j]], !!this.sel && this.sel[0] === i && this.sel[1] === j);
-    }));
+    this.u = this._units(compensateSubset(this.sample, this.names, this.matrix, this.idx, { raw: this.view === 'raw' }));
+    // uncompensated values do not depend on the matrix: computed once per sample/population
+    if (this.overlaying && (!this.uRaw || this._rawIdx !== this.idx)) {
+      this.uRaw = this._units(compensateSubset(this.sample, this.names, this.matrix, this.idx, { raw: true }));
+      this._rawIdx = this.idx;
+    }
+    this.cells.forEach((row, i) => row.forEach((c, j) => this._cell(i, j)));
     this._drawFocus();
+  }
+
+  _cell(i, j) {
+    const c = this.cells[i]?.[j];
+    if (!c || !this.u) return;
+    const theme = this.theme || THEMES.dark, sel = !!this.sel && this.sel[0] === i && this.sel[1] === j;
+    if (!this.overlaying) return drawMini(c, this.u[i], this.u[j], this.size, theme, [this.zero[i], this.zero[j]], sel);
+    const mode = theme.name === 'dark' ? 'dark' : 'light';
+    drawMiniOverlay(c, [
+      { ux: this.uRaw[i], uy: this.uRaw[j], color: OVERLAY_COLORS.raw[mode], alpha: 0.55 },
+      { ux: this.u[i], uy: this.u[j], color: OVERLAY_COLORS.comp[mode], alpha: 0.8 },
+    ], this.size, theme, [this.zero[i], this.zero[j]], sel);
   }
 
   select(i, j) {
     const prev = this.sel; this.sel = [i, j];
-    const theme = this.theme || THEMES.dark;
-    for (const [a, b] of [prev, this.sel].filter(Boolean)) {
-      const c = this.cells[a]?.[b];
-      if (c && this.u) drawMini(c, this.u[a], this.u[b], this.size, theme, [this.zero[a], this.zero[b]], this.sel[0] === a && this.sel[1] === b);
-    }
+    for (const [a, b] of [prev, this.sel].filter(Boolean)) this._cell(a, b);
     this._drawFocus();
   }
 
@@ -141,6 +191,13 @@ export class CompPreview {
       y: { name: this.names[j], label: lab(this.names[j]), cfg: this.cfg[j] },
       series: [{ ux: this.u[i], uy: this.u[j], idx, fullIdx: idx }], gates: [],
     };
+    if (this.overlaying) {
+      const mode = theme.name === 'dark' ? 'dark' : 'light';
+      Object.assign(spec, { kind: 'dot', dotSize: 1.2, labels: { mode: 'inside' }, series: [
+        { ux: this.uRaw[i], uy: this.uRaw[j], idx, color: OVERLAY_COLORS.raw[mode], label: 'Uncompensated' },
+        { ux: this.u[i], uy: this.u[j], idx, color: OVERLAY_COLORS.comp[mode], label: 'Compensated' },
+      ] });
+    }
     const ctx = prepareCanvas(this.focus, spec.w, spec.h);
     renderPlot(ctx, spec);
     const v = this.matrix[i][j];

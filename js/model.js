@@ -37,6 +37,8 @@ export class Sample {
     this.channelNames = ds.params.map(p => p.name);
     // Compensation: matrix as embedded in the file (may be edited by user)
     this.spill = ds.spill ? { names: ds.spill.names.map(n => this.resolveChannel(n)), matrix: ds.spill.matrix.map(r => [...r]) } : null;
+    // the matrix as stored in the file: never changed, so it can always be restored
+    this.spillFile = this.spill ? JSON.parse(JSON.stringify(this.spill)) : null;
     // Sony writes APPLY_COMPENSATION=FALSE when the matrix should not be applied by default
     const applyFlag = String(ds.text.APPLY_COMPENSATION ?? 'TRUE').toUpperCase() !== 'FALSE';
     this.compEnabled = !!this.spill && applyFlag && this.spillMissing().length === 0;
