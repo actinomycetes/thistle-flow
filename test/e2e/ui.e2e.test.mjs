@@ -971,6 +971,7 @@ test('gate previews follow the cursor; double-click resets zoom; spider and offs
   assert.equal(sum(std), total);
   assert.equal(await page.isVisible('#quadStyle'), true, 'style switch shown for a selected quadrant');
   // grabbing an arm far from the centre moves the quadrant by the drag, not to the cursor
+  b = await box(2); // the Quadrant style switch may have wrapped the toolbar and moved the plot
   const quadC = () => page.evaluate(() => { const g = window.thistleFlow.ws.engine.list().find(x => x.type === 'quad'); return [g.cx, g.cy]; });
   const c0 = await quadC();
   const grab = await page.evaluate(v => { const pv = eval(v); const x = pv.L.ux2px(0.35), yc = pv.L.uy2px(0.35);
