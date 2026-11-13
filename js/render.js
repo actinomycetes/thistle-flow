@@ -15,7 +15,7 @@ export const THEMES = {
 export const PLOT_KINDS = [['pseudo', 'Pseudocolor'], ['smooth', 'Density'], ['contour', 'Contour'], ['dot', 'Dot']];
 export const normalizeKind = k => (k === 'density' || !k ? 'pseudo' : k);
 
-// FlowJo-like pseudocolor LUT: blue -> cyan -> green -> yellow -> red
+// Pseudocolour LUT (a common "jet"-style ramp): blue -> cyan -> green -> yellow -> red
 const STOPS = [[0, [0, 0, 200]], [0.25, [0, 170, 255]], [0.5, [0, 210, 60]], [0.75, [255, 230, 0]], [1, [230, 0, 0]]];
 export const LUT = (() => {
   const lut = [];
@@ -220,7 +220,7 @@ function drawSmooth(ctx, L, s) {
     img.data[o] = c[0]; img.data[o + 1] = c[1]; img.data[o + 2] = c[2];
     img.data[o + 3] = Math.round(255 * Math.min(1, t * 4)); // fade out the sparse edge
   }
-  drawRaster(ctx, img, MARGIN.l, MARGIN.t, nx * cell, ny * cell, true);
+  drawRaster(ctx, img, MARGIN.l, MARGIN.t, L.pw, L.ph, true); // stretched to the plot area exactly
 }
 
 // Equal-probability contour levels: each successive line encloses `step` less of the events.
@@ -314,8 +314,11 @@ function drawDots(ctx, L, series, T, size = DEFAULT_DOT) {
 export function histogramCounts(ux, idx, bins, L = null) {
   const h = new Float64Array(bins);
   for (let k = 0; k < idx.length; k++) {
-    const u = L ? L.zx(ux[idx[k]]) : ux[idx[k]];
-    if (!(u >= 0 && u < 1)) continue;
+    let u = L ? L.zx(ux[idx[k]]) : ux[idx[k]];
+    if (u !== u) continue; // NaN
+    // off-scale events pile up in the end bins, as they pile up on the axes of 2-D plots
+    // (when zoomed in, events outside the view are not shown)
+    if (!(u >= 0 && u < 1)) { if (L && L.zoomed) continue; u = u < 0 ? 0 : 1 - 1e-12; }
     h[Math.floor(u * bins)]++;
   }
   return h;

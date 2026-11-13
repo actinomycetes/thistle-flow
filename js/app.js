@@ -1,7 +1,7 @@
 // Thistle Flow application controller.
-import { parseFCS, writeFCS } from './fcs.js';
-import { Sample } from './model.js';
-import { defaultTransformFor } from './transforms.js';
+import { parseFCS, writeFCS, exportRanges } from './fcs.js';
+import { Sample, invertMatrix } from './model.js';
+import { defaultTransformFor, scaleProblem } from './transforms.js';
 import { GATE_COLORS, STAT_DEFS, channelStats, populationStats, pickGeom, isCustom, customSampleKeys, isGrouped, isOneD, gateFor, quadMode } from './gates.js';
 import { PlotView, buildSpec, shortLabel, fmtPct, subsampleIdx, overlayColor, QUAD_NUM, PLOT_SIZES, EVENT_LIMITS } from './plotview.js';
 import { renderPlot, prepareCanvas, SERIES_COLORS, THEMES, PLOT_KINDS, HIST_OFFSETS, DOT_SIZES, DEFAULT_DOT, normalizeKind } from './render.js';
@@ -184,7 +184,8 @@ async function loadBuffers(items) {
 function fcsVersion(s) { const m = /FCS(\d+\.\d+)/.exec(s.version || ''); return m ? +m[1] : NaN; }
 function warnOldFCS(samples) {
   const old = samples.filter(s => fcsVersion(s) < 3);
-  if (!old.length) return;
+  const notes = samples.filter(s => s.warnings?.length);
+  if (!old.length) { if (notes.length) fileNotes(notes); return; }
   const fl = s => s.params.filter(p => !/^(FSC|SSC|FS|SS|BSC|TIME)/i.test(p.name));
   const levels = Math.max(...old.flatMap(s => fl(s).map(p => p.range)).filter(Number.isFinite), 0);
   const logAmp = old.some(s => fl(s).some(p => p.ampE[0] > 0));
@@ -193,8 +194,19 @@ function warnOldFCS(samples) {
     h('p', { style: 'margin-top:0' }, `${old.length === 1 ? 'This file is' : `${old.length} files are`} in the older FCS 2 format:`), list,
     h('p', {}, `FCS 2 files store each channel with far fewer levels${levels ? ` (here up to ${levels.toLocaleString()} channels per parameter)` : ''} than FCS 3.x (usually 262,144 or more, often as floating point)${logAmp ? ', and the fluorescence data were log-amplified by the instrument' : ''}. Expect lower resolution and dynamic range: populations can look banded or stepped, especially near zero, negative values are lost, and compensation and biexponential display are less accurate.`),
     h('p', {}, 'If you can, export the data again from the instrument software as FCS 3.0 or 3.1. The files have been loaded and can be analysed as they are.'),
+    notes.length ? noteList(notes) : '',
     h('div', { class: 'row', style: 'justify-content:flex-end' }, h('button', { class: 'btn primary', onclick: () => closeModal() }, 'OK')));
   openModal('Older FCS format', body);
+}
+// Problems found while reading files (inconsistent offsets, fewer events than $TOT, unusable $COMP…)
+function noteList(samples) {
+  return h('div', {}, h('p', {}, h('b', {}, 'Notes from reading the files:')),
+    h('ul', {}, samples.flatMap(s => s.warnings.map(w => h('li', {}, `${s.name}: ${w}`)))));
+}
+function fileNotes(samples) {
+  openModal('Notes on the loaded files', h('div', { style: 'max-width:560px;line-height:1.45' }, noteList(samples),
+    h('p', {}, 'The files were loaded; check these samples before relying on their results.'),
+    h('div', { class: 'row', style: 'justify-content:flex-end' }, h('button', { class: 'btn primary', onclick: () => closeModal() }, 'OK'))));
 }
 
 async function readFiles(files) {
@@ -405,7 +417,7 @@ function exportPopulation(s, gateId) {
   if (s.spill) extra['$SPILLOVER'] = [s.spill.names.length, ...s.spill.names, ...s.spill.matrix.flat()].join(',');
   const popName = gateId ? ws.engine.fullName(gateId).replace(/[\\/:*?"<>|]+/g, '_') : 'All';
   extra['$FIL'] = `${s.name.replace(/\.fcs$/i, '')}_${popName}.fcs`;
-  const buf = writeFCS({ names: s.channelNames, labels: s.params.map(p => p.label), columns: cols, ranges: s.params.map(p => p.range), extraText: extra });
+  const buf = writeFCS({ names: s.channelNames, labels: s.params.map(p => p.label), columns: cols, ranges: exportRanges(s.params), extraText: extra });
   saveFile(extra['$FIL'], buf, 'fcs');
 }
 
@@ -532,7 +544,13 @@ function axisMenu(p, axis, anchor) {
     const cfg = ch ? { ...ws.getCfg(ch) } : null;
     if (cfg) delete cfg.auto;
     const apply = () => { ws.transforms[ch] = { ...cfg }; ws.engine.invalidate(); renderGating(); renderGateTree(); draw(); };
-    const num = (key, text, step = 'any') => h('label', {}, h('span', {}, text), h('input', { type: 'number', step, value: cfg[key], style: 'width:100px', onchange: e => { const v = parseFloat(e.target.value); if (Number.isFinite(v)) { cfg[key] = v; apply(); } } }));
+    const num = (key, text, step = 'any') => h('label', {}, h('span', {}, text), h('input', { type: 'number', step, value: cfg[key], style: 'width:100px', onchange: e => setNum(key, e.target) }));
+    // a setting that cannot be used is refused (with the reason) instead of being changed silently
+    const setNum = (key, input) => {
+      const next = { ...cfg, [key]: parseFloat(input.value) }, why = scaleProblem(next);
+      if (why) { toast(why, true); input.value = cfg[key]; return; }
+      cfg[key] = next[key]; apply();
+    };
     const setKind = kind => {
       const { range } = ws.channelRange(ch);
       if (kind === cfg.kind) return;
@@ -546,7 +564,7 @@ function axisMenu(p, axis, anchor) {
       cfg ? h('div', { class: 'seg', role: 'group', 'aria-label': 'Scale' }, SCALE_KINDS.map(([k, l]) => h('button', { class: 'btn small' + (cfg.kind === k ? ' primary' : ''), onclick: () => setKind(k) }, l))) : null,
       cfg && (cfg.kind === 'linear' || cfg.kind === 'log') ? [num('min', 'Minimum'), num('max', 'Maximum')] : null,
       cfg && cfg.kind === 'arcsinh' ? [num('cofactor', 'Cofactor'), num('min', 'Minimum'), num('max', 'Maximum')] : null,
-      cfg && cfg.kind === 'logicle' ? h('label', {}, h('span', {}, 'Width (W)'), h('input', { type: 'number', step: 0.05, min: 0, value: cfg.W, style: 'width:70px', onchange: e => { const v = parseFloat(e.target.value); if (Number.isFinite(v)) { cfg.W = v; apply(); } } }),
+      cfg && cfg.kind === 'logicle' ? h('label', {}, h('span', {}, 'Width (W)'), h('input', { type: 'number', step: 0.05, min: 0, value: cfg.W, style: 'width:70px', onchange: e => setNum('W', e.target) }),
         h('button', { class: 'btn small', title: 'Estimate W from the negative events of the active sample', onclick: () => { const W = autoW(ch, cfg); if (W !== null) { cfg.W = W; apply(); } } }, 'Auto')) : null,
       cfg ? h('div', { class: 'hint-box' }, `The scale belongs to ${label}: every plot showing it uses the same scale, so gates select the same events everywhere.`) : null,
       doneButton(),
@@ -563,7 +581,7 @@ function autoW(ch, cfg) {
   if (negs.length < 20) { toast('Too few negative events to estimate W'); return null; }
   negs.sort((a, b) => a - b);
   const r = negs[Math.floor(negs.length * 0.05)];
-  return +Math.max(0, Math.min((cfg.M / 2) - 0.01, (cfg.M - Math.log10(cfg.T / Math.abs(r))) / 2)).toFixed(2);
+  return +Math.max(0, Math.min(Math.min(cfg.M, cfg.M - (cfg.A || 0)) / 2 - 0.01, (cfg.M - Math.log10(cfg.T / Math.abs(r))) / 2)).toFixed(2);
 }
 
 // ---- zoom (view only: gates, percentages and statistics are unaffected) ----
@@ -1382,6 +1400,10 @@ function renderComp(root) {
       return;
     }
     const missing = s.spillMissing();
+    if (s.compError) body.append(h('p', { style: 'color:var(--danger)' }, s.compError));
+    if (s.spillNote) body.append(h('p', { class: 'hint' }, s.spillNote));
+    // a matrix that cannot be inverted cannot be used to compensate: refuse it with the reason
+    const invertible = () => { try { invertMatrix(m); return true; } catch { toast('This matrix cannot be used: it cannot be inverted (two rows are proportional, or a diagonal value is 0).', true); return false; } };
     const names = s.spill.names;
     if (missing.length) {
       body.append(h('p', { style: 'color:var(--danger)' },
@@ -1450,8 +1472,9 @@ function renderComp(root) {
       h('label', { title: 'Draw the uncompensated events (grey) under the compensated ones (cyan) to see what the matrix changes' },
         overlayBox, ' Overlay uncompensated'));
     const actions = h('div', { class: 'row' },
-      h('button', { class: 'btn primary', onclick: () => { s.setSpill({ names, matrix: m.map(r => [...r]) }); delete st.edits[s.id]; afterDataChange(); toast('Matrix applied'); } }, 'Apply to this sample'),
+      h('button', { class: 'btn primary', onclick: () => { if (!invertible()) return; s.setSpill({ names, matrix: m.map(r => [...r]) }); if (s.compError) s.setCompEnabled(true); delete st.edits[s.id]; afterDataChange(); toast('Matrix applied'); } }, 'Apply to this sample'),
       h('button', { class: 'btn', onclick: () => {
+        if (!invertible()) return;
         let n = 0;
         const mat = m.map(r => [...r]);
         for (const o of ws.samples) if (names.every(c => o.hasChannel(c))) { o.setSpill({ names: [...names], matrix: mat.map(r => [...r]) }); o.setCompEnabled(true); delete st.edits[o.id]; n++; }
@@ -1521,7 +1544,11 @@ function openTransforms(initial, axis) {
     delete cfg.auto; // anything applied from this dialog is a user choice
     body.innerHTML = '';
     const apply = () => { ws.transforms[ch] = { ...cfg }; afterTransform(); };
-    const num = (key, label, step = 'any') => h('div', { class: 'row' }, h('label', {}, label), h('input', { type: 'number', step, value: cfg[key], onchange: e => { cfg[key] = parseFloat(e.target.value); apply(); } }));
+    const num = (key, label, step = 'any') => h('div', { class: 'row' }, h('label', {}, label), h('input', { type: 'number', step, value: cfg[key], onchange: e => {
+      const next = { ...cfg, [key]: parseFloat(e.target.value) }, why = scaleProblem(next);
+      if (why) { toast(why, true); e.target.value = cfg[key]; return; }
+      cfg[key] = next[key]; apply();
+    } }));
     body.append(
       axis ? h('p', { class: 'hint', style: 'margin-top:0' }, `Scales are set per channel, so every plot (and gate) using ${ws.channelLabel(ch)} follows this setting.`) : null,
       h('div', { class: 'row' }, h('label', {}, 'Channel'), h('select', { onchange: e => { ch = e.target.value; draw(); } }, channelOptions(ch))),
@@ -1542,7 +1569,7 @@ function openTransforms(initial, axis) {
         if (negs.length < 20) { toast('Too few negative events to estimate W'); return; }
         negs.sort((a, b) => a - b);
         const r = negs[Math.floor(negs.length * 0.05)];
-        cfg.W = +Math.max(0, Math.min((cfg.M / 2) - 0.01, (cfg.M - Math.log10(cfg.T / Math.abs(r))) / 2)).toFixed(2);
+        cfg.W = +Math.max(0, Math.min(Math.min(cfg.M, cfg.M - (cfg.A || 0)) / 2 - 0.01, (cfg.M - Math.log10(cfg.T / Math.abs(r))) / 2)).toFixed(2);
         apply(); draw();
       } }, 'Auto W') : null,
       h('button', { class: 'btn', onclick: () => { for (const c of ws.fluorChannels()) ws.transforms[c] = { ...cfg }; afterTransform(); toast('Applied to all fluorescence channels'); } }, 'Apply to all fluorescence channels'),

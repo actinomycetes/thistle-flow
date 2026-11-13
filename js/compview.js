@@ -150,7 +150,11 @@ export class CompPreview {
   _units(vals) { return vals.map((col, j) => { const t = this.tf[j], u = new Float32Array(col.length); for (let k = 0; k < col.length; k++) u[k] = t.fwd(col[k]); return u; }); }
 
   _draw() {
-    this.u = this._units(compensateSubset(this.sample, this.names, this.matrix, this.idx, { raw: this.view === 'raw' }));
+    try { this.u = this._units(compensateSubset(this.sample, this.names, this.matrix, this.idx, { raw: this.view === 'raw' })); } catch (err) {
+      // e.g. a value typed that makes the matrix singular: keep the last good plots and say why
+      this.focusInfo.textContent = 'This matrix cannot be inverted (two rows are proportional, or a diagonal value is 0), so it cannot be previewed or applied.';
+      return;
+    }
     // uncompensated values do not depend on the matrix: computed once per sample/population
     if (this.overlaying && (!this.uRaw || this._rawIdx !== this.idx)) {
       this.uRaw = this._units(compensateSubset(this.sample, this.names, this.matrix, this.idx, { raw: true }));

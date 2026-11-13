@@ -970,6 +970,20 @@ test('gate previews follow the cursor; double-click resets zoom; spider and offs
   const std = await counts();
   assert.equal(sum(std), total);
   assert.equal(await page.isVisible('#quadStyle'), true, 'style switch shown for a selected quadrant');
+  // grabbing an arm far from the centre moves the quadrant by the drag, not to the cursor
+  const quadC = () => page.evaluate(() => { const g = window.thistleFlow.ws.engine.list().find(x => x.type === 'quad'); return [g.cx, g.cy]; });
+  const c0 = await quadC();
+  const grab = await page.evaluate(v => { const pv = eval(v); const x = pv.L.ux2px(0.35), yc = pv.L.uy2px(0.35);
+    for (let y = 30; y < pv.h - 60; y += 2) { const h = pv.hitTest(x, y); if (h?.mode === 'quad' && Math.abs(y - yc) > 60) return [x, y]; } return null; }, view(2));
+  assert.ok(grab, 'a point on the vertical arm away from the centre');
+  await page.mouse.move(b.x + grab[0], b.y + grab[1]); await page.mouse.down();
+  await page.mouse.move(b.x + grab[0] + 8, b.y + grab[1], { steps: 4 }); await page.mouse.up();
+  const c1 = await quadC();
+  assert.ok(Math.abs(c1[1] - c0[1]) <= 1e-6 * Math.abs(c0[1]) + 1e-9, `the centre keeps its height: ${c0} -> ${c1}`);
+  assert.ok(c1[0] > c0[0], 'and moves right with the drag');
+  await page.mouse.move(b.x + grab[0] + 8, b.y + grab[1]); await page.mouse.down();
+  await page.mouse.move(b.x + grab[0], b.y + grab[1], { steps: 4 }); await page.mouse.up(); // back
+
   await page.click('#quadStyle [data-qmode=spider]');
   assert.equal(await ev(() => window.thistleFlow.ws.engine.list().filter(g => g.type === 'quad').every(g => g.quadMode === 'spider')), true, 'whole group');
   assert.deepEqual(await counts(), std, 'spider starts as the straight cross');

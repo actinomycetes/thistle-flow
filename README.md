@@ -2,7 +2,7 @@
 
 Part of the Thistle suite, together with [Thistle Plot](https://github.com/actinomycetes/thistle-plot) (TP).
 
-**Status:** beta (0.x; current v0.15.0). Check important results against an established package before publishing. Version history: [`help.html#history`](help.html#history).
+**Status:** beta (0.x; current v0.15.1). Calculations are cross-checked against independent open-source implementations (see `tools/validate/`). Check important results against an established package before publishing. Version history: [`help.html#history`](help.html#history).
 
 **Hosted copy:** https://actinomycetes.github.io/thistle-flow/
 

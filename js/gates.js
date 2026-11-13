@@ -12,10 +12,20 @@ export function pointInPolygon(x, y, pts) {
   return inside;
 }
 
+// Gate edges in display units, rounded like the stored event values (Float32) so that an event
+// exactly on an edge is always treated the same way.
+const f32 = Math.fround;
 function unitRange(t, a, b) {
   if (a > b) [a, b] = [b, a];
-  return [a === -Infinity ? -Infinity : t.fwd(a), b === Infinity ? Infinity : t.fwd(b)];
+  return [a === -Infinity ? -Infinity : f32(t.fwd(a)), b === Infinity ? Infinity : f32(t.fwd(b))];
 }
+
+// Events beyond the plot are drawn piled up on its axes, so gates treat them as lying just inside
+// the axis: display units are clamped to [PILE_LO, PILE_HI] before testing. A gate edge dragged onto an
+// axis is stored at -0.3 / 1.3 (outside this range), so it holds the whole pile, as drawn.
+// NaN (missing) values are in no gate.
+export const PILE_LO = -0.25, PILE_HI = 1.25;
+const pile = v => (v < PILE_LO ? PILE_LO : v > PILE_HI ? PILE_HI : v);
 
 // ---- per-sample gate adjustments ----
 // A gate may carry overrides: { [sample.key]: geometry } (keyed by file name so they survive saving).
@@ -128,8 +138,8 @@ function polygonMask(ux, uy, pts, out) {
   let minx = Infinity, maxx = -Infinity, miny = Infinity, maxy = -Infinity;
   for (const [x, y] of pts) { minx = Math.min(minx, x); maxx = Math.max(maxx, x); miny = Math.min(miny, y); maxy = Math.max(maxy, y); }
   for (let i = 0; i < out.length; i++) {
-    let x = ux[i], y = uy[i];
-    if (!(x === x)) x = B0 + 1e-6; if (!(y === y)) y = B0 + 1e-6; // NaN-safe
+    const x = pile(ux[i]), y = pile(uy[i]);
+    if (x !== x || y !== y) continue; // NaN: in no gate
     if (x < minx || x > maxx || y < miny || y > maxy) continue;
     out[i] = pointInPolygon(x, y, pts) ? 1 : 0;
   }
@@ -199,21 +209,21 @@ export class GateEngine {
       const ux = sample.unit(g.x, this.getCfg(g.x));
       const [lox, hix] = unitRange(tx, x0, x1);
       if (isOneD(g)) {
-        for (let i = 0; i < N; i++) { const v = ux[i]; out[i] = v >= lox && v < hix ? 1 : 0; }
+        for (let i = 0; i < N; i++) { const v = pile(ux[i]); out[i] = v >= lox && v < hix ? 1 : 0; }
         return out;
       }
       const ty = makeTransform(this.getCfg(g.y));
       const uy = sample.unit(g.y, this.getCfg(g.y));
       const [loy, hiy] = unitRange(ty, y0, y1);
       for (let i = 0; i < N; i++) {
-        const vx = ux[i], vy = uy[i];
+        const vx = pile(ux[i]), vy = pile(uy[i]);
         out[i] = vx >= lox && vx < hix && vy >= loy && vy < hiy ? 1 : 0;
       }
       return out;
     }
     if (g.type === 'polygon') {
       const tx = makeTransform(this.getCfg(g.x)), ty = makeTransform(this.getCfg(g.y));
-      const pts = g.pts.map(([x, y]) => [tx.fwd(x), ty.fwd(y)]);
+      const pts = g.pts.map(([x, y]) => [f32(tx.fwd(x)), f32(ty.fwd(y))]);
       return polygonMask(sample.unit(g.x, this.getCfg(g.x)), sample.unit(g.y, this.getCfg(g.y)), pts, out);
     }
     throw new Error('Unknown gate type ' + g.type);
@@ -257,15 +267,17 @@ function quantileSorted(s, q) {
 }
 
 export function channelStats(col, idx) {
-  const n = idx.length;
-  if (!n) return { mean: NaN, median: NaN, gmean: NaN, sd: NaN, cv: NaN, rcv: NaN, rsd: NaN, min: NaN, max: NaN };
-  const vals = new Float32Array(n);
-  let sum = 0, logSum = 0, logN = 0;
-  for (let i = 0; i < n; i++) {
+  // non-finite values (NaN, ±Infinity) are left out of every statistic; n = values used
+  const all = new Float64Array(idx.length);
+  let n = 0, sum = 0, logSum = 0, logN = 0;
+  for (let i = 0; i < idx.length; i++) {
     const v = col[idx[i]];
-    vals[i] = v; sum += v;
-    if (v > 0) { logSum += Math.log(v); logN++; }
+    if (!Number.isFinite(v)) continue;
+    all[n++] = v; sum += v;
+    if (v > 0) { logSum += Math.log(v); logN++; } // geometric mean: positive values only (logN of n)
   }
+  if (!n) return { n: 0, mean: NaN, median: NaN, gmean: NaN, gmeanN: 0, sd: NaN, cv: NaN, rcv: NaN, rsd: NaN, min: NaN, max: NaN, p5: NaN, p95: NaN };
+  const vals = all.subarray(0, n);
   const mean = sum / n;
   let ss = 0;
   for (let i = 0; i < n; i++) { const d = vals[i] - mean; ss += d * d; }
@@ -275,8 +287,8 @@ export function channelStats(col, idx) {
   const p16 = quantileSorted(vals, 0.15866), p84 = quantileSorted(vals, 0.84134);
   const rsd = (p84 - p16) / 2;
   return {
-    mean, median, sd,
-    gmean: logN ? Math.exp(logSum / logN) : NaN,
+    n, mean, median, sd,
+    gmean: logN ? Math.exp(logSum / logN) : NaN, gmeanN: logN,
     cv: mean !== 0 ? 100 * sd / Math.abs(mean) : NaN,
     rsd,
     rcv: median !== 0 ? 100 * rsd / Math.abs(median) : NaN,
@@ -291,7 +303,7 @@ export const STAT_DEFS = [
   { key: 'pctTotal', label: '% Total', perChannel: false },
   { key: 'median', label: 'Median (MFI)', perChannel: true },
   { key: 'mean', label: 'Mean', perChannel: true },
-  { key: 'gmean', label: 'Geo. Mean', perChannel: true },
+  { key: 'gmean', label: 'Geo. Mean (values > 0)', perChannel: true },
   { key: 'sd', label: 'SD', perChannel: true },
   { key: 'cv', label: 'CV %', perChannel: true },
   { key: 'rsd', label: 'Robust SD', perChannel: true },

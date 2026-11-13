@@ -1,109 +1,80 @@
 // Axis transforms. Each transform maps data value -> display unit in [0,1] (approximately) and back.
-// Logicle implementation follows Moore & Parks (Cytometry A 2012) reference implementation.
 
-const LN10 = Math.LN10;
-const EPS = 2.220446049250313e-16;
-const TAYLOR_LENGTH = 16;
 
+// Logicle (biexponential) display scale, written from its published mathematical definition
+// (Parks, Roederer & Moore, Cytometry A 2006; parameterisation of Moore & Parks, Cytometry A 2012):
+//   T = top of scale (data value at display 1), M = decades of the full scale, W = decades of the
+//   near-linear zone, A = extra decades below zero.
+// With w = W/(M+A), x2 = A/(M+A), x1 = x2 + w (display position of 0), x0 = x2 + 2w and
+// b = (M+A)·ln 10, the data value at display position y >= x1 is the biexponential
+//   B(y) = a·e^{b·y} − c·e^{−d·y} + f,
+// where d solves 2·ln(d/b) + w·(b + d) = 0, c/a = e^{x0·(b+d)}, B(x1) = 0 and B(1) = T.
+// Below x1 the scale is mirrored: B(x1 − s) = −B(x1 + s).
+// Numerics (independent of any reference code): d by bisection on log d; B evaluated around x1 with
+// expm1 (no cancellation near zero); data → display by a bracketed Newton/bisection search.
 export class Logicle {
   constructor(T = 262144, W = 0.5, M = 4.5, A = 0) {
-    if (T <= 0) throw new Error('Logicle T must be > 0');
-    if (W < 0) throw new Error('Logicle W must be >= 0');
-    if (W * 2 > M) W = M / 2;
-    if (-A > W || A + W > M - W) A = 0;
+    if (!(T > 0)) throw new Error('Logicle T must be > 0');
+    if (!(W >= 0)) throw new Error('Logicle W must be >= 0');
+    if (!(M > 0)) throw new Error('Logicle M must be > 0');
+    // out-of-range settings are brought into range; `adjusted` tells the caller (the UI warns)
+    this.adjusted = false;
+    if (W * 2 > M) { W = M / 2; this.adjusted = true; }
+    if (-A > W || A + W > M - W) { A = 0; this.adjusted = true; }
     Object.assign(this, { T, W, M, A });
-    const w = W / (M + A);
-    const x2 = A / (M + A);
-    const x1 = x2 + w;
-    const x0 = x2 + 2 * w;
-    const b = (M + A) * LN10;
-    const d = Logicle.solve(b, w);
-    const c_a = Math.exp(x0 * (b + d));
-    const mf_a = Math.exp(b * x1) - c_a / Math.exp(d * x1);
-    const a = T / ((Math.exp(b) - mf_a) - c_a / Math.exp(d));
-    const c = c_a * a;
-    const f = -mf_a * a;
-    Object.assign(this, { w, x0, x1, x2, a, b, c, d, f });
-    this.xTaylor = x1 + w / 4;
-    let posCoef = a * Math.exp(b * x1);
-    let negCoef = -c / Math.exp(d * x1);
-    this.taylor = new Float64Array(TAYLOR_LENGTH);
-    for (let i = 0; i < TAYLOR_LENGTH; i++) {
-      posCoef *= b / (i + 1);
-      negCoef *= -d / (i + 1);
-      this.taylor[i] = posCoef + negCoef;
-    }
-    this.taylor[1] = 0;
+    const w = W / (M + A), x2 = A / (M + A), x1 = x2 + w, x0 = x2 + 2 * w, b = (M + A) * Math.LN10;
+    const d = Logicle.solveD(b, w);
+    const ca = Math.exp(x0 * (b + d));                 // c / a
+    const g = Math.exp(b * x1) - ca * Math.exp(-d * x1); // −f / a (so that B(x1) = 0)
+    const a = T / (Math.exp(b) - ca * Math.exp(-d) - g);
+    // B(x1 + t) = P·expm1(b·t) − Q·expm1(−d·t)
+    const P = a * Math.exp(b * x1), Q = a * ca * Math.exp(-d * x1);
+    Object.assign(this, { w, x0, x1, x2, b, d, P, Q });
   }
 
-  static solve(b, w) {
+  // root of 2·ln(d/b) + w·(b + d) = 0 in (0, b]
+  static solveD(b, w) {
     if (w === 0) return b;
-    const tolerance = 2 * b * EPS;
-    let dLo = 0, dHi = b;
-    let d = (dLo + dHi) / 2;
-    const fB = -2 * Math.log(b) + w * b;
-    let f = 2 * Math.log(d) + w * d + fB;
-    let lastF = NaN;
-    for (let i = 1; i < 40; i++) {
-      const df = 2 / d + w;
-      let delta;
-      if (((d - dHi) * df - f) * ((d - dLo) * df - f) >= 0 || Math.abs(1.9 * f) > Math.abs(lastF * df)) {
-        delta = (dHi - dLo) / 2;
-        d = dLo + delta;
-        if (d === dLo) return d;
-      } else {
-        delta = f / df;
-        const t = d;
-        d -= delta;
-        if (d === t) return d;
-      }
-      if (Math.abs(delta) < tolerance) return d;
-      f = 2 * Math.log(d) + w * d + fB;
-      if (f === 0 || f === lastF) return d;
-      lastF = f;
-      if (f < 0) dLo = d; else dHi = d;
+    const f = ld => 2 * (ld - Math.log(b)) + w * (b + Math.exp(ld));
+    let lo = Math.log(b) - 200, hi = Math.log(b); // f(lo) < 0 <= f(hi)
+    for (let i = 0; i < 200 && hi - lo > 1e-15 * Math.max(1, Math.abs(hi)); i++) {
+      const mid = (lo + hi) / 2;
+      if (f(mid) < 0) lo = mid; else hi = mid;
     }
-    return d;
+    return Math.exp((lo + hi) / 2);
   }
 
-  series(scale) {
-    const x = scale - this.x1;
-    const t = this.taylor;
-    let sum = t[TAYLOR_LENGTH - 1] * x;
-    for (let i = TAYLOR_LENGTH - 2; i >= 2; i--) sum = (sum + t[i]) * x;
-    return (sum * x + t[0]) * x;
-  }
+  // data value at offset t >= 0 above the zero point, and its derivative
+  _B(t) { return this.P * Math.expm1(this.b * t) - this.Q * Math.expm1(-this.d * t); }
+  _dB(t) { return this.P * this.b * Math.exp(this.b * t) + this.Q * this.d * Math.exp(-this.d * t); }
 
-  // data -> scale [0,1]
+  // data -> display [0, 1] (beyond 0..1 for values outside the scale)
   scale(value) {
+    if (value !== value) return NaN;
+    if (value === Infinity) return Infinity;
+    if (value === -Infinity) return -Infinity;
     if (value === 0) return this.x1;
-    const negative = value < 0;
-    if (negative) value = -value;
-    let x = value < this.f ? this.x1 + value / this.taylor[0] : Math.log(value / this.a) / this.b;
-    let tolerance = 3 * EPS;
-    if (x > 1) tolerance = 3 * x * EPS;
-    for (let i = 0; i < 20; i++) {
-      const ae2bx = this.a * Math.exp(this.b * x);
-      const ce2mdx = this.c / Math.exp(this.d * x);
-      const y = x < this.xTaylor ? this.series(x) - value : (ae2bx + this.f) - (ce2mdx + value);
-      const abe2bx = this.b * ae2bx;
-      const cde2mdx = this.d * ce2mdx;
-      const dy = abe2bx + cde2mdx;
-      const ddy = this.b * abe2bx - this.d * cde2mdx;
-      const delta = y / (dy * (1 - y * ddy / (2 * dy * dy)));
-      x -= delta;
-      if (Math.abs(delta) < tolerance) break;
+    const v = Math.abs(value);
+    // bracket t in [lo, hi] with B(lo) <= v <= B(hi); B is increasing
+    let lo = 0, hi = Math.max(1e-6, Math.log1p(v / this.P) / this.b);
+    while (this._B(hi) < v) { lo = hi; hi *= 2; }
+    let t = Math.min(hi, Math.max(lo, v / this._dB(0) < hi ? v / this._dB(0) : (lo + hi) / 2));
+    for (let i = 0; i < 100; i++) {
+      const r = this._B(t) - v;
+      if (r > 0) hi = t; else lo = t;
+      let next = t - r / this._dB(t);
+      if (!(next > lo && next < hi)) next = (lo + hi) / 2; // keep Newton inside the bracket
+      if (Math.abs(next - t) <= 1e-15 * Math.max(1, t)) { t = next; break; }
+      t = next;
     }
-    return negative ? 2 * this.x1 - x : x;
+    return value < 0 ? this.x1 - t : this.x1 + t;
   }
 
-  // scale -> data
-  inverse(scale) {
-    const negative = scale < this.x1;
-    if (negative) scale = 2 * this.x1 - scale;
-    const v = scale < this.xTaylor ? this.series(scale)
-      : (this.a * Math.exp(this.b * scale) + this.f) - this.c / Math.exp(this.d * scale);
-    return negative ? -v : v;
+  // display -> data
+  inverse(y) {
+    if (y !== y) return NaN;
+    const t = y - this.x1;
+    return t < 0 ? -this._B(-t) : this._B(t);
   }
 }
 
@@ -126,6 +97,26 @@ class FastLogicle {
   inverse(s) { return this.L.inverse(s); }
 }
 
+// What is wrong with a scale setting (a message for the user), or null if it can be used as it is.
+export function scaleProblem(cfg) {
+  const fin = k => Number.isFinite(cfg[k]);
+  if (cfg.kind === 'linear' || cfg.kind === 'log' || cfg.kind === 'arcsinh') {
+    if (!fin('min') || !fin('max')) return 'Minimum and maximum must be numbers.';
+    if (!(cfg.max > cfg.min)) return 'The maximum must be larger than the minimum.';
+    if (cfg.kind === 'log' && !(cfg.min > 0)) return 'A log scale needs a minimum above 0.';
+    if (cfg.kind === 'arcsinh' && !(cfg.cofactor > 0)) return 'The cofactor must be larger than 0.';
+  }
+  if (cfg.kind === 'logicle') {
+    if (!['T', 'W', 'M', 'A'].every(fin)) return 'T, W, M and A must all be numbers.';
+    if (!(cfg.T > 0)) return 'T (top of scale) must be larger than 0.';
+    if (!(cfg.M > 0)) return 'M (decades) must be larger than 0.';
+    if (cfg.W < 0) return 'W must be 0 or more.';
+    if (2 * cfg.W > cfg.M) return `W can be at most M/2 (${cfg.M / 2}).`;
+    if (-cfg.A > cfg.W || cfg.A + cfg.W > cfg.M - cfg.W) return `A must be between −W and M − 2W (${-cfg.W} to ${+(cfg.M - 2 * cfg.W).toFixed(3)}).`;
+  }
+  return null;
+}
+
 // Build a transform object { kind, fwd(v)->unit, inv(u)->v, ticks() } from settings.
 export function makeTransform(cfg) {
   const kind = cfg.kind || 'linear';
@@ -144,7 +135,9 @@ export function makeTransform(cfg) {
     const lmin = Math.log10(min), lspan = Math.log10(max) - lmin;
     return {
       kind, cfg,
-      fwd: v => (v > 0 ? (Math.log10(v) - lmin) / lspan : -0.02),
+      // values at or below 0 cannot be shown on a log scale: they, and tiny positive values, pile up
+      // just below the axis, never below a larger value (so gates stay consistent)
+      fwd: v => (v > 0 ? Math.max(-0.02, (Math.log10(v) - lmin) / lspan) : -0.02),
       inv: u => Math.pow(10, lmin + u * lspan),
       ticks: () => logTicks(min, max),
     };

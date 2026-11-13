@@ -44,7 +44,20 @@ export function parseSpillover(str) {
   const matrix = [];
   for (let r = 0; r < n; r++) matrix.push(vals.slice(r * n, r * n + n));
   if (matrix.flat().some(v => !Number.isFinite(v))) return null;
+  // some exporters write percentages (diagonal 100): use fractions (diagonal 1)
+  if (matrix.every((r, i) => Math.abs(r[i] - 100) < 1e-6)) for (const r of matrix) for (let j = 0; j < n; j++) r[j] /= 100;
   return { names, matrix };
+}
+
+// $PnR to write for decoded values in an exported (float) file: log channels span f2..f2*10^f1,
+// linear integer channels with a gain span R/gain.
+export function exportRanges(params) {
+  return params.map(p => {
+    const [f1, f2] = p.ampE || [0, 0];
+    if (f1 > 0) return (f2 > 0 ? f2 : 1) * Math.pow(10, f1);
+    if (p.int && p.gain && p.gain !== 1) return p.range / p.gain;
+    return p.range;
+  });
 }
 
 function byteOrderIsLittle(byteord) {
@@ -66,12 +79,15 @@ function readDataset(bytes, offset) {
   let dataEnd = asciiInt(bytes, offset + 34, offset + 42);
 
   const text = parseText(bytes, textStart, textEnd);
+  const warnings = [];
 
-  // FCS3+: large files put offsets in TEXT only.
-  if (!dataStart || !dataEnd) {
-    dataStart = parseInt(text['$BEGINDATA'] || '0', 10);
-    dataEnd = parseInt(text['$ENDDATA'] || '0', 10);
-  }
+  // FCS 3: $BEGINDATA/$ENDDATA in TEXT are required and are used when the HEADER offsets are 0
+  // (large files) or disagree with them; FCS 2 has only the HEADER offsets.
+  const tb = parseInt(text['$BEGINDATA'] || '0', 10), te = parseInt(text['$ENDDATA'] || '0', 10);
+  if (/^FCS3/.test(version) && tb > 0 && te >= tb) {
+    if (dataStart && (dataStart !== tb || dataEnd !== te)) warnings.push(`HEADER data offsets (${dataStart}–${dataEnd}) disagree with $BEGINDATA/$ENDDATA (${tb}–${te}); the TEXT values were used`);
+    dataStart = tb; dataEnd = te;
+  } else if (!dataStart || !dataEnd) { dataStart = tb; dataEnd = te; }
   dataStart += offset; dataEnd += offset;
 
   const mode = (text['$MODE'] || 'L').toUpperCase();
@@ -89,12 +105,20 @@ function readDataset(bytes, offset) {
     const B = parseInt(text[`$P${i}B`] || '32', 10);
     const R = parseFloat(text[`$P${i}R`] || '262144');
     const E = (text[`$P${i}E`] || '0,0').split(',').map(Number);
-    const G = parseFloat(text[`$P${i}G`] || '1') || 1;
+    const G = parseFloat(text[`$P${i}G`] || '1') || 1; // 0 means no gain
     const dispRaw = text[`P${i}DISPLAY`] || '';
     params.push({ index: i - 1, name: N, label: S, bits: B, range: R, ampE: E, gain: G, display: dispRaw.toUpperCase() });
   }
 
-  const events = Number.isFinite(nTot) ? nTot : 0;
+  let events = Number.isFinite(nTot) ? nTot : 0;
+  // the data segment must hold $TOT events of the stated size; never read past it (or past the file)
+  const bytesPerEvent = (datatype === 'F' ? 4 * nPar : datatype === 'D' ? 8 * nPar : params.reduce((a, p) => a + p.bits / 8, 0));
+  const segment = Math.min(dataEnd, bytes.length - 1) - dataStart + 1;
+  if (bytesPerEvent > 0 && events * bytesPerEvent > segment) {
+    const fit = Math.max(0, Math.floor(segment / bytesPerEvent));
+    warnings.push(`$TOT says ${events} events but the data segment holds only ${fit}; ${fit} events were read`);
+    events = fit;
+  }
   const columns = params.map(() => new Float32Array(events));
   const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
 
@@ -113,7 +137,7 @@ function readDataset(bytes, offset) {
     const masks = params.map(pr => {
       const r = pr.range;
       // mask to the smallest power of two >= range (FCS spec); guard huge widths
-      if (!(r > 0) || pr.bits > 32) return null;
+      if (!(r > 1) || pr.bits > 32) return null; // $PnR 1 (or missing): nothing to mask
       const bitsNeeded = Math.ceil(Math.log2(r));
       return bitsNeeded >= 32 ? null : (2 ** bitsNeeded) - 1;
     });
@@ -151,11 +175,19 @@ function readDataset(bytes, offset) {
     throw new Error(`Unknown $DATATYPE "${datatype}"`);
   }
 
-  // Spillover: FCS3.1 $SPILLOVER, BD "SPILL", some exporters "SPILLOVER" / "$COMP"
-  const spill = parseSpillover(text['$SPILLOVER'] || text['SPILL'] || text['SPILLOVER'] || text['$COMP']);
+  // Spillover: FCS3.1 $SPILLOVER, BD "SPILL", some exporters "SPILLOVER" / "$COMP" (first one that reads)
+  let spill = null, spillNote = null;
+  for (const k of ['$SPILLOVER', 'SPILL', 'SPILLOVER', '$COMP']) { if (text[k] && (spill = parseSpillover(text[k]))) break; }
+  if (!spill && text['$COMP']) {
+    // FCS 3.0 $COMP lists only n and the n×n values, without channel names, so which channels it
+    // refers to is not stated: not applied, and the user is told
+    spillNote = 'This file has an FCS 3.0 $COMP matrix without channel names, so it was not applied. Enter the matrix in the Compensation tab (Import CSV) if it is needed.';
+    warnings.push(spillNote);
+  }
 
   const next = parseInt(text['$NEXTDATA'] || '0', 10);
-  return { version, text, params, columns, events, spill, next: next > 0 ? offset + next : 0 };
+  params.forEach(p => { p.int = datatype === 'I'; });
+  return { version, text, params, columns, events, spill, spillNote, warnings, next: next > 0 ? offset + next : 0 };
 }
 
 // Returns an array of datasets (most files contain exactly one).
@@ -212,12 +244,13 @@ export function writeFCS({ names, labels = [], columns, extraText = {}, ranges =
   const dataLen = nTot * nPar * 4;
   const dataStart = textStart + textBytes.length;
   const dataEnd = dataStart + dataLen - 1;
-  textBytes = enc.encode(build(dataStart, dataEnd)); // same length due to padding
+  // FCS 3.1: offsets are 0 when there is no data segment
+  textBytes = enc.encode(dataLen ? build(dataStart, dataEnd) : build(0, 0)); // same length due to padding
   const textEnd = textStart + textBytes.length - 1;
   const pad = (n) => String(n).padStart(8, ' ');
   const fitsHeader = dataEnd <= 99999999;
   const header = 'FCS3.1    ' + pad(textStart) + pad(textEnd) +
-    pad(fitsHeader ? dataStart : 0) + pad(fitsHeader ? dataEnd : 0) + pad(0) + pad(0);
+    pad(fitsHeader && dataLen ? dataStart : 0) + pad(fitsHeader && dataLen ? dataEnd : 0) + pad(0) + pad(0);
   const buf = new ArrayBuffer(dataStart + dataLen);
   const u8 = new Uint8Array(buf);
   u8.set(enc.encode(header), 0);

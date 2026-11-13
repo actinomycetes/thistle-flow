@@ -6,10 +6,11 @@ let SAMPLE_ID = 0;
 export function invertMatrix(m) {
   const n = m.length;
   const a = m.map((row, i) => [...row, ...Array.from({ length: n }, (_, j) => (i === j ? 1 : 0))]);
+  const scale = Math.max(1e-300, ...m.flat().map(Math.abs)); // singularity is judged relative to the matrix size
   for (let col = 0; col < n; col++) {
     let piv = col;
     for (let r = col + 1; r < n; r++) if (Math.abs(a[r][col]) > Math.abs(a[piv][col])) piv = r;
-    if (Math.abs(a[piv][col]) < 1e-12) throw new Error('Spillover matrix is singular');
+    if (!(Math.abs(a[piv][col]) > 1e-12 * scale)) throw new Error('Spillover matrix is singular');
     [a[col], a[piv]] = [a[piv], a[col]];
     const p = a[col][col];
     for (let j = 0; j < 2 * n; j++) a[col][j] /= p;
@@ -39,6 +40,9 @@ export class Sample {
     this.spill = ds.spill ? { names: ds.spill.names.map(n => this.resolveChannel(n)), matrix: ds.spill.matrix.map(r => [...r]) } : null;
     // the matrix as stored in the file: never changed, so it can always be restored
     this.spillFile = this.spill ? JSON.parse(JSON.stringify(this.spill)) : null;
+    this.spillNote = ds.spillNote || null; // e.g. an FCS 3.0 $COMP matrix that could not be used
+    this.warnings = ds.warnings || [];
+    this.compError = null;              // set when the matrix cannot be used (e.g. singular)
     // Sony writes APPLY_COMPENSATION=FALSE when the matrix should not be applied by default
     const applyFlag = String(ds.text.APPLY_COMPENSATION ?? 'TRUE').toUpperCase() !== 'FALSE';
     this.compEnabled = !!this.spill && applyFlag && this.spillMissing().length === 0;
@@ -114,15 +118,24 @@ export class Sample {
   setCompEnabled(on) { this.compEnabled = on; this.invalidate(); }
 
   _computeComp() {
-    this._comp = new Map();
-    if (!this.compEnabled || !this.spill) return;
+    const comp = new Map();
+    if (!this.compEnabled || !this.spill) { this._comp = comp; return; }
     const { names, matrix } = this.spill;
     const idx = names.map(n => this.channelIndex(n));
     if (idx.some(i => i < 0)) {
       console.warn(`[${this.name}] spillover channels not all found; compensation disabled`, names);
+      this._comp = comp;
       return;
     }
-    const inv = invertMatrix(matrix);
+    let inv;
+    try { inv = invertMatrix(matrix); } catch (err) {
+      // never pretend to compensate: switch it off and say why
+      this.compEnabled = false; this.compError = `The spillover matrix cannot be inverted (${err.message}); compensation was switched off.`;
+      this._comp = comp;
+      return;
+    }
+    this.compError = null;
+    this._comp = comp;
     const n = names.length, N = this.events;
     const src = idx.map(i => this.raw[i]);
     const out = names.map(() => new Float32Array(N));

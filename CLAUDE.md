@@ -1,6 +1,6 @@
 # Thistle Flow (TF): project guide for Claude Code
 
-TF is a **beta** (0.x) FlowJo-style flow cytometry app for bench scientists (UoE TT lab), the sister app of
+TF is a **beta** (0.x) flow cytometry analysis app for bench scientists (UoE TT lab), the sister app of
 [Thistle Plot](https://github.com/actinomycetes/thistle-plot) (TP). Plain JavaScript ES modules, no framework,
 no runtime dependencies. GitHub Pages serves `index.html` + `js/` + `css/` + `help.html`; `npm run build`
 makes a single-file `dist/thistle-flow.html` for offline lab PCs. Data never leaves the browser.

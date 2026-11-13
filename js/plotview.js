@@ -16,8 +16,9 @@ export function shortLabel(sample, ch) {
 export const PLOT_SIZES = { S: [300, 280], M: [370, 340], L: [470, 430], XL: [580, 530] };
 export const EVENT_LIMITS = [1000, 2000, 5000, 10000, 20000, 50000, 100000, 0]; // 0 = all
 
-// Deterministic subsample: an event is shown if its hash falls below a threshold, so a child
-// population always displays a subset of the events shown for its parent.
+// Deterministic subsample: each event has a fixed pseudo-random rank (a hash of its index); a plot
+// shows the `max` events of its population with the lowest ranks, so the same events are shown every
+// time and the events shown for a population and its parent largely coincide.
 function hash32(i) {
   let h = (i + 0x9e3779b9) | 0;
   h ^= h >>> 16; h = Math.imul(h, 0x85ebca6b); h ^= h >>> 13; h = Math.imul(h, 0xc2b2ae35); h ^= h >>> 16;
@@ -148,6 +149,15 @@ function buildOverlaySpec(ws, samples, def, w, h, opts) {
 }
 
 const HANDLE = 6;
+
+// Angle (degrees) for a spider arm dragged towards `want`, kept between its clockwise neighbour `cw`
+// and anticlockwise neighbour `acw` (5° clear of each); beyond either end it stops at the nearer end.
+export function clampArmAngle(want, cw, acw) {
+  const norm = v => ((v % 360) + 360) % 360;
+  const span = norm(acw - cw) || 360, rel = norm(want - cw);
+  const r = rel > span ? (rel - span < 360 - rel ? span - 5 : 5) : Math.min(span - 5, Math.max(5, rel));
+  return norm(cw + r);
+}
 
 function distToPolyline(px, py, pts) {
   let best = Infinity;
@@ -456,19 +466,18 @@ export class PlotView {
         const c = [tx.fwd(o.cx), ty.fwd(o.cy)];
         const a = { ...DEFAULT_ANGLES, ...(o.angles || {}) }, i = ARMS.indexOf(d.arm);
         const cw = a[ARMS[(i + 1) % 4]], acw = a[ARMS[(i + 3) % 4]];
-        const norm = v => ((v % 360) + 360) % 360;
         const want = Math.atan2(u[1] - c[1], u[0] - c[0]) * 180 / Math.PI;
-        const span = norm(acw - cw) || 360, rel = Math.min(span - 5, Math.max(5, norm(want - cw)));
-        g.angles = { ...a, [d.arm]: Math.round(norm(cw + rel) * 10) / 10 };
+        g.angles = { ...a, [d.arm]: Math.round(clampArmAngle(want, cw, acw) * 10) / 10 };
       } else if (d.mode === 'arm' && m === 'offset') {
         const off = { up: o.cx, down: o.cx, right: o.cy, left: o.cy, ...(o.offsets || {}) };
         const s = snapUnit(u);
         off[d.arm] = d.arm === 'up' || d.arm === 'down' ? tx.inv(s[0]) : ty.inv(s[1]);
         g.offsets = off;
       } else {
-        g.cx = tx.inv(u[0]); g.cy = ty.inv(u[1]);
+        // move by the drag (the quadrant may have been grabbed by an arm, far from its centre)
+        g.cx = mvX(o.cx); g.cy = mvY(o.cy);
         if (m === 'offset' && o.offsets) { // the staggered arms move with the centre
-          const dx = u[0] - tx.fwd(o.cx), dy = u[1] - ty.fwd(o.cy);
+          const [dx, dy] = du;
           const ox = v => tx.inv(tx.fwd(v) + dx), oy = v => ty.inv(ty.fwd(v) + dy);
           const f = o.offsets;
           g.offsets = { up: ox(f.up ?? o.cx), down: ox(f.down ?? o.cx), right: oy(f.right ?? o.cy), left: oy(f.left ?? o.cy) };
