@@ -1,5 +1,9 @@
 // Small DOM / dialog / file helpers shared by the app modules.
 
+// iPhone/iPad. iPadOS Safari reports itself as a Mac, but a Mac has no touch screen.
+export const IS_IOS = typeof navigator !== 'undefined' &&
+  (/iPad|iPhone|iPod/.test(navigator.userAgent) || (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1));
+
 export const $ = (s, el = document) => el.querySelector(s);
 export const $$ = (s, el = document) => [...el.querySelectorAll(s)];
 export const h = (tag, attrs = {}, ...kids) => {
@@ -62,20 +66,20 @@ export function choose(title, message, buttons) {
 }
 
 // ---- drags ----
-// Track a mouse drag until the button is released. Safari/WebKit can miss the final mouseup
+// Track a drag (mouse, trackpad, finger or pen: Pointer Events) until it is released. Safari/WebKit can miss the final mouseup
 // (e.g. when a popover closes as the drag starts), which left drags "stuck" to the pointer, so a
 // move with no button pressed, a lost window focus or a cancelled pointer also ends the drag.
 // Returns a function that stops tracking without calling onEnd.
 export function trackDrag(onMove, onEnd) {
   let done = false;
   const off = () => {
-    window.removeEventListener('mousemove', move, true); window.removeEventListener('mouseup', end, true);
+    window.removeEventListener('pointermove', move, true); window.removeEventListener('pointerup', end, true);
     window.removeEventListener('pointercancel', end, true); window.removeEventListener('blur', end);
     document.removeEventListener('visibilitychange', end);
   };
   const end = e => { if (done) return; done = true; off(); onEnd(e); };
   const move = e => { if (e.buttons === 0) end(e); else onMove(e); };
-  window.addEventListener('mousemove', move, true); window.addEventListener('mouseup', end, true);
+  window.addEventListener('pointermove', move, true); window.addEventListener('pointerup', end, true);
   window.addEventListener('pointercancel', end, true); window.addEventListener('blur', end);
   document.addEventListener('visibilitychange', end);
   return () => { if (!done) { done = true; off(); } };
@@ -87,8 +91,19 @@ export function trackDrag(onMove, onEnd) {
 // ('left', 'right', 'below', 'above'); the panel is lined up with the anchor (e.g. the click point)
 // and an arrow points back at it.
 let popEl = null, popAway = null;
+// Double-click for touch and pen: two taps within 350 ms and 16 px (a mouse or trackpad gives a real dblclick).
+export function onDoubleTap(el, handler) {
+  let last = null;
+  el.addEventListener('pointerup', e => {
+    if (e.pointerType === 'mouse') return;
+    const now = performance.now();
+    if (last && now - last.t < 350 && Math.hypot(e.clientX - last.x, e.clientY - last.y) < 16) { last = null; handler(e); }
+    else last = { t: now, x: e.clientX, y: e.clientY };
+  });
+}
+
 export function closePopover() {
-  if (popAway) { document.removeEventListener('mousedown', popAway, true); popAway = null; }
+  if (popAway) { document.removeEventListener('pointerdown', popAway, true); popAway = null; }
   if (popEl) { popEl.remove(); popEl = null; }
 }
 export function popover(anchor, content, { beside, sides = ['right', 'left', 'below', 'above'] } = {}) {
@@ -127,7 +142,7 @@ export function popover(anchor, content, { beside, sides = ['right', 'left', 'be
   setTimeout(() => {
     if (popEl !== el) return;
     popAway = e => { if (popEl && !popEl.contains(e.target) && e.target !== anchor) closePopover(); };
-    document.addEventListener('mousedown', popAway, true);
+    document.addEventListener('pointerdown', popAway, true);
   });
   return popEl;
 }
@@ -154,7 +169,8 @@ const MIME = {
 function downloadBlob(name, blob) {
   const a = h('a', { href: URL.createObjectURL(blob), download: name });
   document.body.append(a); a.click(); a.remove();
-  setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+  // Safari on iPad first asks whether to download: keep the file available for a while
+  setTimeout(() => URL.revokeObjectURL(a.href), 120000);
 }
 
 // Save a file. Where the browser supports it (Chrome/Edge), a native dialog lets the user pick
@@ -210,7 +226,8 @@ export function saveDialog({ title, baseName, ext = 'json', note, extra, makeDat
       extra || null,
       h('p', { class: 'hint' }, canPickLocation()
         ? 'Next, choose the folder to save in. The date and time are added so earlier saves are not overwritten.'
-        : 'Your browser saves to its Downloads folder (or asks where, depending on its settings). The date and time are added so earlier saves are not overwritten.'),
+        : IS_IOS ? 'Safari asks to download the file, then saves it in the Files app (Downloads). The date and time are added so earlier saves are not overwritten.'
+          : 'Your browser saves to its Downloads folder (or asks where, depending on its settings). The date and time are added so earlier saves are not overwritten.'),
       h('div', { class: 'row', style: 'justify-content:flex-end' },
         h('button', { class: 'btn', onclick: () => { closeModal(); } }, 'Cancel'),
         h('button', { class: 'btn primary', onclick: go }, canPickLocation() ? 'Choose location…' : 'Save')));
@@ -222,18 +239,27 @@ export function saveDialog({ title, baseName, ext = 'json', note, extra, makeDat
 
 // Pick several files, or a whole folder (folder=true; works in Chrome, Edge, Firefox and Safari)
 export function pickFiles({ accept = '', folder = false } = {}) {
+  // iOS has no file type for .fcs, so an extension filter would grey the files out
+  if (IS_IOS && /\.fcs/i.test(accept)) accept = '';
   return new Promise(resolve => {
-    const inp = h('input', { type: 'file', accept, multiple: true, hidden: true, onchange: () => { resolve([...inp.files]); inp.remove(); } });
+    const inp = h('input', { type: 'file', accept, multiple: true, class: 'file-input', onchange: () => { resolve([...inp.files]); inp.remove(); } });
     if (folder) inp.setAttribute('webkitdirectory', '');
     // no 'cancel' handler: Firefox may report cancel before the chosen files arrive
     document.body.append(inp); inp.click();
   });
 }
 
+// Pixel scale for a high-resolution PNG export: about 3× (300 dpi at figure size), reduced when the image
+// would exceed what the browser can draw (iPad Safari: 16.7 million pixels per canvas, 16,384 px per side).
+export function exportScale(w, h, ios = IS_IOS) {
+  const maxPx = ios ? 16.7e6 : 120e6, maxSide = ios ? 16384 : 32767;
+  return Math.max(0.5, Math.min(3, Math.sqrt(maxPx / Math.max(1, w * h)), maxSide / Math.max(1, w, h)));
+}
+
 // Read a user-picked text file
 export function pickFile(accept) {
   return new Promise(resolve => {
-    const inp = h('input', { type: 'file', accept, hidden: true, onchange: () => { resolve(inp.files[0] || null); inp.remove(); } });
+    const inp = h('input', { type: 'file', accept: IS_IOS && /\.fcs/i.test(accept || '') ? '' : accept, class: 'file-input', onchange: () => { resolve(inp.files[0] || null); inp.remove(); } });
     document.body.append(inp); inp.click();
   });
 }

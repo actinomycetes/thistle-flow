@@ -7,7 +7,7 @@ import { PlotView, buildSpec, shortLabel, fmtPct, subsampleIdx, overlayColor, QU
 import { renderPlot, prepareCanvas, SERIES_COLORS, THEMES, PLOT_KINDS, HIST_OFFSETS, DOT_SIZES, DEFAULT_DOT, normalizeKind } from './render.js';
 import { renderSVG, renderPDF } from './vector.js';
 import { demoFiles } from './demo.js';
-import { $, $$, h, uid, esc, safeName, dateStamp, toast, openModal, closeModal, modalOpen, choose, popover, closePopover, doneButton, trackDrag, saveFile, saveDialog, pickFile, pickFiles } from './ui.js';
+import { $, $$, h, uid, esc, safeName, dateStamp, toast, openModal, closeModal, modalOpen, choose, popover, closePopover, doneButton, trackDrag, saveFile, saveDialog, pickFile, pickFiles, onDoubleTap, IS_IOS, exportScale } from './ui.js';
 import { createZip, readZip, isZip } from './zip.js';
 import { Workspace } from './workspace.js';
 import { renderProperties } from './properties.js';
@@ -283,7 +283,7 @@ function renderSamples() {
       onclick: e => sampleClicked(s, e),
       onmousedown: e => { if (e.shiftKey) e.preventDefault(); }, // no text selection on Shift-click
     },
-      h('span', { class: 'drag-handle', title: 'Drag to change the order of the samples', onmousedown: e => startSampleDrag(e, s), onclick: e => e.stopPropagation() }, '☰'),
+      h('span', { class: 'drag-handle', title: 'Drag to change the order of the samples', onpointerdown: e => startSampleDrag(e, s), onclick: e => e.stopPropagation() }, '☰'),
       h('div', { class: 'meta' },
         h('div', { class: 'name', title: s.name }, oi >= 0 ? h('span', { class: 'ov-swatch', style: `background:${overlayColor(oi)}` }) : null, s.name),
         h('div', { class: 'sub' }, `${s.events.toLocaleString()} events · ${s.params.length} par · ${s.version}`, compTag,
@@ -488,7 +488,7 @@ function renderGating() {
     const card = h('div', {
       class: 'plot-card' + (p.id === ws.focusedPlot ? ' focused' : '') + (ws.selPlots.has(p.id) ? ' selected' : ''),
       'data-plot': p.id,
-      onmousedown: e => { if (e.target.closest('.plot-head') && !e.target.closest('select,button')) app.plotClicked(p.id, e); },
+      onpointerdown: e => { if (e.target.closest('.plot-head') && !e.target.closest('select,button')) app.plotClicked(p.id, e); },
     },
       h('div', { class: 'plot-head' },
         h('select', { title: 'Population (parent gate)', onchange: e => applyPlots(p, q => { q.pop = e.target.value || null; }) }, popOptions(p.pop)),
@@ -618,8 +618,9 @@ function updateSelectionUI() {
 }
 function setupRubberBand() {
   const grid = $('#plotGrid');
-  grid.addEventListener('mousedown', e => {
-    if (e.target !== grid || e.button !== 0) return;
+  grid.addEventListener('pointerdown', e => {
+    // a finger on the background scrolls the plots; the box selection is for mouse and trackpad
+    if (e.target !== grid || e.button !== 0 || e.pointerType === 'touch') return;
     e.preventDefault();
     const r = grid.getBoundingClientRect();
     const start = [e.clientX - r.left + grid.scrollLeft, e.clientY - r.top + grid.scrollTop];
@@ -864,7 +865,7 @@ async function exportComposite(comp, baseName, fmt) {
   const name = `${safeName(baseName)}_${dateStamp()}.${fmt}`;
   if (fmt === 'svg') return saveFile(name, renderSVG(comp.w, comp.h, ctx => drawComposite(ctx, comp)), 'svg');
   if (fmt === 'pdf') return saveFile(name, renderPDF(comp.w, comp.h, ctx => drawComposite(ctx, comp)), 'pdf');
-  const scale = 3; // ~300 dpi at typical figure sizes
+  const scale = exportScale(comp.w, comp.h); // ~300 dpi at typical figure sizes, less if too large for the browser
   const c = document.createElement('canvas'); c.width = Math.round(comp.w * scale); c.height = Math.round(comp.h * scale);
   const ctx = c.getContext('2d'); ctx.scale(scale, scale);
   drawComposite(ctx, comp);
@@ -1704,7 +1705,7 @@ function locateDialog(ws, data, missingKeys) {
             finish(`Assigned ${f.name} to ${k}`);
           } }, 'Choose…'))))) : h('p', {}, 'All samples found.'),
       h('div', { class: 'row', style: 'justify-content:flex-end;margin-top:10px' },
-        h('button', { class: 'btn primary', onclick: async () => loadMatching(await pickFiles({ folder: true })) }, '📂 Choose folder…'),
+        IS_IOS ? null : h('button', { class: 'btn primary', onclick: async () => loadMatching(await pickFiles({ folder: true })) }, '📂 Choose folder…'), // no folder picking on iPad
         h('button', { class: 'btn', onclick: async () => loadMatching(await pickFiles({ accept: '.fcs,.FCS,.lmd,.LMD' })) }, 'Choose files…'),
         h('button', { class: 'btn', onclick: closeModal }, want.size ? 'Later' : 'Done')));
   };
@@ -1811,7 +1812,7 @@ function setupSplitters() {
   const w = pref.get('sidebarW', null), sh = pref.get('samplesH', null);
   if (w) side.style.width = w + 'px';
   if (sh) samples.style.height = sh + 'px';
-  const drag = (el, onMove, onEnd) => el.addEventListener('mousedown', e => {
+  const drag = (el, onMove, onEnd) => el.addEventListener('pointerdown', e => {
     e.preventDefault();
     document.body.classList.add('resizing');
     trackDrag(onMove, () => { document.body.classList.remove('resizing'); onEnd(); });
@@ -1820,11 +1821,14 @@ function setupSplitters() {
     () => pref.set('sidebarW', side.offsetWidth));
   drag($('#sideSplit'), e => { samples.style.height = Math.max(80, Math.min(side.clientHeight - 120, e.clientY - samples.getBoundingClientRect().top)) + 'px'; },
     () => pref.set('samplesH', samples.offsetHeight));
-  $('#mainSplit').addEventListener('dblclick', () => { side.style.width = ''; pref.set('sidebarW', null); });
-  $('#sideSplit').addEventListener('dblclick', () => { samples.style.height = ''; pref.set('samplesH', null); });
+  const resetMain = () => { side.style.width = ''; pref.set('sidebarW', null); };
+  const resetSide = () => { samples.style.height = ''; pref.set('samplesH', null); };
+  $('#mainSplit').addEventListener('dblclick', resetMain); onDoubleTap($('#mainSplit'), resetMain);
+  $('#sideSplit').addEventListener('dblclick', resetSide); onDoubleTap($('#sideSplit'), resetSide);
 }
 
 // ---------- wire up ----------
+if (IS_IOS) { $('#fileInput').removeAttribute('accept'); document.documentElement.classList.add('ios'); } // .fcs is greyed out by an extension filter on iOS
 $('#fileInput').addEventListener('change', e => { loadFiles(e.target.files); e.target.value = ''; });
 $('#wsInput').addEventListener('change', e => { if (e.target.files[0]) loadWorkspaceFile(e.target.files[0]); e.target.value = ''; });
 $('#btnDemo').addEventListener('click', loadDemo);
@@ -1877,11 +1881,11 @@ $('#helpLink').addEventListener('click', e => {
   e.preventDefault(); openHelp();
 });
 $('#helpClose').addEventListener('click', closeHelp);
-$('#helpOv').addEventListener('mousedown', e => { if (e.target.id === 'helpOv') closeHelp(); });
+$('#helpOv').addEventListener('pointerdown', e => { if (e.target.id === 'helpOv') closeHelp(); });
 window.addEventListener('message', e => { if (e.data && e.data.thistleFlow === 'closeHelp') closeHelp(); });
 $$('[data-addfig]').forEach(b => b.addEventListener('click', () => addFigure(b.dataset.addfig)));
 $('#modalClose').addEventListener('click', closeModal);
-$('#modal').addEventListener('mousedown', e => { if (e.target.id === 'modal') closeModal(); });
+$('#modal').addEventListener('pointerdown', e => { if (e.target.id === 'modal') closeModal(); });
 
 // Any user interaction may have changed the analysis; commit() records it for undo if so.
 for (const ev of ['change', 'click', 'mouseup', 'keyup', 'drop']) document.addEventListener(ev, () => app.scheduleCommit(0));

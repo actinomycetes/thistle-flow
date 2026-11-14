@@ -2,7 +2,7 @@
 
 Part of the Thistle suite, together with [Thistle Plot](https://github.com/actinomycetes/thistle-plot) (TP).
 
-**Status:** beta (0.x; current v0.15.2). Calculations are cross-checked against independent open-source implementations (see `tools/validate/`). Check important results against an established package before publishing. Version history: [`help.html#history`](help.html#history).
+**Status:** beta (0.x; current v0.16.0). Calculations are cross-checked against independent open-source implementations (see `tools/validate/`). Check important results against an established package before publishing. Version history: [`help.html#history`](help.html#history).
 
 **Hosted copy:** https://actinomycetes.github.io/thistle-flow/
 
@@ -36,10 +36,11 @@ Tests:
 
 | Area | What you get |
 |---|---|
+| **Platforms** | Any current browser on Mac, Windows and Linux (Chrome, Edge, Firefox, Safari), and **Safari on iPad** (iPadOS 16+): with a trackpad as on a Mac, or by touch and Apple Pencil (draw and move gates with a finger, double tap = double-click). Nothing is installed and no data are uploaded; a single-file version also works offline. |
 | **File support** | FCS 2.0 / 3.0 / 3.1 / 3.2. Float, double and integer data in both byte orders. `$PnE` log-amplified integer channels (legacy FACSCalibur/FACScan) are decoded. Files with multiple datasets (`$NEXTDATA`, e.g. Beckman `.LMD`) are split into separate samples. TEXT segments can be UTF-8 or Latin-1. |
 | **Verified to parse** | BD FACSDiva (Aria/Fortessa-class), BD Accuri C6+, FACSCalibur, FACScan, Thermo **Attune NxT**, **Sony** S1400EXi, Bio-Rad S3, Beckman Navios and FC500, plus the synthetic demo files |
 | **Compensation** | Reads the embedded `$SPILLOVER` / `SPILL` / `$COMP` matrix. Channel names are matched by `$PnN`, then by `$PnS`. Sony `APPLY_COMPENSATION=FALSE` is respected. You can edit the matrix with **live preview plots** (one per matrix value, redrawn while you type or nudge values with ↑/↓, before applying, optionally with the uncompensated events overlaid), restore the matrix stored in the file at any time, apply it to all samples, and import or export it as CSV. Spectral files (Sony ID7000/SA3800, Cytek) are usually already unmixed. Compensation has its own tab next to Gating. |
-| **Axis scales** | Linear, Log, **Biexponential (Logicle**, Parks/Moore reference algorithm) and Arcsinh (with cofactor). Scales are set per channel. The top of the scale defaults to the instrument's `$PnR` range. The Logicle dialog has an **Auto W** button. |
+| **Axis scales** | Linear, Log, **Biexponential (Logicle**, implemented from the published definition) and Arcsinh (with cofactor). Scales are set per channel. The top of the scale defaults to the instrument's `$PnR` range. The Logicle dialog has an **Auto W** button. |
 | **Plots** | **Pseudocolor** (event dots coloured by density, adjustable dot size), **Density** (smoothed), **Contour** (equal-probability, with optional outlier dots), **Dot** and histograms. Off-scale events pile up on the axes. Clicking an axis opens a quick menu for that axis (channel and scale). **Select-to-zoom** with unzoom and reset (double-click; view only). A workspace-wide or per-plot **limit on events shown** (default 10,000) keeps plots readable; statistics always use every event. Plot sizes S to XL. **Dark** (default) and light mode. |
 | **Gates** | Rectangle, Polygon, Ellipse, Quadrant (4 linked gates, labelled Q1–Q4 in plots; standard, **angled** with arms at any angle, or **staggered** with arms that slide independently), Range and Split (left/right) on histograms, with a preview that follows the cursor, and **✨ Auto**: click a population to get a polygon gate around it. Gates form a hierarchy. After a gate is drawn the tool returns to **Select**, where you can drag a gate to move it, drag its vertices or handles to reshape it, **drag its label** anywhere inside the plot, and double-click inside a gate to open a plot of that population. Gates are **shared by all samples** in a workspace, so you gate once and get results for every sample; a gate can also be **adjusted for individual samples** (marked ✎, with one click back to the shared gate). |
 | **Samples** | Drag the ☰ handle to change the order of the samples (used in Statistics, figures and overlays; saved with the workspace). |

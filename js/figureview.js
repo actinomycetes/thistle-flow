@@ -5,7 +5,7 @@
 //   sample in the workspace, so one range gate sets the gate for all overlaid samples at once.
 import { renderPlot, prepareCanvas, gateGeometry, MARGIN, THEMES } from './render.js';
 import { makeTransform } from './transforms.js';
-import { trackDrag } from './ui.js';
+import { trackDrag, onDoubleTap } from './ui.js';
 
 const FIG_HANDLE = 6;
 
@@ -15,9 +15,10 @@ export class FigureView {
     Object.assign(this, { app, f, canvas, makeSpec, editable, onLabelDone });
     this.spec = null; this.L = null; this.drag = null; this.drawing = null;
     canvas._figView = this; // lets tests inspect what was drawn
-    canvas.addEventListener('mousedown', e => this.onDown(e));
-    canvas.addEventListener('mousemove', e => { if (!this.drag && !this.drawing) this.hover(e); });
+    canvas.addEventListener('pointerdown', e => this.onDown(e));
+    canvas.addEventListener('pointermove', e => { if (!this.drag && !this.drawing) this.hover(e); });
     canvas.addEventListener('dblclick', e => this.onDbl(e));
+    onDoubleTap(canvas, e => this.onDbl(e));
     this._move = e => this.onMove(e);
     this._up = () => this.onUp();
   }

@@ -87,9 +87,10 @@ function makeImage(w, h) {
 // Draw an RGBA bitmap scaled into a rectangle. Vector contexts embed it as an image.
 function drawRaster(ctx, img, x, y, w, h, smooth) {
   if (ctx.drawRaster) return ctx.drawRaster(img, x, y, w, h, smooth);
-  const off = typeof OffscreenCanvas !== 'undefined' ? new OffscreenCanvas(img.width, img.height)
-    : Object.assign(document.createElement('canvas'), { width: img.width, height: img.height });
-  off.getContext('2d').putImageData(img, 0, 0);
+  let off = typeof OffscreenCanvas !== 'undefined' ? new OffscreenCanvas(img.width, img.height) : null;
+  let octx = off && off.getContext('2d'); // Safari 16.4 has OffscreenCanvas but no 2-D context for it
+  if (!octx) { off = Object.assign(document.createElement('canvas'), { width: img.width, height: img.height }); octx = off.getContext('2d'); }
+  octx.putImageData(img, 0, 0);
   ctx.save();
   ctx.imageSmoothingEnabled = !!smooth;
   ctx.drawImage(off, x, y, w, h);

@@ -663,7 +663,7 @@ test('drags end even if the browser loses the mouseup (Safari); axis menu beside
   assert.equal(await page.locator('.rubber-band').count(), 1, 'selection box while dragging');
   assert.equal(await page.locator('.popover').count(), 0, 'menu closed by the click outside');
   // Safari sometimes never delivers this mouseup: the next move arrives with no button pressed
-  await ev(() => window.dispatchEvent(new MouseEvent('mousemove', { clientX: 300, clientY: 300, buttons: 0, bubbles: true })));
+  await ev(() => window.dispatchEvent(new PointerEvent('pointermove', { clientX: 300, clientY: 300, buttons: 0, bubbles: true, pointerType: 'mouse' })));
   assert.equal(await page.locator('.rubber-band').count(), 0, 'selection box ended');
   const selAfter = await ev(() => [...window.thistleFlow.ws.selPlots].length);
   await page.mouse.move(grid.x + 10, grid.y + 10, { steps: 3 }); // more movement must not keep selecting
@@ -673,7 +673,7 @@ test('drags end even if the browser loses the mouseup (Safari); axis menu beside
   page.once('dialog', d => d.dismiss());
   await page.click('[data-tool=rect]');
   await page.mouse.move(cv.x + 150, cv.y + 120); await page.mouse.down(); await page.mouse.move(cv.x + 220, cv.y + 200, { steps: 4 });
-  await ev(() => window.dispatchEvent(new MouseEvent('mousemove', { clientX: 10, clientY: 10, buttons: 0 })));
+  await ev(() => window.dispatchEvent(new PointerEvent('pointermove', { clientX: 10, clientY: 10, buttons: 0, pointerType: 'mouse' })));
   await page.mouse.up();
   assert.equal(await ev(() => window.thistleFlow.tool), 'select', 'gate drag finished (back to Select)');
 
@@ -1208,4 +1208,93 @@ test('header labels, Compensation tab, Axis scales in Plots; FCS 2 warning; auto
   assert.equal(await ev(() => window.thistleFlow.ws.engine.list().length), nGates);
   assert.deepEqual(errors, []);
   await page.close();
+});
+
+test('iPad (Safari, touch): files open, gates drawn and moved with a finger, double tap, panes, export size', { timeout: 180000 }, async () => {
+  browser = browser || await chromium.launch();
+  // iPadOS Safari reports itself as a Mac; the touch screen gives it away
+  const ctx = await browser.newContext({
+    viewport: { width: 1180, height: 820 }, hasTouch: true,
+    userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15',
+  });
+  const page = await ctx.newPage();
+  const errors = [];
+  page.on('pageerror', e => errors.push(e.message));
+  const prompts = ['Touch gate'];
+  page.on('dialog', d => d.accept(prompts.shift()));
+  await page.addInitScript(() => {
+    try { localStorage.clear(); } catch {}
+    Object.defineProperty(Navigator.prototype, 'maxTouchPoints', { get: () => 5 });
+  });
+  const ev = f => page.evaluate(f);
+  await page.goto(BASE + '/');
+  assert.equal(await ev(() => document.documentElement.classList.contains('ios')), true, 'recognised as iPad');
+  assert.equal(await ev(() => document.getElementById('fileInput').hasAttribute('accept')), false, 'no extension filter (it greys out .fcs on iOS)');
+  await page.locator('#btnDemo').tap();
+  await page.waitForSelector('.plot-card canvas');
+
+  // finger gestures are Pointer Events with pointerType "touch"
+  const touch = (sel, n, pts, { gap = 0 } = {}) => page.evaluate(async ([sel, n, pts, gap]) => {
+    const el = document.querySelectorAll(sel)[n], r = el.getBoundingClientRect();
+    const at = ([x, y]) => ({ clientX: r.left + x, clientY: r.top + y, pointerId: 7, pointerType: 'touch', isPrimary: true, bubbles: true, cancelable: true });
+    el.dispatchEvent(new PointerEvent('pointerdown', { ...at(pts[0]), buttons: 1, button: 0 }));
+    for (const p of pts.slice(1)) { el.dispatchEvent(new PointerEvent('pointermove', { ...at(p), buttons: 1, button: -1 })); await new Promise(r => setTimeout(r, 10)); }
+    el.dispatchEvent(new PointerEvent('pointerup', { ...at(pts.at(-1)), buttons: 0, button: 0 }));
+    if (gap) await new Promise(r => setTimeout(r, gap));
+  }, [sel, n, pts, gap]);
+  const plotPx = (u, v) => page.evaluate(([u, v]) => { const pv = [...window.thistleFlow.views.values()][0]; return [pv.L.ux2px(u), pv.L.uy2px(v)]; }, [u, v]);
+  const line = (a, b, k = 6) => Array.from({ length: k + 1 }, (_, i) => [a[0] + (b[0] - a[0]) * i / k, a[1] + (b[1] - a[1]) * i / k]);
+
+  // draw a rectangle with a finger
+  await page.locator('[data-tool=rect]').tap();
+  await touch('.plot-card canvas', 0, line(await plotPx(0.15, 0.08), await plotPx(0.45, 0.3)));
+  const g = await ev(() => window.thistleFlow.ws.engine.list().find(x => x.name === 'Touch gate'));
+  assert.ok(g && g.type === 'rect', 'rectangle gate drawn by touch');
+  // move it with a finger (inside the gate)
+  const inside = await plotPx(0.3, 0.19);
+  await touch('.plot-card canvas', 0, line(inside, [inside[0] + 30, inside[1]]));
+  const g2 = await ev(() => window.thistleFlow.ws.engine.list().find(x => x.name === 'Touch gate'));
+  assert.ok(g2.x0 > g.x0 && Math.abs(g2.y0 - g.y0) < 1e-6 * Math.abs(g.y0) + 1, 'gate moved right by the drag');
+  // double tap inside the gate opens a plot of that population (like a double-click)
+  const nPlots = await ev(() => window.thistleFlow.ws.plots.length);
+  const p2 = await plotPx(0.33, 0.19);
+  await touch('.plot-card canvas', 0, [p2]); await touch('.plot-card canvas', 0, [p2]);
+  await page.waitForTimeout(200);
+  assert.equal(await ev(() => window.thistleFlow.ws.plots.length), nPlots + 1, 'double tap = double-click');
+
+  // zoom with a finger, double tap resets
+  await page.locator('[data-tool=zoom]').tap();
+  await touch('.plot-card canvas', 0, line(await plotPx(0.1, 0.1), await plotPx(0.5, 0.5)), { gap: 400 });
+  assert.ok(await ev(() => window.thistleFlow.ws.plots[0].zoom), 'zoomed by touch');
+  const c = await plotPx(0.3, 0.3);
+  await touch('.plot-card canvas', 0, [c]); await touch('.plot-card canvas', 0, [c]);
+  assert.equal(await ev(() => window.thistleFlow.ws.plots[0].zoom), undefined, 'double tap resets the zoom');
+  await page.locator('[data-tool=select]').tap();
+
+  // resize the sidebar with a finger
+  const w0 = await ev(() => document.getElementById('sidebar').offsetWidth);
+  await touch('#mainSplit', 0, line([5, 200], [85, 200]));
+  assert.ok(await ev(() => document.getElementById('sidebar').offsetWidth) > w0 + 40, 'sidebar wider');
+
+  // reorder samples with a finger on the ☰ handle
+  const order = () => ev(() => window.thistleFlow.ws.samples.map(s => s.name));
+  const before = await order();
+  const rows = await ev(() => [...document.querySelectorAll('#sampleList > li')].map(li => { const r = li.getBoundingClientRect(); return r.top + r.height / 2; }));
+  const hdl = await ev(() => { const r = document.querySelector('#sampleList .drag-handle').getBoundingClientRect(); return [r.width / 2, r.height / 2]; });
+  await touch('#sampleList .drag-handle', 0, line(hdl, [hdl[0], hdl[1] + (rows[2] - rows[0]) + 15]));
+  assert.deepEqual(await order(), [before[1], before[2], before[0]], 'first sample moved to the end');
+
+  // Compensation tab: tapping a preview plot selects its matrix value
+  await page.locator('.tabs [data-tab=comp]').tap();
+  await page.locator('.comp-mini[data-i="0"][data-j="2"]').tap();
+  assert.match(await page.textContent('.comp-focus-wrap'), /→/);
+  assert.equal(await ev(() => document.activeElement?.dataset?.j), '2');
+
+  // exports stay within the iPad canvas limit (16.7 million pixels)
+  const { exportScale } = await import('../../js/ui.js');
+  assert.equal(exportScale(400, 300, true), 3);
+  const s = exportScale(3000, 2500, true);
+  assert.ok(3000 * 2500 * s * s <= 16.7e6 && s > 1);
+  assert.deepEqual(errors, []);
+  await ctx.close();
 });

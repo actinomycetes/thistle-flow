@@ -1,7 +1,7 @@
 // Interactive plot (gating) component.
 import { renderPlot, prepareCanvas, gateGeometry, MARGIN, THEMES, SERIES_COLORS, normalizeKind } from './render.js';
 import { makeTransform } from './transforms.js';
-import { trackDrag } from './ui.js';
+import { trackDrag, onDoubleTap } from './ui.js';
 import { densityGrid, autoGatePolygon } from './autogate.js';
 import { populationStats, pointInPolygon, gateFor, isCustom, isOneD, quadArms, quadRegion, quadMode, ARMS, DEFAULT_ANGLES } from './gates.js';
 
@@ -174,12 +174,14 @@ export class PlotView {
   constructor(app, def, canvas) {
     Object.assign(this, { app, def, canvas });
     this.drawing = null; this.drag = null; this.spec = null; this.L = null;
-    canvas.addEventListener('mousedown', e => this.onDown(e));
+    // Pointer Events: mouse, trackpad, finger and Apple Pencil alike (iPad); a double tap = double-click
+    canvas.addEventListener('pointerdown', e => this.onDown(e));
     canvas.addEventListener('dblclick', e => this.onDbl(e));
+    onDoubleTap(canvas, e => this.onDbl(e));
     this._move = e => this.onMove(e);
     this._up = e => this.onUp(e);
-    canvas.addEventListener('mousemove', e => { if (!this.drag && !this.drawing) this.hover(e); else if (this.drawing?.type === 'polygon') this.onMove(e); });
-    canvas.addEventListener('mouseleave', () => { if (this.preview) { this.preview = null; this.quickDraw(); } });
+    canvas.addEventListener('pointermove', e => { if (!this.drag && !this.drawing) this.hover(e); else if (this.drawing?.type === 'polygon') this.onMove(e); });
+    canvas.addEventListener('pointerleave', () => { if (this.preview) { this.preview = null; this.quickDraw(); } });
     canvas.addEventListener('contextmenu', e => { if (this.drawing) { e.preventDefault(); this.drawing = null; this.draw(); } });
   }
 
