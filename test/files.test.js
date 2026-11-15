@@ -1,0 +1,45 @@
+// Saved files follow the Thistle suite convention: .tflow, with { app, format, appVersion, kind } first.
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { parseFCS } from '../js/fcs.js';
+import { Sample } from '../js/model.js';
+import { makeDemoFile } from '../js/demo.js';
+import { Workspace, fileHeader, fileFormat, checkThistleFlowFile, FILE_EXT, FILE_FORMAT } from '../js/workspace.js';
+import { APP_VERSION } from '../js/version.js';
+
+function ws1() {
+  const ws = new Workspace('T');
+  const [ds] = parseFCS(makeDemoFile('a.fcs', 0.3, 5, 3000), 'a.fcs');
+  ws.samples.push(new Sample(ds)); ws.activeId = ws.samples[0].id; ws.rebase();
+  ws.engine.add({ id: 'g', name: 'Cells', parent: null, type: 'rect', x: 'FSC-A', y: 'SSC-A', x0: 1, x1: 2, y0: 1, y1: 2 });
+  return ws;
+}
+
+test('workspaces and templates start with the Thistle Flow header and are saved as .tflow', () => {
+  assert.equal(FILE_EXT, 'tflow');
+  for (const data of [ws1().serialize(), ws1().template()]) {
+    assert.deepEqual(Object.keys(data).slice(0, 4), ['app', 'format', 'appVersion', 'kind']);
+    assert.equal(data.app, 'Thistle Flow'); assert.equal(data.format, FILE_FORMAT); assert.equal(data.appVersion, APP_VERSION);
+    assert.ok(Number.isInteger(data.format));
+  }
+  assert.equal(fileHeader('template').kind, 'template');
+});
+
+test('files saved by earlier versions (ThistleFlow .json/.zip, FlowLite) still open', () => {
+  const now = ws1().serialize();
+  const old = { ...now, app: 'ThistleFlow', version: 2 }; delete old.format;
+  const ws = new Workspace('X'); const [ds] = parseFCS(makeDemoFile('a.fcs', 0.3, 5, 3000), 'a.fcs'); ws.samples.push(new Sample(ds));
+  assert.deepEqual(ws.deserialize(old), []);
+  assert.equal(ws.engine.get('g').name, 'Cells');
+  assert.equal(fileFormat(old), 2); assert.equal(fileFormat({ app: 'FlowLite' }), 1); assert.equal(fileFormat(now), 3);
+  const tpl = { ...ws1().template(), app: 'ThistleFlow', version: 1 }; delete tpl.format;
+  assert.doesNotThrow(() => new Workspace('Y').applyTemplate(tpl, ['#000']));
+  assert.doesNotThrow(() => checkThistleFlowFile({ app: 'FlowLite' }));
+});
+
+test('files from other Thistle apps get a plain message naming the right app', () => {
+  assert.throws(() => checkThistleFlowFile({ app: 'Thistle Plot', format: 1 }), /This is a Thistle Plot project; open it in Thistle Plot \(https:\/\/actinomycetes\.github\.io\/thistle-plot\/\)\./);
+  assert.throws(() => new Workspace('Z').deserialize({ app: 'Thistle Plot' }), /Thistle Plot project/);
+  assert.throws(() => checkThistleFlowFile({ app: 'Thistle Cell' }), /saved by Thistle Cell; open it in that app/);
+  assert.throws(() => checkThistleFlowFile({ hello: 1 }), /not a Thistle Flow file/);
+});

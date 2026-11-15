@@ -11,6 +11,27 @@ let WS_N = 0;
 
 const isScatterOrTime = ch => /^(FSC|SSC|BSC|FS|SS)|TIME|EVENT|WIDTH|^SAMPLEID/i.test(ch);
 
+// ---- saved files (Thistle suite convention) ----
+// Every file Thistle Flow saves has the extension .tflow (workspaces with or without the FCS files, and
+// templates) and starts with { app: 'Thistle Flow', format: <integer>, appVersion, kind }. A workspace with
+// its FCS files is a zip container (workspace.json + fcs/…) under the same extension; the type is
+// recognised from the contents. Format history: 1 = FlowLite, 2 = 'ThistleFlow' (.json/.zip), 3 = .tflow.
+export const APP_TITLE = 'Thistle Flow', FILE_EXT = 'tflow', FILE_FORMAT = 3;
+const OWN_APP_NAMES = ['Thistle Flow', 'ThistleFlow', 'FlowLite'];
+const SUITE = { 'Thistle Plot': { what: 'a Thistle Plot project', url: 'https://actinomycetes.github.io/thistle-plot/' } };
+export const fileHeader = kind => ({ app: APP_TITLE, format: FILE_FORMAT, appVersion: APP_VERSION, kind });
+// format of a saved file (files before format 3 stored it as `version`; templates then used version 1)
+export const fileFormat = d => d.format ?? (d.kind === 'template' ? 2 : d.version ?? 1);
+// Throws a plain message for files from other Thistle apps (or anything else)
+export function checkThistleFlowFile(d) {
+  if (d && OWN_APP_NAMES.includes(d.app)) return;
+  const app = typeof d?.app === 'string' ? d.app.trim() : '';
+  const other = SUITE[app] || (/^thistle\s*plot$/i.test(app.replace(/\s+/g, ' ')) ? SUITE['Thistle Plot'] : null);
+  if (other) throw new Error(`This is ${other.what}; open it in Thistle Plot (${other.url}).`);
+  if (/^thistle/i.test(app)) throw new Error(`This file was saved by ${app}; open it in that app.`);
+  throw new Error('This is not a Thistle Flow file.');
+}
+
 export class Workspace {
   constructor(name) {
     this.id = 'ws' + (++WS_N);
@@ -145,7 +166,7 @@ export class Workspace {
   serialize() {
     const keyOf = id => this.sampleById(id)?.key;
     return {
-      app: 'ThistleFlow', appVersion: APP_VERSION, kind: 'workspace', version: 2, name: this.name, saved: new Date().toISOString(),
+      ...fileHeader('workspace'), name: this.name, saved: new Date().toISOString(),
       transforms: this.transforms, gates: this.engine.toJSON(), plots: this.plots, displayMax: this.displayMax,
       figures: this.figures.map(f => ({ ...f, series: f.series?.map(se => ({ ...se, sampleKey: keyOf(se.sampleId), sampleId: undefined })) })),
       statsCfg: this.statsCfg,
@@ -160,10 +181,10 @@ export class Workspace {
     return [...seen.values()];
   }
   // Keys of the samples a saved workspace refers to
-  static savedKeys(data) { return data.version >= 2 ? (data.samples || []).map(e => e.key) : (data.samples || []); }
+  static savedKeys(data) { return fileFormat(data) >= 2 ? (data.samples || []).map(e => e.key) : (data.samples || []); }
   // Returns the list of sample keys referenced by the file but not loaded in this workspace
   deserialize(ws) {
-    if (ws.app !== 'ThistleFlow' && ws.app !== 'FlowLite') throw new Error('not a Thistle Flow workspace');
+    checkThistleFlowFile(ws);
     if (ws.kind === 'template') throw new Error('this is a template; use “Apply template”');
     const byKey = k => this.samples.find(s => s.key === k || s.name === k);
     if (ws.name) this.name = ws.name;
@@ -174,7 +195,7 @@ export class Workspace {
     if (ws.displayMax !== undefined) this.displayMax = ws.displayMax;
     this.figures = (ws.figures || []).map(f => ({ ...f, series: f.series?.map(se => ({ ...se, sampleId: byKey(se.sampleKey ?? se.sampleName)?.id })).filter(se => se.sampleId) }));
     let missing = [];
-    if (ws.version >= 2) {
+    if (fileFormat(ws) >= 2) {
       for (const e of ws.samples || []) {
         const s = byKey(e.key); if (!s) { missing.push(e.key); continue; }
         if (e.spill) s.setSpill(e.spill);
@@ -204,7 +225,7 @@ export class Workspace {
     const labels = {};
     for (const smp of this.samples) for (const [ch, l] of Object.entries(smp.edits.labels)) labels[ch] = l;
     return {
-      app: 'ThistleFlow', appVersion: APP_VERSION, kind: 'template', version: 1, name: this.name, saved: new Date().toISOString(),
+      ...fileHeader('template'), name: this.name, saved: new Date().toISOString(),
       transforms: Object.fromEntries(Object.entries(this.transforms).filter(([, c]) => !c.auto)),
       // per-sample gate adjustments belong to specific files, so templates keep only the global gates
       gates: this.engine.toJSON().map(({ overrides, ...g }) => g), plots: this.plots, displayMax: this.displayMax, statsCfg: this.statsCfg,
@@ -220,7 +241,8 @@ export class Workspace {
     };
   }
   applyTemplate(t, colors) {
-    if (t.app !== 'ThistleFlow' || t.kind !== 'template') throw new Error('not a Thistle Flow template');
+    checkThistleFlowFile(t);
+    if (t.kind !== 'template') throw new Error('not a Thistle Flow template');
     this.engine.load(JSON.parse(JSON.stringify(t.gates || [])));
     for (const [ch, cfg] of Object.entries(t.transforms || {})) this.transforms[ch] = cfg;
     this.plots = (t.plots || []).map(p => ({ ...p }));

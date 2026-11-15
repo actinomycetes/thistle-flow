@@ -164,6 +164,7 @@ const MIME = {
   json: ['application/json', 'Workspace / template (JSON)'], csv: ['text/csv', 'CSV table'], png: ['image/png', 'PNG image'],
   svg: ['image/svg+xml', 'SVG vector image'], pdf: ['application/pdf', 'PDF document'], fcs: ['application/octet-stream', 'FCS file'],
   zip: ['application/zip', 'Workspace with FCS files (zip)'],
+  tflow: ['application/octet-stream', 'Thistle Flow file'],
 };
 
 function downloadBlob(name, blob) {
@@ -210,7 +211,7 @@ export function saveDialog({ title, baseName, ext = 'json', note, extra, makeDat
     let saving = false;
     const go = async () => {
       const e = extOf();
-      const name = safeName(input.value.replace(/\.(json|zip)$/i, '')) + '.' + e;
+      const name = safeName(input.value.replace(/\.(tflow|json|zip)$/i, '')) + '.' + e;
       saving = true;
       closeModal();
       try {
@@ -240,7 +241,7 @@ export function saveDialog({ title, baseName, ext = 'json', note, extra, makeDat
 // Pick several files, or a whole folder (folder=true; works in Chrome, Edge, Firefox and Safari)
 export function pickFiles({ accept = '', folder = false } = {}) {
   // iOS has no file type for .fcs, so an extension filter would grey the files out
-  if (IS_IOS && /\.fcs/i.test(accept)) accept = '';
+  if (IS_IOS && /\.(fcs|tflow)/i.test(accept)) accept = '';
   return new Promise(resolve => {
     const inp = h('input', { type: 'file', accept, multiple: true, class: 'file-input', onchange: () => { resolve([...inp.files]); inp.remove(); } });
     if (folder) inp.setAttribute('webkitdirectory', '');
@@ -259,7 +260,7 @@ export function exportScale(w, h, ios = IS_IOS) {
 // Read a user-picked text file
 export function pickFile(accept) {
   return new Promise(resolve => {
-    const inp = h('input', { type: 'file', accept: IS_IOS && /\.fcs/i.test(accept || '') ? '' : accept, class: 'file-input', onchange: () => { resolve(inp.files[0] || null); inp.remove(); } });
+    const inp = h('input', { type: 'file', accept: IS_IOS && /\.(fcs|tflow)/i.test(accept || '') ? '' : accept, class: 'file-input', onchange: () => { resolve(inp.files[0] || null); inp.remove(); } });
     document.body.append(inp); inp.click();
   });
 }

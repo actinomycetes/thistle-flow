@@ -9,7 +9,9 @@ import { renderSVG, renderPDF } from './vector.js';
 import { demoFiles } from './demo.js';
 import { $, $$, h, uid, esc, safeName, dateStamp, toast, openModal, closeModal, modalOpen, choose, popover, closePopover, doneButton, trackDrag, saveFile, saveDialog, pickFile, pickFiles, onDoubleTap, IS_IOS, exportScale } from './ui.js';
 import { createZip, readZip, isZip } from './zip.js';
-import { Workspace } from './workspace.js';
+import { Workspace, FILE_EXT, fileFormat, checkThistleFlowFile } from './workspace.js';
+// Files that "Load workspace" / "Apply template" accept: .tflow, and the older .json / .zip
+const OPEN_ACCEPT = '.tflow,.json,.zip';
 import { renderProperties } from './properties.js';
 import { FigureView } from './figureview.js';
 import { CompPreview } from './compview.js';
@@ -1606,8 +1608,8 @@ app.saveWorkspace = async (ws = app.ws) => {
   const size = files.reduce((t, f) => t + f.data.length, 0);
   const include = h('input', { type: 'checkbox', checked: canBundle, disabled: !canBundle });
   const name = await saveDialog({
-    title: 'Save workspace', baseName: `${ws.name}`, ext: () => (include.checked ? 'zip' : 'json'),
-    note: 'A workspace stores gates, scales, plots, layouts, statistics settings, compensation and metadata edits. With the FCS files included it is one .zip that reopens with all its samples; without them it is a small .json that needs the FCS files next to it.',
+    title: 'Save workspace', baseName: `${ws.name}`, ext: FILE_EXT,
+    note: 'A workspace (.tflow) stores gates, scales, plots, layouts, statistics settings, compensation and metadata edits. With the FCS files included it reopens with all its samples on any computer; without them it is a small file that needs the FCS files next to it.',
     extra: h('label', { class: 'row' }, include, canBundle
       ? ` Include the ${files.length} FCS file${files.length === 1 ? '' : 's'} (${fmtMB(size)} before compression)`
       : ' Include the FCS files (not available: no samples loaded)'),
@@ -1632,6 +1634,7 @@ async function loadWorkspaceFile(file) {
     const u8 = new Uint8Array(await file.arrayBuffer());
     if (isZip(u8)) return await loadBundle(u8);
     const data = JSON.parse(new TextDecoder().decode(u8));
+    checkThistleFlowFile(data); // e.g. a Thistle Plot project: say which app opens it
     if (data.kind === 'template') return applyTemplateData(data);
     const ws = targetWorkspace(data);
     const missing = ws.deserialize(data);
@@ -1639,15 +1642,18 @@ async function loadWorkspaceFile(file) {
     renderAll();
     if (missing.length) locateDialog(ws, data, missing);
     else toast('Workspace loaded');
-  } catch (err) { console.error(err); toast('Could not load workspace: ' + err.message, true); }
+  } catch (err) { console.error(err); toast('Could not open the file: ' + niceError(err), true); }
 }
+// JSON errors from a file that is not a Thistle Flow file read better as a plain sentence
+const niceError = err => (err instanceof SyntaxError ? 'it is not a Thistle Flow file.' : err.message);
 
 async function loadBundle(u8) {
   toast('Opening workspace bundle…');
   const entries = await readZip(u8);
   const wsEntry = entries.find(e => e.name === 'workspace.json');
-  if (!wsEntry) throw new Error('this zip is not a Thistle Flow workspace (no workspace.json)');
+  if (!wsEntry) throw new Error('this is not a Thistle Flow workspace (no workspace.json inside)');
   const data = JSON.parse(new TextDecoder().decode(wsEntry.data));
+  checkThistleFlowFile(data);
   const ws = app.ws.samples.length ? newWorkspace(data.name) : app.ws;
   const names = new Map((data.files || []).map(f => [f.entry, f.name]));
   const items = entries.filter(e => e.name.startsWith('fcs/')).map(e => ({ name: names.get(e.name) || e.name.slice(4), buffer: bufferOf(e.data) }));
@@ -1664,7 +1670,7 @@ async function loadBundle(u8) {
 // picks the folder (all matching file names are loaded) or each file (any name).
 function locateDialog(ws, data, missingKeys) {
   const want = new Set(missingKeys);
-  const fileOf = new Map((data.version >= 2 ? data.samples || [] : []).map(e => [e.key, e.file || e.key.replace(/ \[\d+\]$/, '')]));
+  const fileOf = new Map((fileFormat(data) >= 2 ? data.samples || [] : []).map(e => [e.key, e.file || e.key.replace(/ \[\d+\]$/, '')]));
   const baseOf = k => (fileOf.get(k) || k.replace(/ \[\d+\]$/, '')).toLowerCase();
   const body = h('div');
   const finish = msg => {
@@ -1740,7 +1746,7 @@ async function saveTemplate() {
   const ws = app.ws;
   const includeComp = h('input', { type: 'checkbox', checked: !!ws.activeSample()?.spill });
   await saveDialog({
-    title: 'Save analysis template', baseName: `${ws.name}_template`, ext: 'json',
+    title: 'Save analysis template', baseName: `${ws.name}_template`, ext: FILE_EXT,
     note: 'A template holds the gates, axis scales, plots, layout figures, statistics settings and marker labels — no sample data and no file references — so it can be applied to new samples in any workspace.',
     extra: h('label', { class: 'row' }, includeComp, ' Include the compensation matrix of the active sample'),
     makeData: () => JSON.stringify(ws.template({ includeComp: includeComp.checked }), null, 1),
@@ -1748,9 +1754,15 @@ async function saveTemplate() {
 }
 
 async function applyTemplate() {
-  const file = await pickFile('.json,application/json');
+  const file = await pickFile(OPEN_ACCEPT);
   if (!file) return;
-  try { await applyTemplateData(JSON.parse(await file.text())); } catch (err) { toast('Could not apply template: ' + err.message, true); }
+  try {
+    const u8 = new Uint8Array(await file.arrayBuffer());
+    if (isZip(u8)) throw new Error('this file is a workspace with FCS files, not a template (use Load workspace)');
+    const t = JSON.parse(new TextDecoder().decode(u8));
+    checkThistleFlowFile(t);
+    await applyTemplateData(t);
+  } catch (err) { toast('Could not apply template: ' + niceError(err), true); }
 }
 async function applyTemplateData(t) {
   const ws = app.ws;
@@ -1828,7 +1840,8 @@ function setupSplitters() {
 }
 
 // ---------- wire up ----------
-if (IS_IOS) { $('#fileInput').removeAttribute('accept'); document.documentElement.classList.add('ios'); } // .fcs is greyed out by an extension filter on iOS
+// iOS cannot filter by custom extensions (.fcs, .tflow would be greyed out)
+if (IS_IOS) { $('#fileInput').removeAttribute('accept'); $('#wsInput').removeAttribute('accept'); document.documentElement.classList.add('ios'); }
 $('#fileInput').addEventListener('change', e => { loadFiles(e.target.files); e.target.value = ''; });
 $('#wsInput').addEventListener('change', e => { if (e.target.files[0]) loadWorkspaceFile(e.target.files[0]); e.target.value = ''; });
 $('#btnDemo').addEventListener('click', loadDemo);
@@ -1938,7 +1951,8 @@ window.addEventListener('dragover', e => e.preventDefault());
 window.addEventListener('drop', e => {
   e.preventDefault(); dragDepth = 0; document.body.classList.remove('dragging');
   const files = [...e.dataTransfer.files];
-  const isWs = f => /\.(json|zip)$/i.test(f.name);
+  // Thistle files (and older .json/.zip workspaces); other Thistle apps' files get a plain message
+  const isWs = f => /\.(tflow|json|zip|tplot|thistle|pprism)$/i.test(f.name);
   const wsFile = files.find(isWs);
   loadFiles(files.filter(f => !isWs(f))).then(() => wsFile && loadWorkspaceFile(wsFile));
 });

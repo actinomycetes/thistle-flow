@@ -180,8 +180,8 @@ test('all UI features work end to end', { timeout: 240000 }, async () => {
   check('(12) save dialog pre-fills a dated name', /^Workspace 1_\d{4}-\d{2}-\d{2}_\d{4}$/.test(fname), fname);
   await page.fill('#modalBody input[type=text]', 'MyExperiment_' + fname.split('_').slice(1).join('_'));
   const [wsDl] = await Promise.all([page.waitForEvent('download'), page.click('#modalBody button.primary')]);
-  await wsDl.saveAs(`${OUT}/ws.zip`);
-  check('(12) saved with the chosen name (zip with FCS files by default)', /^MyExperiment_.*\.zip$/.test(wsDl.suggestedFilename()), wsDl.suggestedFilename());
+  await wsDl.saveAs(`${OUT}/ws.tflow`);
+  check('(12) saved with the chosen name as .tflow (FCS files included by default)', /^MyExperiment_.*\.tflow$/.test(wsDl.suggestedFilename()), wsDl.suggestedFilename());
   check('(12) workspace no longer marked unsaved', await ev(() => !window.thistleFlow.ws.dirty));
 
   // (14) properties: edit operator + marker label, undo
@@ -203,8 +203,10 @@ test('all UI features work end to end', { timeout: 240000 }, async () => {
   await page.click('[data-tab=gating]');
   await page.click('#btnSaveTpl');
   const [tplDl] = await Promise.all([page.waitForEvent('download'), page.click('#modalBody button.primary')]);
-  await tplDl.saveAs(`${OUT}/tpl.json`);
-  const tpl = JSON.parse(fs.readFileSync(`${OUT}/tpl.json`, 'utf8'));
+  await tplDl.saveAs(`${OUT}/tpl.tflow`);
+  check('(6) template saved as .tflow', /\.tflow$/.test(tplDl.suggestedFilename()), tplDl.suggestedFilename());
+  const tpl = JSON.parse(fs.readFileSync(`${OUT}/tpl.tflow`, 'utf8'));
+  check('(6) template file names its app and format first', tpl.app === 'Thistle Flow' && Number.isInteger(tpl.format) && Object.keys(tpl)[0] === 'app', JSON.stringify(Object.keys(tpl).slice(0, 4)));
   check('(6) template has no sample data or file names', tpl.kind === 'template' && !JSON.stringify(tpl).includes('.fcs') && tpl.gates.length === nG);
 
   // (5) new tab
@@ -212,7 +214,7 @@ test('all UI features work end to end', { timeout: 240000 }, async () => {
   check('(5) + opens a new workspace tab', await ev(() => window.thistleFlow.workspaces.length) === 2);
   await page.click('#btnDemo'); await page.waitForSelector('.plot-card canvas');
   const [chooser] = await Promise.all([page.waitForEvent('filechooser'), page.click('#btnApplyTpl')]);
-  await chooser.setFiles(`${OUT}/tpl.json`);
+  await chooser.setFiles(`${OUT}/tpl.tflow`);
   await page.waitForTimeout(500);
   check('(6) template applied to new samples', await ev(() => window.thistleFlow.ws.engine.list().length) === nG);
   await page.screenshot({ path: OUT + '/e-tabs.png' });
@@ -326,7 +328,7 @@ test('all UI features work end to end', { timeout: 240000 }, async () => {
 
   // reload workspace into fresh page
   await page.reload(); await page.click('#btnDemo'); await page.waitForSelector('.plot-card canvas');
-  await page.setInputFiles('#wsInput', `${OUT}/ws.zip`); await page.waitForFunction(() => window.thistleFlow.workspaces.length === 2 && window.thistleFlow.ws.samples.length === 3, null, { timeout: 30000 });
+  await page.setInputFiles('#wsInput', `${OUT}/ws.tflow`); await page.waitForFunction(() => window.thistleFlow.workspaces.length === 2 && window.thistleFlow.ws.samples.length === 3, null, { timeout: 30000 });
   const re = await ev(() => ({ g: window.thistleFlow.ws.engine.list().length, f: window.thistleFlow.ws.figures.length, lp: window.thistleFlow.ws.engine.list()[0]?.labelPos, op: window.thistleFlow.ws.activeSample().text['$OP'] }));
   check('workspace round trip (gates, figures, label position)', re.g === nG && re.f === 1 && !!re.lp, JSON.stringify(re));
 
@@ -415,16 +417,23 @@ test('overlay range-gate button, sample labels, workspace bundles and locating F
   // save as a bundle (zip with FCS files) and reopen it in a fresh page
   await page.click('#btnSaveWs');
   assert.equal(await page.isChecked('#modalBody input[type=checkbox]'), true, 'FCS files included by default');
-  assert.equal((await page.textContent('#modalBody .row .hint')).trim(), '.zip');
+  assert.equal((await page.textContent('#modalBody .row .hint')).trim(), '.tflow');
   const [zipDl] = await Promise.all([page.waitForEvent('download'), page.click('#modalBody button.primary')]);
-  const zipPath = path.join(OUT, 'bundle.zip'); await zipDl.saveAs(zipPath);
-  assert.match(zipDl.suggestedFilename(), /\.zip$/);
+  const zipPath = path.join(OUT, 'bundle.tflow'); await zipDl.saveAs(zipPath);
+  assert.match(zipDl.suggestedFilename(), /\.tflow$/);
+  assert.equal(fs.readFileSync(zipPath).subarray(0, 2).toString('latin1'), 'PK', 'with the FCS files: a zip container');
   // ...and as plain JSON
   await page.click('#btnSaveWs');
   await page.uncheck('#modalBody input[type=checkbox]');
-  assert.equal((await page.textContent('#modalBody .row .hint')).trim(), '.json');
+  assert.equal((await page.textContent('#modalBody .row .hint')).trim(), '.tflow');
   const [jsonDl] = await Promise.all([page.waitForEvent('download'), page.click('#modalBody button.primary')]);
-  const jsonPath = path.join(OUT, 'plain.json'); await jsonDl.saveAs(jsonPath);
+  const jsonPath = path.join(OUT, 'plain.tflow'); await jsonDl.saveAs(jsonPath);
+  assert.match(jsonDl.suggestedFilename(), /\.tflow$/);
+  assert.equal(JSON.parse(fs.readFileSync(jsonPath, 'utf8')).app, 'Thistle Flow');
+  // a Thistle Plot project opened here: a plain message naming the right app
+  const tplotPath = path.join(OUT, 'figure.tplot'); fs.writeFileSync(tplotPath, JSON.stringify({ app: 'Thistle Plot', format: 1, appVersion: '0.11.0', datasets: [] }));
+  await page.setInputFiles('#wsInput', tplotPath);
+  await page.waitForFunction(() => /Thistle Plot project; open it in Thistle Plot/.test(document.getElementById('toast')?.textContent || ''), null, { timeout: 5000 });
 
   await page.reload();
   await page.setInputFiles('#wsInput', zipPath);

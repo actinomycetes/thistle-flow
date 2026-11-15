@@ -11,13 +11,28 @@ makes a single-file `dist/thistle-flow.html` for offline lab PCs. Data never lea
   scientists (British spelling is fine).
 - Everything is **beta 0.x**. Do not call it validated; Help says results must be spot-checked.
 - Statistics use compensated, untransformed values; gate membership is tested in the displayed (transformed) space.
-- `localStorage` only for per-viewer preferences (theme, pane sizes). Analyses are saved as workspace / template JSON files.
+- `localStorage` only for per-viewer preferences (theme, pane sizes). Analyses are saved as `.tflow` workspace / template files (see Thistle suite conventions).
 - No network access at runtime. The single-file build must keep working from `file://`.
 - Never modify the user's FCS files; metadata edits live in the workspace and in exported copies.
 
 - README.md: the text between `<!-- MAINTAINER SECTION START` and `<!-- MAINTAINER SECTION END -->` belongs to the
   maintainer. Never rewrite, reorder or "tidy" it; keep it word for word when updating the README, and pull `main`
   before editing (the maintainer may have edited it on GitHub). Change it only when explicitly asked.
+
+## Thistle suite conventions (decided by the maintainer, shared with Thistle Plot)
+- **One extension per app**: Thistle Flow saves `.tflow` for everything it saves (workspaces with or without the FCS
+  files, and templates); Thistle Plot saves `.tplot`; future apps follow `.t<name>`. Exports (CSV, PNG/SVG/PDF,
+  population FCS) keep their own formats.
+- **Header first**: a saved JSON starts with `{"app": "Thistle Flow", "format": <integer>, "appVersion": "x.y.z",
+  "kind": "workspace" | "template", ...}` (`fileHeader()` in `js/workspace.js`). A workspace with its FCS files is a zip
+  container under the same extension (`workspace.json` + `fcs/…`); the type is recognised from the contents
+  (zip magic bytes, then `kind`). Bump `FILE_FORMAT` when the saved structure changes. Format history: 1 = FlowLite,
+  2 = `ThistleFlow` `.json`/`.zip` (stored as `version`), 3 = `.tflow`.
+- **Keep opening older files**: `.json`/`.zip` with `app: 'ThistleFlow'` or `'FlowLite'` (`fileFormat()` reads
+  `format`, or `version` before format 3). Never drop this.
+- **Files from other Thistle apps** get a plain message, not a parse error (`checkThistleFlowFile()`), e.g.
+  "This is a Thistle Plot project; open it in Thistle Plot (https://actinomycetes.github.io/thistle-plot/)."
+- **iPad**: the file picker cannot filter custom extensions, so `accept` is dropped on iOS (`IS_IOS` in `js/ui.js`).
 
 ## Commands
 ```bash
