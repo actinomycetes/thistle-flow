@@ -30,17 +30,18 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          set -euo pipefail
+          # no pipefail: a reader that stops early (head, grep -q) would make the writer fail with SIGPIPE (exit 141)
+          set -eu
           git fetch --tags --force
           # every version that js/version.js has ever had, oldest first
           versions=$(git log --reverse -p -- js/version.js | sed -n "s/^+export const APP_VERSION = '\([0-9.]*\)';/\1/p" | awk '!seen[$0]++')
           for v in $versions; do
             tag="v$v"
             if git rev-parse -q --verify "refs/tags/$tag" >/dev/null; then echo "$tag exists"; continue; fi
-            first=$(git log --reverse --format=%H -S"APP_VERSION = '$v'" -- js/version.js | head -1)
+            first=$(git log --reverse --format=%H -S"APP_VERSION = '$v'" -- js/version.js | sed -n 1p)
             sha=""
-            for c in $(git rev-list --reverse "$first^..HEAD"); do
-              git show "$c:js/version.js" | grep -q "APP_VERSION = '$v'" || continue
+            for c in "$first" $(git rev-list --reverse "$first..HEAD"); do
+              git show "$c:js/version.js" | grep "APP_VERSION = '$v'" >/dev/null || continue
               git diff --quiet "$c" HEAD -- .github/workflows || continue
               sha=$c
             done
