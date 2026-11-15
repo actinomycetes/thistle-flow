@@ -36,10 +36,19 @@ makes a single-file `dist/thistle-flow.html` for offline lab PCs. Data never lea
   viewBox with `transform="translate(-1 0) scale(1.08)"`, plus an app badge in the bottom-right corner (TP: a blue table;
   TF: a laser hitting a cell: dark disc with a sky-blue rim, red beam from the upper left, cyan cell, three cyan scatter
   strokes). Since v0.17.2 the same picture is the header logo (`<svg class="app-logo">`, 30 px, top left) as well as the
-  favicon. The favicon data: URI is fully percent-encoded (`encodeURIComponent`, no raw spaces or quotes: Safari on
-  iPad reads it reliably), and a 180×180 PNG of the icon on the slate background is given as `apple-touch-icon`.
+  favicon. Write the favicon exactly as `<link rel="icon" href="data:image/svg+xml,...">`: NO `type` attribute and every
+  character escaped (`encodeURIComponent`, then `(`→`%28`, `)`→`%29`). Safari on iPad showed only this form (v0.17.1);
+  Thistle Plot's `type="image/svg+xml"` icon never appeared there. A 180×180 PNG of the icon on the slate background
+  is given as `apple-touch-icon`.
   `index.html` and `help.html` carry the same icon, logo and PNG (`test/files.test.js` checks they match).
 - **iPad**: the file picker cannot filter custom extensions, so `accept` is dropped on iOS (`IS_IOS` in `js/ui.js`).
+- **Colours (both themes, colour-blind readers)**: every text colour must reach WCAG AA (4.5:1, 3:1 for large text)
+  on its real background in dark AND light mode, and no box may keep a dark-mode background in light mode; use the
+  theme variables (`--accent` for fills with white text, `--accent-tx` for blue text, `--danger`, `--warn-tx`,
+  `--hint-*`, `--badge-bg`), never a hard-coded dark colour. `test/e2e/theme.e2e.test.mjs` audits every tab and Help.
+  Data colours are colour-blind safe: gates and overlay series use Okabe–Ito hues at mid brightness (`GATE_COLORS`,
+  `SERIES_COLORS`, ≥3:1 on white and on dark navy, because labels are drawn in the gate colour); the pseudocolor
+  scale is viridis (`STOPS` in `js/render.js`). Never use a rainbow/jet scale or red next to green to carry meaning.
 
 ## Commands
 ```bash

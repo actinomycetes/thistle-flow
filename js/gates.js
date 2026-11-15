@@ -1,7 +1,9 @@
 // Gate definitions, membership evaluation and population statistics.
 import { makeTransform } from './transforms.js';
 
-export const GATE_COLORS = ['#e6194b', '#3cb44b', '#4363d8', '#f58231', '#911eb4', '#42d4f4', '#f032e6', '#9a6324', '#000075', '#808000'];
+// Colour-blind-safe gate colours: Okabe–Ito hues (Okabe & Ito 2008), adjusted to mid brightness so the outline and the
+// label (drawn in the gate colour) read at 3:1 or better on both the white and the dark plot background.
+export const GATE_COLORS = ['#d55e00', '#3a8fc4', '#009e73', '#cc79a7', '#a87b00', '#0072b2', '#7f7f7f'];
 
 export function pointInPolygon(x, y, pts) {
   let inside = false;

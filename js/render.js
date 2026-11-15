@@ -15,8 +15,11 @@ export const THEMES = {
 export const PLOT_KINDS = [['pseudo', 'Pseudocolor'], ['smooth', 'Density'], ['contour', 'Contour'], ['dot', 'Dot']];
 export const normalizeKind = k => (k === 'density' || !k ? 'pseudo' : k);
 
-// Pseudocolour LUT (a common "jet"-style ramp): blue -> cyan -> green -> yellow -> red
-const STOPS = [[0, [0, 0, 200]], [0.25, [0, 170, 255]], [0.5, [0, 210, 60]], [0.75, [255, 230, 0]], [1, [230, 0, 0]]];
+// Pseudocolour LUT: viridis (purple -> blue -> teal -> green -> yellow), perceptually even and readable with colour
+// blindness (a rainbow ramp's green and red look alike to many readers). The darkest 15% of viridis is left out so
+// sparse events stay visible on the dark plot background.
+const STOPS = [[0, [72, 38, 119]], [0.14, [62, 74, 137]], [0.28, [48, 106, 142]], [0.42, [33, 145, 140]],
+  [0.57, [41, 175, 127]], [0.71, [98, 203, 95]], [0.85, [178, 221, 45]], [1, [253, 231, 37]]];
 export const LUT = (() => {
   const lut = [];
   for (let i = 0; i < 256; i++) {
@@ -33,7 +36,8 @@ export const LUT = (() => {
 export const DOT_SIZES = [[0.8, 'Tiny'], [1.2, 'Small'], [1.6, 'Medium'], [2.2, 'Large'], [3, 'Extra large']];
 export const DEFAULT_DOT = 1.2;
 
-export const SERIES_COLORS = ['#d62728', '#1f77b4', '#2ca02c', '#ff7f0e', '#9467bd', '#8c564b', '#e377c2', '#17becf', '#7f7f7f', '#bcbd22', '#000000'];
+// Overlay series: the same colour-blind-safe set as the gates (js/gates.js), in an order that starts with vermillion and sky blue
+export const SERIES_COLORS = ['#d55e00', '#3a8fc4', '#009e73', '#cc79a7', '#a87b00', '#0072b2', '#7f7f7f'];
 
 // extraRight: room reserved right of the plot (series labels placed outside).
 // zoom: { x: [u0, u1], y: [v0, v1] } — the part of the axis scale (0..1 units) that is shown.

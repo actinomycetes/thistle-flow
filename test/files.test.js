@@ -57,6 +57,8 @@ test('tab icon: the Thistle Flow thistle (dotted head) with the laser-and-cell b
   for (const f of ['index.html', 'help.html']) {
     const html = fs.readFileSync(new URL('../' + f, import.meta.url), 'utf8');
     assert.match(html, /rel="icon"[^>]*href="data:image\/svg\+xml,%3Csvg[^ '"]*"/, f + ': encoded tab icon');
+    // Safari on iPad showed the icon only without a type attribute and with every character escaped (v0.17.1 form)
+    assert.match(html, /<link rel="icon" href="data:image\/svg\+xml,%3Csvg[^ '"()]*">/, f + ': no type attribute, brackets escaped');
     assert.match(html, /rel="apple-touch-icon" href="data:image\/png;base64,iVBOR/, f + ': PNG icon for Safari');
     // the header logo (top left) is the same icon as the tab
     const logo = /<svg class="app-logo"[^>]*viewBox="0 0 32 32"[^>]*>([\s\S]*?)<\/svg>/.exec(html);
