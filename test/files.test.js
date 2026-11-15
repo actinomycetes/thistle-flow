@@ -53,4 +53,14 @@ test('tab icon: the Thistle Flow thistle (dotted head) with the laser-and-cell b
   assert.match(a, /<circle cx="9\.7" cy="12\.7" r="\.95"\/>/, 'dotted thistle head, as in the header logo');
   assert.match(a, /stroke="#ef4444"/, 'red laser beam');
   assert.match(a, /fill="#22d3ee"/, 'cyan cell');
+  // fully percent-encoded (no raw spaces or quotes), which Safari on iPad reads reliably
+  for (const f of ['index.html', 'help.html']) {
+    const html = fs.readFileSync(new URL('../' + f, import.meta.url), 'utf8');
+    assert.match(html, /rel="icon"[^>]*href="data:image\/svg\+xml,%3Csvg[^ '"]*"/, f + ': encoded tab icon');
+    assert.match(html, /rel="apple-touch-icon" href="data:image\/png;base64,iVBOR/, f + ': PNG icon for Safari');
+    // the header logo (top left) is the same icon as the tab
+    const logo = /<svg class="app-logo"[^>]*viewBox="0 0 32 32"[^>]*>([\s\S]*?)<\/svg>/.exec(html);
+    assert.ok(logo, f + ': header logo');
+    assert.equal(logo[1], a.replace(/^<svg[^>]*>/, '').replace(/<\/svg>$/, ''), f + ': header logo matches the tab icon');
+  }
 });
