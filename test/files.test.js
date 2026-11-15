@@ -43,3 +43,14 @@ test('files from other Thistle apps get a plain message naming the right app', (
   assert.throws(() => checkThistleFlowFile({ app: 'Thistle Cell' }), /saved by Thistle Cell; open it in that app/);
   assert.throws(() => checkThistleFlowFile({ hello: 1 }), /not a Thistle Flow file/);
 });
+
+test('tab icon: the Thistle Flow thistle (dotted head) with the laser-and-cell badge, the same in app and Help', async () => {
+  const fs = await import('node:fs');
+  const icon = f => decodeURIComponent(/rel="icon"[^>]*href="data:image\/svg\+xml,([^"]*)"/.exec(fs.readFileSync(new URL('../' + f, import.meta.url), 'utf8'))[1]);
+  const a = icon('index.html'), b = icon('help.html');
+  assert.equal(a, b);
+  assert.match(a, /viewBox="0 0 32 32"/);
+  assert.match(a, /<circle cx="9\.7" cy="12\.7" r="\.95"\/>/, 'dotted thistle head, as in the header logo');
+  assert.match(a, /stroke="#ef4444"/, 'red laser beam');
+  assert.match(a, /fill="#22d3ee"/, 'cyan cell');
+});

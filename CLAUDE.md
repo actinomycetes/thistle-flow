@@ -32,6 +32,11 @@ makes a single-file `dist/thistle-flow.html` for offline lab PCs. Data never lea
   `format`, or `version` before format 3). Never drop this.
 - **Files from other Thistle apps** get a plain message, not a parse error (`checkThistleFlowFile()`), e.g.
   "This is a Thistle Plot project; open it in Thistle Plot (https://actinomycetes.github.io/thistle-plot/)."
+- **Tab icon (favicon)**: the app's thistle, scaled into a 32×32 viewBox with `transform="translate(-1 0) scale(1.08)"`,
+  plus an app badge in the bottom-right corner (TP: a blue table; TF: a laser hitting a cell: dark disc with a
+  sky-blue rim, red beam from the upper left, cyan cell, three cyan scatter strokes). TF keeps its own dotted thistle
+  head (as in the header logo); the header logo itself stays the plain thistle. The same data: URI is in `index.html`
+  and `help.html` (`test/files.test.js` checks they match).
 - **iPad**: the file picker cannot filter custom extensions, so `accept` is dropped on iOS (`IS_IOS` in `js/ui.js`).
 
 ## Commands
