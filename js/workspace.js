@@ -41,7 +41,8 @@ export class Workspace {
     this.transforms = {};
     this.plots = [];
     this.figures = [];
-    this.statsCfg = { pops: null, stats: ['count', 'pctParent', 'median'], channels: null, layout: 'long' };
+    // new workspaces: no channels ticked (per-channel statistics appear once a channel is chosen), wide layout
+    this.statsCfg = { pops: null, stats: ['count', 'pctParent', 'median'], channels: [], layout: 'wide' };
     this.displayMax = 10000;   // events shown per 2-D plot (0 = all)
     this.selectedGate = null;
     this.focusedPlot = null;

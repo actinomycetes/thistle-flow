@@ -59,6 +59,28 @@ function sampleClicked(s, e) {
   renderAll();
 }
 
+// Show the previous (-1) or next (+1) sample in the list: ▲▼ in the Samples header, beside
+// "Active sample", and the ↑ ↓ keys. Stops at the ends; leaves any multi-sample overlay.
+function stepSample(d) {
+  const ws = app.ws;
+  if (!ws.samples.length) return;
+  const i = ws.samples.findIndex(x => x.id === ws.activeId);
+  const j = Math.max(0, Math.min(ws.samples.length - 1, (i < 0 ? 0 : i + d)));
+  if (j === i && !ws.selSamples?.length) return;
+  ws.activeId = ws.samples[j].id;
+  ws.selSamples = [];
+  renderAll();
+  document.querySelector(`#sampleList li[data-sample="${ws.activeId}"]`)?.scrollIntoView({ block: 'nearest' });
+}
+app.stepSample = stepSample;
+function sampleStepButtons(cls = 'icon') {
+  const ws = app.ws, i = ws.samples.findIndex(x => x.id === ws.activeId), n = ws.samples.length;
+  return [
+    h('button', { class: cls + ' sample-step', title: 'Previous sample (↑)', disabled: n < 2 || i <= 0, onclick: e => { e.stopPropagation(); stepSample(-1); } }, '▲'),
+    h('button', { class: cls + ' sample-step', title: 'Next sample (↓)', disabled: n < 2 || i >= n - 1, onclick: e => { e.stopPropagation(); stepSample(1); } }, '▼'),
+  ];
+}
+
 // ---------- persistence of per-viewer UI preferences (best effort) ----------
 const pref = {
   get(k, d) { try { const v = localStorage.getItem('tf-' + k); return v === null ? d : JSON.parse(v); } catch { return d; } },
@@ -273,6 +295,7 @@ function renderSamples() {
   const ul = $('#sampleList');
   ul.innerHTML = '';
   $('#sampleCount').textContent = ws.samples.length ? `(${ws.samples.length})` : '';
+  $('#sampleStep').replaceChildren(...(ws.samples.length > 1 ? sampleStepButtons() : []));
   $('#dropHint').style.display = ws.samples.length ? 'none' : '';
   const overlay = app.overlaySamples();
   for (const s of ws.samples) {
@@ -434,7 +457,9 @@ function popOptions(sel) {
   const eng = app.ws.engine;
   const out = [h('option', { value: '', selected: !sel }, 'All Events')];
   const walk = (pid, depth) => eng.children(pid).forEach(g => {
-    out.push(h('option', { value: g.id, selected: g.id === sel }, '  '.repeat(depth) + g.name));
+    // quadrants carry the Q1–Q4 label shown on the plot, as in the gate tree
+    const label = g.type === 'quad' && QUAD_NUM[g.q] ? `${QUAD_NUM[g.q]} · ${g.name}` : g.name;
+    out.push(h('option', { value: g.id, selected: g.id === sel }, '  '.repeat(depth) + label));
     walk(g.id, depth + 1);
   });
   walk(null, 1);
@@ -469,7 +494,7 @@ function renderGating() {
   $('#activeSampleInfo').replaceChildren(...(ov
     ? [h('span', { class: 'sel-info' }, `Overlay of ${ov.length} samples (Ctrl/⌘- or Shift-click in the sample list) `,
       h('button', { class: 'btn small', onclick: () => { ws.selSamples = []; renderAll(); } }, 'Show one sample'))]
-    : [s ? `Active sample: ${s.name}` : '']));
+    : s ? [h('span', { class: 'sample-nav' }, ...(ws.samples.length > 1 ? sampleStepButtons('btn small') : []), ` Active sample: ${s.name}`)] : ['']));
   $('#displayMax').replaceChildren(...eventLimitOptions(ws.displayMax));
   if (!ws.samples.length) {
     grid.append(h('div', { class: 'empty-state' },
@@ -1307,32 +1332,41 @@ function renderStatsControls() {
   const allPops = [null, ...ws.engine.list().map(g => g.id)];
   const pops = cfg.pops ?? allPops;
   const chans = cfg.channels ?? ws.fluorChannels();
+  // each option list is a box the viewer can resize (drag its corner); the size is remembered in this browser
+  const list = (key, items) => {
+    const el = h('div', { class: 'stat-list', 'data-list': key }, items);
+    const size = pref.get('statsBox-' + key, null);
+    if (size) { el.style.width = size[0] + 'px'; el.style.height = size[1] + 'px'; }
+    let first = true; // the observer fires once on attach; only real resizes are remembered
+    new ResizeObserver(() => { if (first) { first = false; return; } if (el.isConnected && el.offsetWidth && el.offsetHeight) pref.set('statsBox-' + key, [el.offsetWidth, el.offsetHeight]); }).observe(el); // 0 = tab hidden
+    return el;
+  };
   box.append(
-    h('fieldset', {}, h('legend', {}, 'Populations'), allPops.map(pid => h('label', {}, h('input', {
+    h('fieldset', {}, h('legend', {}, 'Populations'), list('pops', allPops.map(pid => h('label', {}, h('input', {
       type: 'checkbox', checked: pops.includes(pid),
       onchange: e => { const cur = new Set(cfg.pops ?? allPops); e.target.checked ? cur.add(pid) : cur.delete(pid); cfg.pops = allPops.filter(p => cur.has(p)); renderStatsTable(); },
-    }), ws.engine.fullName(pid)))),
-    h('fieldset', {}, h('legend', {}, 'Statistics'), STAT_DEFS.map(d => h('label', {}, h('input', {
+    }), ws.engine.fullName(pid))))),
+    h('fieldset', {}, h('legend', {}, 'Statistics'), list('stats', STAT_DEFS.map(d => h('label', {}, h('input', {
       type: 'checkbox', checked: cfg.stats.includes(d.key),
       onchange: e => { cfg.stats = STAT_DEFS.map(x => x.key).filter(k => k === d.key ? e.target.checked : cfg.stats.includes(k)); renderStatsTable(); },
-    }), d.label))),
-    h('fieldset', {}, h('legend', {}, 'Channels (for MFI etc.)'), ws.allChannels().map(ch => h('label', {}, h('input', {
+    }), d.label)))),
+    h('fieldset', {}, h('legend', {}, 'Channels (for MFI etc.)'), list('channels', ws.allChannels().map(ch => h('label', {}, h('input', {
       type: 'checkbox', checked: chans.includes(ch),
       onchange: e => { const cur = new Set(cfg.channels ?? ws.fluorChannels()); e.target.checked ? cur.add(ch) : cur.delete(ch); cfg.channels = ws.allChannels().filter(c => cur.has(c)); renderStatsTable(); },
-    }), ws.channelLabel(ch)))),
+    }), ws.channelLabel(ch))))),
     h('div', { style: 'display:flex;flex-direction:column;gap:6px' },
       h('button', { class: 'btn primary', onclick: exportStatsCSV }, 'Export CSV…'),
       h('button', { class: 'btn', onclick: copyStats }, 'Copy (for Excel/Prism)'),
       h('label', {}, 'Layout ', h('select', { onchange: e => { cfg.layout = e.target.value; renderStatsTable(); } },
         [['long', 'Long: row per sample × population'], ['wide', 'Wide: row per sample'], ['transposed', 'Transposed: column per sample']]
-          .map(([v, l]) => h('option', { value: v, selected: (cfg.layout || 'long') === v }, l)))),
+          .map(([v, l]) => h('option', { value: v, selected: (cfg.layout || 'wide') === v }, l)))),
       h('div', { class: 'hint-box', style: 'max-width:240px' }, 'MFI values are computed on compensated data (when compensation is on). Geo. mean uses positive events only.')));
 }
 
 function statsTableData() {
   const ws = app.ws;
   const { cols, rows } = statsMatrix();
-  const layoutMode = ws.statsCfg.layout || 'long';
+  const layoutMode = ws.statsCfg.layout || 'wide';
   if (layoutMode === 'long') {
     const pops = [...new Set(cols.map(c => c.pid))];
     const statCols = [];
@@ -1934,6 +1968,7 @@ document.addEventListener('keydown', e => {
     return;
   }
   if (mod || e.altKey) return;
+  if ((e.key === 'ArrowUp' || e.key === 'ArrowDown') && app.ws.samples.length > 1) { e.preventDefault(); stepSample(e.key === 'ArrowUp' ? -1 : 1); return; }
   const map = { v: 'select', r: 'rect', p: 'polygon', e: 'ellipse', q: 'quad', i: 'interval', s: 'split', z: 'zoom', a: 'auto' };
   if (map[e.key.toLowerCase()] && app.ws.tab === 'gating') setTool(map[e.key.toLowerCase()]);
 });
