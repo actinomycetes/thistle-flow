@@ -1458,16 +1458,17 @@ function renderStatsControls() {
     h('div', { style: 'display:flex;flex-direction:column;gap:6px' },
       h('button', { class: 'btn primary', onclick: exportStatsCSV }, 'Export CSV…'),
       h('button', { class: 'btn', onclick: copyStats }, 'Copy (for Excel/Prism)'),
+      h('button', { class: 'btn', id: 'btnStatsToTP', onclick: openStatsInThistlePlot, title: 'Open this table in Thistle Plot (statistics and graphs) in a new browser tab: one row per sample, one column per statistic' }, '📊 Open in Thistle Plot'),
       h('label', {}, 'Layout ', h('select', { onchange: e => { cfg.layout = e.target.value; renderStatsTable(); } },
         [['long', 'Long: row per sample × population'], ['wide', 'Wide: row per sample'], ['transposed', 'Transposed: column per sample']]
           .map(([v, l]) => h('option', { value: v, selected: (cfg.layout || 'wide') === v }, l)))),
       h('div', { class: 'hint-box', style: 'max-width:240px' }, 'MFI values are computed on compensated data (when compensation is on). Geo. mean uses positive events only.')));
 }
 
-function statsTableData() {
+function statsTableData(layout) {
   const ws = app.ws;
   const { cols, rows } = statsMatrix();
-  const layoutMode = ws.statsCfg.layout || 'wide';
+  const layoutMode = layout || ws.statsCfg.layout || 'wide';
   if (layoutMode === 'long') {
     const pops = [...new Set(cols.map(c => c.pid))];
     const statCols = [];
@@ -1496,14 +1497,45 @@ function renderStatsTable() {
     body.map(r => '<tr>' + r.map(c => `<td>${esc(c)}</td>`).join('') + '</tr>').join('') + '</tbody>';
 }
 
+const toCSV = rows => rows.map(r => r.map(c => /[",\n]/.test(c) ? `"${String(c).replace(/"/g, '""')}"` : c).join(',')).join('\n');
 function exportStatsCSV() {
-  const rows = statsTableData();
-  const csv = rows.map(r => r.map(c => /[",\n]/.test(c) ? `"${String(c).replace(/"/g, '""')}"` : c).join(',')).join('\n');
+  const csv = toCSV(statsTableData());
   saveFile(`${safeName(app.ws.name)}_statistics_${dateStamp()}.csv`, csv, 'csv');
 }
 function copyStats() {
   const tsv = statsTableData().map(r => r.join('\t')).join('\n');
   navigator.clipboard.writeText(tsv).then(() => toast('Table copied'), () => toast('Clipboard not available', true));
+}
+
+// ---------- the statistics table in Thistle Plot ----------
+// Opens Thistle Plot in a new tab and hands it the table (wide layout: a row per sample, a column per
+// statistic, which Thistle Plot reads like a CSV file). Thistle suite handshake (window.postMessage):
+//   Thistle Plot → opener  { type: 'thistle-ready', app: 'Thistle Plot' }       when it can take data
+//   Thistle Flow → tab     { type: 'thistle-table', version: 1, from, appVersion, title, csv, rows, columns }
+//   Thistle Plot → opener  { type: 'thistle-table-received', rows, columns }  after importing it
+// Messages go only to/from the tab that was opened (event.source), addressed to its origin.
+// The table is also put on the clipboard, so pasting into Thistle Plot works if it cannot take it directly.
+const TP_URL = 'https://actinomycetes.github.io/thistle-plot/';
+function openStatsInThistlePlot() {
+  const ws = app.ws;
+  if (!ws.samples.length) return toast('Load samples first');
+  const rows = statsTableData('wide');
+  if (rows[0].length < 2) return toast('Tick at least one population and statistic first', true);
+  const msg = { type: 'thistle-table', version: 1, from: APP_NAME, appVersion: APP_VERSION, title: `${ws.name}: statistics`,
+    csv: toCSV(rows), rows: rows.length - 1, columns: rows[0].length - 1 };
+  const tab = window.open((window.TF_TP_URL || TP_URL) + '#from=thistle-flow', '_blank');
+  navigator.clipboard?.writeText(rows.map(r => r.join('\t')).join('\n')).catch(() => {});
+  if (!tab) return toast('The new tab was blocked by the browser. Allow pop-ups for Thistle Flow, or open Thistle Plot yourself and paste: the table is on your clipboard.', true, { ms: 15000 });
+  toast('Opening Thistle Plot in a new tab…', false, { ms: 6000 });
+  let sent = false;
+  const stop = () => { window.removeEventListener('message', onMsg); clearTimeout(timer); };
+  const onMsg = e => {
+    if (e.source !== tab || !e.data || typeof e.data !== 'object') return;
+    if (e.data.type === 'thistle-ready' && !sent) { sent = true; tab.postMessage(msg, e.origin && e.origin !== 'null' ? e.origin : '*'); }
+    else if (e.data.type === 'thistle-table-received') { stop(); toast(`Opened in Thistle Plot: ${msg.rows} samples × ${msg.columns} columns`); }
+  };
+  window.addEventListener('message', onMsg);
+  const timer = setTimeout(() => { stop(); toast('Thistle Plot is open in a new tab. If the table is not there, click the first cell of its table and paste (Ctrl/⌘+V): the table is on your clipboard.', false, { ms: 15000 }); }, window.TF_TP_WAIT || 20000);
 }
 
 // ---------- compensation & axis scales ----------

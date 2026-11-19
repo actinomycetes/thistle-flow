@@ -30,11 +30,14 @@ export function dateStamp(d = new Date()) {
 }
 
 let toastT;
-export function toast(msg, isError = false) {
+// stay: true keeps the message up until the next toast (e.g. while a file is being written)
+export function toast(msg, isError = false, { stay = false, ms } = {}) {
   const t = $('#toast');
-  t.textContent = msg; t.hidden = false; t.className = 'toast' + (isError ? ' error' : '');
-  clearTimeout(toastT); toastT = setTimeout(() => (t.hidden = true), isError ? 6000 : 2800);
+  t.textContent = msg; t.hidden = false; t.className = 'toast' + (isError ? ' error' : '') + (stay ? ' busy' : '');
+  clearTimeout(toastT);
+  if (!stay) toastT = setTimeout(() => (t.hidden = true), ms ?? (isError ? 9000 : 2800));
 }
+const fmtSize = n => (n >= 1e6 ? `${(n / 1e6).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1e3))} KB`);
 
 // ---- modal ----
 let modalClose = null;
@@ -184,17 +187,38 @@ export async function saveFile(name, data, ext) {
   const [mime, desc] = MIME[ext] || ['application/octet-stream', 'File'];
   const toBlob = async () => { const d = typeof data === 'function' ? await data() : data; return d instanceof Blob ? d : new Blob([d], { type: mime }); };
   if (canPickLocation()) {
+    let handle = null;
     try {
-      const handle = await window.showSaveFilePicker({ suggestedName: name, types: [{ description: desc, accept: { [mime]: ['.' + ext] } }] });
-      const blob = await toBlob();
-      const w = await handle.createWritable(); await w.write(blob); await w.close();
-      return handle.name;
+      handle = await window.showSaveFilePicker({ suggestedName: name, types: [{ description: desc, accept: { [mime]: ['.' + ext] } }] });
     } catch (err) {
       if (err && err.name === 'AbortError') return null;
       console.warn('Save picker unavailable, falling back to download:', err);
     }
+    if (handle) {
+      // The browser has already created the (empty) file: say so until it is complete, and check it afterwards,
+      // because a file on a USB stick or network drive takes a while and removing the drive early leaves it empty.
+      toast(`Saving ${handle.name}… keep the drive connected until “Saved” appears.`, false, { stay: true });
+      let blob = null;
+      try {
+        blob = await toBlob();
+        const w = await handle.createWritable();
+        await w.write(blob); await w.close();
+        const f = handle.getFile ? await handle.getFile() : null;
+        if (f && f.size !== blob.size) throw new Error(`only ${fmtSize(f.size)} of ${fmtSize(blob.size)} reached the file`);
+        toast(`Saved ${handle.name} (${fmtSize(blob.size)}${f ? ', checked' : ''})`);
+        return handle.name;
+      } catch (err) {
+        console.error('Saving failed', err);
+        if (blob) downloadBlob(name, blob);
+        toast(`Could not write ${handle.name}: ${err.message}. The file there may be empty or incomplete.` +
+          (blob ? ' A copy was put in your Downloads folder instead.' : ''), true, { ms: 20000 });
+        return null;
+      }
+    }
   }
-  downloadBlob(name, await toBlob());
+  const blob = await toBlob();
+  downloadBlob(name, blob);
+  toast(`Saved ${name} (${fmtSize(blob.size)}) to your downloads`);
   return name;
 }
 
@@ -209,14 +233,18 @@ export function saveDialog({ title, baseName, ext = 'json', note, extra, makeDat
     const suffixEl = h('span', { class: 'hint' }, `.${extOf()}`);
     const input = h('input', { type: 'text', value: `${safeName(baseName)}_${dateStamp()}`, style: 'flex:1;min-width:280px' });
     let saving = false;
+    // the content (e.g. a zip of all the FCS files) is prepared while the dialog is open, so the file is
+    // written as soon as its location is chosen instead of staying empty while it is built
+    let prepared = null;
+    const prepare = () => { prepared = Promise.resolve().then(makeData); prepared.catch(() => {}); };
     const go = async () => {
       const e = extOf();
       const name = safeName(input.value.replace(/\.(tflow|json|zip)$/i, '')) + '.' + e;
       saving = true;
       closeModal();
       try {
-        const saved = await saveFile(name, makeData, e);
-        if (saved) toast(`Saved ${saved}`);
+        const data = prepared;
+        const saved = await saveFile(name, () => data, e);
         finish(saved);
       } catch (err) { toast('Could not save: ' + err.message, true); finish(null); }
     };
@@ -232,7 +260,8 @@ export function saveDialog({ title, baseName, ext = 'json', note, extra, makeDat
       h('div', { class: 'row', style: 'justify-content:flex-end' },
         h('button', { class: 'btn', onclick: () => { closeModal(); } }, 'Cancel'),
         h('button', { class: 'btn primary', onclick: go }, canPickLocation() ? 'Choose location…' : 'Save')));
-    body.addEventListener('change', () => { suffixEl.textContent = `.${extOf()}`; });
+    body.addEventListener('change', () => { suffixEl.textContent = `.${extOf()}`; prepare(); });
+    prepare();
     openModal(title, body, { onClose: () => { if (!saving) finish(null); } });
     setTimeout(() => { input.focus(); input.select(); }, 0);
   });

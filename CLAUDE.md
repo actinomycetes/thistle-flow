@@ -47,6 +47,13 @@ makes a single-file `dist/thistle-flow.html` for offline lab PCs. Data never lea
   Thistle Plot's `type="image/svg+xml"` icon never appeared there. A 180×180 PNG of the icon on the slate background
   is given as `apple-touch-icon`.
   `index.html` and `help.html` carry the same icon, logo and PNG (`test/files.test.js` checks they match).
+- **Tables between apps (TF → TP, v0.20.0)**: `openStatsInThistlePlot()` opens TP in a new tab
+  (`TP_URL#from=thistle-flow`) and hands over the Statistics table by `postMessage`: TP → opener
+  `{type:'thistle-ready', app:'Thistle Plot'}`; TF → that tab `{type:'thistle-table', version:1, from, appVersion,
+  title, csv, rows, columns}` (wide layout: header row, first column = sample names, as TP's CSV import reads it);
+  TP → opener `{type:'thistle-table-received', rows, columns}`. Only messages from/to the opened tab (`event.source`),
+  addressed to its origin. The table is also copied to the clipboard (paste fallback). `test/e2e/fake-tp.html` is the
+  stand-in used by the e2e test; keep it in step with TP's receiver.
 - **iPad**: the file picker cannot filter custom extensions, so `accept` is dropped on iOS (`IS_IOS` in `js/ui.js`).
 - **Colours (both themes, colour-blind readers)**: every text colour must reach WCAG AA (4.5:1, 3:1 for large text)
   on its real background in dark AND light mode, and no box may keep a dark-mode background in light mode; use the

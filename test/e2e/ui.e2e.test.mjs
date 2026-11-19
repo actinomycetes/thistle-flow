@@ -1307,3 +1307,73 @@ test('iPad (Safari, touch): files open, gates drawn and moved with a finger, dou
   assert.deepEqual(errors, []);
   await ctx.close();
 });
+
+test('saving to a chosen folder: shows progress, checks the written size, reports a failed write; statistics open in Thistle Plot', { timeout: 180000 }, async () => {
+  browser = browser || await chromium.launch();
+  const ctx = await browser.newContext({ viewport: { width: 1500, height: 950 } });
+  const page = await ctx.newPage();
+  const errors = [];
+  page.on('pageerror', e => errors.push(e.message));
+  // stand-in for Edge/Chrome's "save to folder" API: a file that records what is written
+  await page.addInitScript(() => {
+    try { localStorage.clear(); } catch {}
+    window.__files = []; window.__mode = 'ok';
+    window.showSaveFilePicker = async o => {
+      const f = { name: o.suggestedName, size: 0, closed: false };
+      window.__files.push(f);
+      return { name: o.suggestedName,
+        getFile: async () => ({ size: window.__mode === 'short' ? 0 : f.size }),
+        createWritable: async () => ({
+          write: async d => { if (window.__mode === 'fail') throw new Error('The drive was removed'); await new Promise(r => setTimeout(r, 600)); f.size += d.size ?? d.length; },
+          close: async () => { f.closed = true; },
+        }) };
+    };
+  });
+  const ev = f => page.evaluate(f);
+  await page.goto(BASE + '/?nosession');
+  await page.click('#btnDemo'); await page.waitForSelector('.plot-card canvas');
+
+  // the workspace (zip with the FCS files) is prepared while the dialog is open, then written and checked
+  await page.click('#btnSaveWs');
+  await page.waitForTimeout(500);
+  await page.click('#modalBody button.primary');
+  await page.waitForFunction(() => /Saving .*keep the drive connected/.test(document.getElementById('toast').textContent));
+  await page.waitForFunction(() => /^Saved .*\.tflow \(\d.*MB, checked\)/.test(document.getElementById('toast').textContent), null, { timeout: 15000 });
+  const f = await ev(() => window.__files.at(-1));
+  assert.ok(f.closed && f.size > 1e6, `whole file written: ${JSON.stringify(f)}`);
+  assert.equal(await ev(() => window.thistleFlow.ws.dirty), false);
+
+  // the write fails (e.g. drive removed): a clear message, a copy in Downloads, the workspace stays unsaved
+  await ev(() => { window.__mode = 'fail'; window.thistleFlow.ws.dirty = true; });
+  await page.click('#btnSaveWs');
+  const [dl] = await Promise.all([page.waitForEvent('download'), page.click('#modalBody button.primary')]);
+  assert.match(dl.suggestedFilename(), /\.tflow$/);
+  await page.waitForFunction(() => /Could not write .*drive was removed.*may be empty.*Downloads/.test(document.getElementById('toast').textContent));
+  assert.equal(await ev(() => window.thistleFlow.ws.dirty), true, 'still marked unsaved');
+  // the file ends up shorter than what was written: reported, not "Saved"
+  await ev(() => { window.__mode = 'short'; });
+  await page.click('#btnSaveWs');
+  await Promise.all([page.waitForEvent('download'), page.click('#modalBody button.primary')]);
+  await page.waitForFunction(() => /Could not write .*reached the file/.test(document.getElementById('toast').textContent));
+
+  // statistics -> Thistle Plot in a new tab (a stand-in page that follows the handshake)
+  await ev(() => { window.TF_TP_URL = '/test/e2e/fake-tp.html'; window.thistleFlow.ws.engine.add({ id: 'gL', name: 'Lymph', parent: null, type: 'rect', x: 'FSC-A', y: 'SSC-A', x0: 40000, x1: 80000, y0: 8000, y1: 38000 }); window.thistleFlow.renderAll(); });
+  await page.click('[data-tab=stats]');
+  const [tp] = await Promise.all([ctx.waitForEvent('page'), page.click('#btnStatsToTP')]);
+  await tp.waitForFunction(() => window.received, null, { timeout: 10000 });
+  const got = await tp.evaluate(() => window.received);
+  assert.equal(got.type, 'thistle-table'); assert.equal(got.from, 'Thistle Flow'); assert.equal(got.version, 1);
+  const lines = got.csv.split('\n');
+  assert.match(lines[0], /^Sample,/, 'wide layout: a column per statistic');
+  assert.equal(lines.length, 4, 'header + one row per sample');
+  assert.match(lines[1], /^Unstimulated\.fcs,/);
+  assert.equal(got.rows, 3);
+  await page.waitForFunction(() => /Opened in Thistle Plot: 3 samples/.test(document.getElementById('toast').textContent));
+  // Thistle Plot not answering (e.g. an older version): the table is on the clipboard, and the message says how to paste
+  await ev(() => { window.TF_TP_URL = '/help.html'; window.TF_TP_WAIT = 1500; });
+  const [tp2] = await Promise.all([ctx.waitForEvent('page'), page.click('#btnStatsToTP')]);
+  await page.waitForFunction(() => /paste .*the table is on your clipboard/.test(document.getElementById('toast').textContent), null, { timeout: 8000 });
+  await tp2.close(); await tp.close();
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});

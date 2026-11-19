@@ -2,7 +2,7 @@
 
 Part of the Thistle suite, together with [Thistle Plot](https://github.com/actinomycetes/thistle-plot) (TP).
 
-**Status:** beta (0.x; current v0.19.0). Calculations are cross-checked against independent open-source implementations (see `tools/validate/`). Check important results against an established package before publishing. Version history: [`help.html#history`](help.html#history).
+**Status:** beta (0.x; current v0.20.0). Calculations are cross-checked against independent open-source implementations (see `tools/validate/`). Check important results against an established package before publishing. Version history: [`help.html#history`](help.html#history).
 
 **Hosted copy:** https://actinomycetes.github.io/thistle-flow/
 
@@ -46,7 +46,7 @@ Tests:
 | **Samples** | Drag the ☰ handle to change the order of the samples (used in Statistics, figures and overlays; saved with the workspace). |
 | **Quick overlay** | Ctrl/⌘- or Shift-click samples to overlay them in every Gating plot, with each sample's % in the gate labels. |
 | **Multiple plots** | Shift-click plots or drag a box around them. Then change the population, axes, type, events shown or size on one plot, and the change applies to all selected plots. |
-| **Statistics** | Count, % Parent, % Total, **Median (MFI)**, Mean, Geometric mean, SD, CV, robust SD and robust CV, for any population and channel. Choose a long, wide or transposed table. Export as CSV or copy straight into Excel/Prism. |
+| **Statistics** | Count, % Parent, % Total, **Median (MFI)**, Mean, Geometric mean, SD, CV, robust SD and robust CV, for any population and channel. Choose a long, wide or transposed table. Export as CSV or copy straight into Excel/Prism. **📊 Open in Thistle Plot** hands the table to the sister app in a new tab for tests and graphs. |
 | **Layout & overlays** | Histogram overlays of any mix of sample and population: normalised to mode or by count, **overlay, quarter, half or full offset** (or a custom offset), smoothing, fill and custom colours. You can also overlay dot plots coloured by series, use **Batch** view (the same plot for every sample, with gate %), or show the **gating strategy** of one sample (All Events → cells → singlets → … → your population, one plot per gate). **Population** sets the gate of every series at once (e.g. Singlets for all samples). Gate labels and sample labels can be dragged in figures, placed outside the plot or hidden, and **↔ Range gate** on a histogram overlay gates every sample at once, listing each sample's %. Export single figures or the whole layout as **PNG, SVG or PDF**, with vector axes, text, gates and contours. |
 | **Workspaces** | Each **tab** is a workspace with its own samples and analysis. Click **+** for another group of samples. Closing a tab always asks whether to save. **Undo/redo** has a separate history for each mode (Gating, Compensation, Layout, Statistics, Properties). |
 | **Properties** | Acquisition information from the FCS keywords: instrument, serial number, software, date and times, operator, experiment, tube or well, volume, lasers, and channel voltages, filters and lasers. Includes an editable keyword table. Edits (for example, fixing marker labels or adding the operator) are stored in the workspace and written into exported FCS files; the original files are never changed. There is also an acquisition summary CSV for all samples. |

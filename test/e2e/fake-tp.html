@@ -1,0 +1,16 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Stand-in for Thistle Plot (tests)</title>
+<body>
+<pre id="out">waiting</pre>
+<script>
+// Follows the Thistle suite table handshake the way Thistle Plot should (see openStatsInThistlePlot in js/app.js).
+window.received = null;
+window.addEventListener('message', e => {
+  if (e.source !== window.opener || !e.data || e.data.type !== 'thistle-table') return;
+  window.received = e.data;
+  document.getElementById('out').textContent = e.data.csv;
+  e.source.postMessage({ type: 'thistle-table-received', rows: e.data.rows, columns: e.data.columns }, e.origin && e.origin !== 'null' ? e.origin : '*');
+});
+if (window.opener && location.hash.includes('from=thistle-flow')) window.opener.postMessage({ type: 'thistle-ready', app: 'Thistle Plot' }, '*');
+</script>
