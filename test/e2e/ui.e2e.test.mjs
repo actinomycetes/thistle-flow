@@ -1369,10 +1369,10 @@ test('saving to a chosen folder: shows progress, checks the written size, report
   assert.match(lines[1], /^Unstimulated\.fcs,/);
   assert.equal(got.rows, 3);
   await page.waitForFunction(() => /Opened in Thistle Plot: 3 samples/.test(document.getElementById('toast').textContent));
-  // Thistle Plot not answering (e.g. an older version): the table is on the clipboard, and the message says how to paste
+  // Thistle Plot not answering (e.g. an older version): the message points to Export CSV + Open CSV (not paste)
   await ev(() => { window.TF_TP_URL = '/help.html'; window.TF_TP_WAIT = 1500; });
   const [tp2] = await Promise.all([ctx.waitForEvent('page'), page.click('#btnStatsToTP')]);
-  await page.waitForFunction(() => /paste .*the table is on your clipboard/.test(document.getElementById('toast').textContent), null, { timeout: 8000 });
+  await page.waitForFunction(() => /did not take the table.*Export CSV.*Open CSV/.test(document.getElementById('toast').textContent), null, { timeout: 8000 });
   await tp2.close(); await tp.close();
   assert.deepEqual(errors, []);
   await ctx.close();

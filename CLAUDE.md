@@ -52,7 +52,8 @@ makes a single-file `dist/thistle-flow.html` for offline lab PCs. Data never lea
   `{type:'thistle-ready', app:'Thistle Plot'}`; TF → that tab `{type:'thistle-table', version:1, from, appVersion,
   title, csv, rows, columns}` (wide layout: header row, first column = sample names, as TP's CSV import reads it);
   TP → opener `{type:'thistle-table-received', rows, columns}`. Only messages from/to the opened tab (`event.source`),
-  addressed to its origin. The table is also copied to the clipboard (paste fallback). `test/e2e/fake-tp.html` is the
+  addressed to its origin. Fallback when TP does not answer: Export CSV → TP's ⬆ Open CSV (reads the wide table
+  correctly); do NOT suggest pasting (TP's paste fills values into its existing replicate grid and drops headers). `test/e2e/fake-tp.html` is the
   stand-in used by the e2e test; keep it in step with TP's receiver.
 - **iPad**: the file picker cannot filter custom extensions, so `accept` is dropped on iOS (`IS_IOS` in `js/ui.js`).
 - **Colours (both themes, colour-blind readers)**: every text colour must reach WCAG AA (4.5:1, 3:1 for large text)

@@ -1514,7 +1514,8 @@ function copyStats() {
 //   Thistle Flow → tab     { type: 'thistle-table', version: 1, from, appVersion, title, csv, rows, columns }
 //   Thistle Plot → opener  { type: 'thistle-table-received', rows, columns }  after importing it
 // Messages go only to/from the tab that was opened (event.source), addressed to its origin.
-// The table is also put on the clipboard, so pasting into Thistle Plot works if it cannot take it directly.
+// If Thistle Plot cannot take it (an older version), the user is pointed to Export CSV + Thistle Plot's Open CSV,
+// which reads this table correctly (pasting does not: TP's paste fills values into its existing replicate grid).
 const TP_URL = 'https://actinomycetes.github.io/thistle-plot/';
 function openStatsInThistlePlot() {
   const ws = app.ws;
@@ -1524,8 +1525,8 @@ function openStatsInThistlePlot() {
   const msg = { type: 'thistle-table', version: 1, from: APP_NAME, appVersion: APP_VERSION, title: `${ws.name}: statistics`,
     csv: toCSV(rows), rows: rows.length - 1, columns: rows[0].length - 1 };
   const tab = window.open((window.TF_TP_URL || TP_URL) + '#from=thistle-flow', '_blank');
-  navigator.clipboard?.writeText(rows.map(r => r.join('\t')).join('\n')).catch(() => {});
-  if (!tab) return toast('The new tab was blocked by the browser. Allow pop-ups for Thistle Flow, or open Thistle Plot yourself and paste: the table is on your clipboard.', true, { ms: 15000 });
+  const viaCSV = 'save the table with Export CSV… here and open it in Thistle Plot with ⬆ Open CSV…';
+  if (!tab) return toast(`The new tab was blocked by the browser. Allow pop-ups for Thistle Flow, or ${viaCSV}`, true, { ms: 15000 });
   toast('Opening Thistle Plot in a new tab…', false, { ms: 6000 });
   let sent = false;
   const stop = () => { window.removeEventListener('message', onMsg); clearTimeout(timer); };
@@ -1535,7 +1536,7 @@ function openStatsInThistlePlot() {
     else if (e.data.type === 'thistle-table-received') { stop(); toast(`Opened in Thistle Plot: ${msg.rows} samples × ${msg.columns} columns`); }
   };
   window.addEventListener('message', onMsg);
-  const timer = setTimeout(() => { stop(); toast('Thistle Plot is open in a new tab. If the table is not there, click the first cell of its table and paste (Ctrl/⌘+V): the table is on your clipboard.', false, { ms: 15000 }); }, window.TF_TP_WAIT || 20000);
+  const timer = setTimeout(() => { stop(); toast(`Thistle Plot did not take the table (it may need updating). Instead, ${viaCSV}`, false, { ms: 20000 }); }, window.TF_TP_WAIT || 20000);
 }
 
 // ---------- compensation & axis scales ----------
