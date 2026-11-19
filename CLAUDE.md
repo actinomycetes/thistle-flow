@@ -54,7 +54,9 @@ makes a single-file `dist/thistle-flow.html` for offline lab PCs. Data never lea
   TP → opener `{type:'thistle-table-received', rows, columns}`. Only messages from/to the opened tab (`event.source`),
   addressed to its origin. Fallback when TP does not answer: Export CSV → TP's ⬆ Open CSV (reads the wide table
   correctly); do NOT suggest pasting (TP's paste fills values into its existing replicate grid and drops headers). `test/e2e/fake-tp.html` is the
-  stand-in used by the e2e test; keep it in step with TP's receiver.
+  stand-in used by the e2e test; keep it in step with TP's receiver. Works end to end with TP ≥ 0.15.0 (checked on the
+  live sites; TP's receiver accepts origins `https://actinomycetes.github.io` and its own, so a TF opened from a local
+  file falls back to Export CSV → Open CSV).
 - **iPad**: the file picker cannot filter custom extensions, so `accept` is dropped on iOS (`IS_IOS` in `js/ui.js`).
 - **Colours (both themes, colour-blind readers)**: every text colour must reach WCAG AA (4.5:1, 3:1 for large text)
   on its real background in dark AND light mode, and no box may keep a dark-mode background in light mode; use the
