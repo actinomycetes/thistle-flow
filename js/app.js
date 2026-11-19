@@ -16,6 +16,7 @@ import { renderProperties } from './properties.js';
 import { FigureView } from './figureview.js';
 import { CompPreview } from './compview.js';
 import { APP_NAME, APP_VERSION } from './version.js';
+import { sessionSupported, writeSession, readSession, clearSession } from './session.js';
 
 const MODE_NAMES = { gating: 'Gating', comp: 'Compensation', layout: 'Layout', stats: 'Statistics', properties: 'Properties' };
 const fmtEvents = n => (n ? n.toLocaleString() : 'All');
@@ -143,11 +144,111 @@ async function closeWorkspace(ws) {
   else switchWorkspace(app.workspaces[Math.max(0, i - 1)]);
 }
 
+// ---------- kept session (IndexedDB): survives a refresh or a closed tab ----------
+// Every change is copied to this browser shortly after it is made; the next visit reopens it.
+// Not inside another page (Thistle Notebook embeds Thistle Flow and loads its own data into it).
+const EMBEDDED = (() => { try { return window.top !== window.self; } catch { return true; } })();
+const KEEP = !EMBEDDED && sessionSupported() && !/[?&]nosession\b/.test(location.search);
+const fileKeys = new WeakMap(); // sample.source -> key of its stored copy
+const storedKeys = new Set();   // keys written (or read) in this page
+let restoreDone = !KEEP, keptJSON = null, keepT = null, keepBusy = false, keepWarned = false;
+
+function sessionMeta() {
+  const workspaces = app.workspaces.map(ws => ({
+    data: (({ saved, ...d }) => d)(ws.serialize()), // without the save time, so an unchanged workspace compares equal
+    files: ws.sourceFiles().map(f => { if (!fileKeys.has(f)) fileKeys.set(f, uid('f')); return { key: fileKeys.get(f), name: f.name }; }),
+    dirty: !!ws.dirty,
+  }));
+  return { workspaces, active: Math.max(0, app.workspaces.indexOf(app.ws)), appVersion: APP_VERSION };
+}
+// true when what is on screen is already kept (so leaving the page loses nothing)
+function sessionKept() {
+  if (!KEEP || !restoreDone) return false;
+  try { return !keepBusy && keptJSON === JSON.stringify(sessionMeta()); } catch { return false; }
+}
+async function keepNow() {
+  if (!KEEP || !restoreDone) return;
+  if (keepBusy) { keepSoon(); return; }
+  let meta, json;
+  try { meta = sessionMeta(); json = JSON.stringify(meta); } catch (err) { console.warn(err); return; }
+  if (json === keptJSON) return;
+  const newFiles = new Map();
+  app.workspaces.forEach(ws => ws.sourceFiles().forEach(f => { const k = fileKeys.get(f); if (!storedKeys.has(k)) newFiles.set(k, f.data); }));
+  keepBusy = true;
+  try {
+    await writeSession({ ...meta, savedAt: Date.now() }, newFiles);
+    newFiles.forEach((_, k) => storedKeys.add(k));
+    keptJSON = json;
+  } catch (err) {
+    console.warn('Could not keep the session in this browser', err);
+    if (!keepWarned) { keepWarned = true; toast('This browser could not keep a copy of your work (storage full or blocked). Save the workspace to keep it.', true); }
+  } finally { keepBusy = false; }
+}
+function keepSoon(delay = 800) { if (!KEEP || !restoreDone) return; clearTimeout(keepT); keepT = setTimeout(keepNow, delay); }
+app.keepNow = keepNow;
+app.sessionKept = sessionKept;
+
+async function restoreSession() {
+  if (!KEEP) return;
+  let kept = null;
+  try { kept = await readSession(); } catch (err) { console.warn('Could not read the kept session', err); }
+  try {
+    const useful = kept?.meta.workspaces.filter(w => w.files.length || (w.data.gates || []).length || (w.data.plots || []).length);
+    if (useful?.length) {
+      const errors = [];
+      app.workspaces = [];
+      for (const w of useful) {
+        const ws = new Workspace(w.data.name);
+        app.workspaces.push(ws);
+        const byBuffer = new Map();
+        const items = w.files.filter(f => kept.files.has(f.key)).map(f => {
+          const buffer = bufferOf(kept.files.get(f.key)); byBuffer.set(buffer, f.key); return { name: f.name, buffer };
+        });
+        errors.push(...addSamples(ws, items).errors);
+        ws.samples.forEach(s => { const k = s.source && byBuffer.get(s.source.data.buffer); if (k) { fileKeys.set(s.source, k); storedKeys.add(k); } });
+        ws.deserialize(w.data);
+        ws.rebase(); ws.dirty = !!w.dirty;
+      }
+      app.ws = app.workspaces[Math.min(kept.meta.active || 0, app.workspaces.length - 1)];
+      renderAll();
+      showRestoreNote(kept.meta.savedAt);
+      if (errors.length) toast('Some kept files could not be read: ' + errors.join('; '), true);
+    }
+  } catch (err) {
+    console.error(err);
+    toast('Your last session could not be reopened: ' + err.message, true);
+  }
+  restoreDone = true;
+  keptJSON = null;
+  keepSoon(0);
+}
+
+// A small notice after reopening, with the way back to an empty start.
+function showRestoreNote(savedAt) {
+  const when = savedAt ? new Date(savedAt).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' }) : '';
+  const note = h('div', { class: 'restore-note', role: 'status' },
+    h('span', {}, `Reopened your last session${when ? ` (${when})` : ''}. It is kept in this browser only; save a .tflow file to keep or share it.`),
+    h('button', { class: 'btn small', onclick: () => note.remove() }, 'OK'),
+    h('button', { class: 'btn small', onclick: async () => { note.remove(); await startFresh(); } }, 'Start fresh'));
+  document.body.append(note);
+  setTimeout(() => note.isConnected && note.classList.add('fade'), 15000);
+  setTimeout(() => note.remove(), 16000);
+}
+async function startFresh() {
+  if (app.workspaces.some(w => w.samples.length || w.engine.list().length) &&
+    !confirm('Close all workspaces and start with an empty one? Anything not saved as a .tflow file will be lost.')) return;
+  try { await clearSession(); } catch (err) { console.warn(err); }
+  storedKeys.clear(); keptJSON = null;
+  app.workspaces = [];
+  newWorkspace('Workspace 1');
+}
+app.startFresh = startFresh;
+
 // ---------- undo / redo ----------
 let commitT = null;
 app.scheduleCommit = (delay = 0) => {
   clearTimeout(commitT);
-  commitT = setTimeout(() => { if (app.ws.commit()) renderWsTabs(); updateUndoButtons(); }, delay);
+  commitT = setTimeout(() => { if (app.ws.commit()) renderWsTabs(); updateUndoButtons(); keepSoon(); }, delay);
 };
 function updateUndoButtons() {
   const m = app.ws.tab;
@@ -1837,6 +1938,7 @@ function renderAll({ keepGating = false } = {}) {
   if (keepGating && app.ws.tab === 'gating') app.redrawAll(); else renderTab();
   updateGateButtons();
   updateUndoButtons();
+  keepSoon();
 }
 app.renderAll = renderAll;
 app.metaChanged = () => { app.ws.engine.invalidate(); app.scheduleCommit(); renderAll(); };
@@ -1975,8 +2077,12 @@ document.addEventListener('keydown', e => {
 
 window.addEventListener('beforeunload', e => {
   app.ws.commit();
-  if (app.workspaces.some(w => w.dirty)) { e.preventDefault(); e.returnValue = ''; }
+  // no warning when the work is already kept in this browser (it reopens next time)
+  if (app.workspaces.some(w => w.dirty) && !sessionKept()) { e.preventDefault(); e.returnValue = ''; }
 });
+// leaving or hiding the page: keep the latest state right away
+window.addEventListener('pagehide', () => { clearTimeout(keepT); keepNow(); });
+document.addEventListener('visibilitychange', () => { if (document.hidden) { clearTimeout(keepT); keepNow(); } });
 
 // drag & drop (into the current workspace tab)
 let dragDepth = 0;
@@ -1998,3 +2104,4 @@ document.title = `${APP_NAME} v${APP_VERSION} (Beta)`;
 setupSplitters();
 setupRubberBand();
 newWorkspace('Workspace 1');
+restoreSession();

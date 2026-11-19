@@ -12,6 +12,12 @@ makes a single-file `dist/thistle-flow.html` for offline lab PCs. Data never lea
 - Everything is **beta 0.x**. Do not call it validated; Help says results must be spot-checked.
 - Statistics use compensated, untransformed values; gate membership is tested in the displayed (transformed) space.
 - `localStorage` only for per-viewer preferences (theme, pane sizes). Analyses are saved as `.tflow` workspace / template files (see Thistle suite conventions).
+- **Kept session (v0.19.0, as in Thistle Notebook):** the open workspaces and their FCS files are also copied to IndexedDB
+  (`js/session.js`, database `thistle-flow-session`: `kv/session` + `files/<key>`, each file stored once) about 0.8 s
+  after a change (`keepSoon()` from `renderAll` / `scheduleCommit`, and on `pagehide`), and `restoreSession()` reopens
+  them on load with a notice offering **Start fresh**. Off inside an iframe (Thistle Notebook embeds TF) and with
+  `?nosession`. No "leave page?" warning when `sessionKept()`. Any new workspace state must be in `serialize()` to be
+  kept. `test/e2e/keep.e2e.test.mjs` covers it. The maintainer may revert this if it confuses users.
 - No network access at runtime. The single-file build must keep working from `file://`.
 - Never modify the user's FCS files; metadata edits live in the workspace and in exported copies.
 

@@ -301,3 +301,9 @@ html.ios .vsplit { width: 10px; } html.ios .hsplit { height: 10px; } /* easier t
 .sample-nav { display: inline-flex; align-items: center; gap: 4px; }
 .sample-nav .btn.small { padding: 1px 6px; font-size: 10px; }
 button.sample-step:disabled { opacity: .35; cursor: default; }
+
+/* notice after reopening the kept session */
+.restore-note { position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%); z-index: 60; display: flex; align-items: center; gap: 8px;
+  max-width: min(720px, calc(100vw - 24px)); background: var(--hint-bg); color: var(--hint-tx); border: 1px solid var(--hint-bd); border-radius: 8px;
+  padding: 8px 12px; font-size: 12.5px; box-shadow: 0 4px 16px rgba(0,0,0,.25); transition: opacity 1s; }
+.restore-note.fade { opacity: 0; }
