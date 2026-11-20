@@ -2152,6 +2152,7 @@ window.addEventListener('drop', e => {
 
 applyTheme(pref.get('themeChoice', 'dark') === 'light' ? 'light' : 'dark');
 $('#app-version').textContent = `v${APP_VERSION}`;
+// Keep: Orion 1.1 (WebKit) shows the favicon only on pages whose title is set again from script (TP v0.17.1, TN v0.5.1).
 document.title = `${APP_NAME} v${APP_VERSION} (Beta)`;
 setupSplitters();
 setupRubberBand();
