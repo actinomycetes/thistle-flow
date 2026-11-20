@@ -96,7 +96,6 @@ Rough performance on a laptop, for 1,000,000 events × 20 channels: parse about 
 Logicle transform about 80 ms per channel, polygon gate about 70 ms. All of these results are cached.
 
 ## Not (yet) included
-* Per-sample gate adjustments (gates are currently global to all samples)
 * Import or export of gating files from other software (e.g. Gating-ML)
 * Derived parameters, ratios, and dimensionality reduction (tSNE/UMAP)
 * Unmixing raw spectral data (load files already unmixed by the instrument software)
