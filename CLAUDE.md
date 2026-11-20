@@ -57,6 +57,15 @@ makes a single-file `dist/thistle-flow.html` for offline lab PCs. Data never lea
   stand-in used by the e2e test; keep it in step with TP's receiver. Works end to end with TP ≥ 0.15.0 (checked on the
   live sites; TP's receiver accepts origins `https://actinomycetes.github.io` and its own, so a TF opened from a local
   file falls back to Export CSV → Open CSV).
+- **Statistics: blank = not measured; exports at full precision (v0.21.0, audit case 14)**: a population whose gate,
+  or any gate above it, needs a channel the sample lacks is not measured: `populationStats()` returns
+  `{available: false, missing: [...], count/pctParent/pctTotal: NaN}` (`GateEngine.missingChannels()`), `statValue()`
+  gives NaN for its per-channel statistics, and every place shows a blank (gate tree: "–" with "CD3 not in this sample"
+  as tooltip; `#statsNote` under the table says why). Never turn it into 0; a measurable empty gate is 0. On screen,
+  `formatStat()` rounds (small non-zero % keep 2 significant figures); CSV, Copy and Open in Thistle Plot use
+  `exportStat()` (full precision, blank for NaN). Each value cell of `#statsTable` carries its raw number in `data-v`
+  (`data-v=""` when blank) for other apps reading the table (Thistle Notebook). `test/availability.test.js` and
+  `test/e2e/availability.e2e.test.mjs` (fixtures from `test/fixtures/gate-availability.mjs`, numpy reference numbers).
 - **iPad**: the file picker cannot filter custom extensions, so `accept` is dropped on iOS (`IS_IOS` in `js/ui.js`).
 - **Colours (both themes, colour-blind readers)**: every text colour must reach WCAG AA (4.5:1, 3:1 for large text)
   on its real background in dark AND light mode, and no box may keep a dark-mode background in light mode; use the

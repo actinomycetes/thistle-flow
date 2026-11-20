@@ -3,9 +3,7 @@ import { renderPlot, prepareCanvas, gateGeometry, MARGIN, THEMES, SERIES_COLORS,
 import { makeTransform } from './transforms.js';
 import { trackDrag, onDoubleTap } from './ui.js';
 import { densityGrid, autoGatePolygon } from './autogate.js';
-import { populationStats, pointInPolygon, gateFor, isCustom, isOneD, quadArms, quadRegion, quadMode, ARMS, DEFAULT_ANGLES } from './gates.js';
-
-export const fmtPct = v => (Number.isFinite(v) ? (v >= 10 ? v.toFixed(1) : v.toFixed(2)) + '%' : '–');
+import { fmtPct, populationStats, pointInPolygon, gateFor, isCustom, isOneD, quadArms, quadRegion, quadMode, ARMS, DEFAULT_ANGLES } from './gates.js';
 
 // Short marker name for a channel ("CD4" rather than "PE-A")
 export function shortLabel(sample, ch) {

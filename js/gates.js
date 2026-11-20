@@ -187,6 +187,13 @@ export class GateEngine {
   fullName(id) { return id ? this.path(id).map(g => g.name).join('/') : 'All Events'; }
 
   canApply(sample, g) { return gateChannels(g).every(c => sample.hasChannel(c)); }
+  // Channels a population needs that the sample does not have (its own gate or any gate above it).
+  // [] = the population can be evaluated; otherwise it is NOT measured for this sample (blank, never 0).
+  missingChannels(sample, gateId) {
+    const out = [];
+    for (const g of gateId ? this.path(gateId) : []) for (const c of gateChannels(gateFor(g, sample))) if (!sample.hasChannel(c) && !out.includes(c)) out.push(c);
+    return out;
+  }
 
   _test(sample, g) {
     g = gateFor(g, sample);
@@ -314,13 +321,46 @@ export const STAT_DEFS = [
   { key: 'rcv', label: 'Robust CV %', perChannel: true },
 ];
 
+// Count and percentages of a population. available: false (with the missing channels named and NaN values) when
+// the population cannot be evaluated for this sample, so callers show a blank instead of a measured 0.
 export function populationStats(engine, sample, gateId) {
+  const missing = engine.missingChannels(sample, gateId);
+  if (missing.length) return { available: false, missing, count: NaN, pctParent: NaN, pctTotal: NaN };
   const pop = engine.population(sample, gateId);
   const g = gateId ? engine.get(gateId) : null;
   const parent = g ? engine.population(sample, g.parent) : pop;
   return {
+    available: true, missing,
     count: pop.count,
     pctParent: parent.count ? 100 * pop.count / parent.count : NaN,
     pctTotal: sample.events ? 100 * pop.count / sample.events : NaN,
   };
 }
+
+// One Statistics-table value: a population statistic (ch = null) or a per-channel statistic. NaN = blank
+// (not measured: the population or the channel is not in this sample, or nothing to compute).
+// cache: optional Map shared across one sample's columns.
+export function statValue(engine, sample, pid, stat, ch = null, cache = null) {
+  if (!ch) return (pid ? populationStats(engine, sample, pid) : { count: sample.events, pctTotal: 100, pctParent: NaN })[stat];
+  if (!sample.hasChannel(ch) || engine.missingChannels(sample, pid).length) return NaN;
+  const key = (pid || '') + '|' + ch;
+  let cs = cache?.get(key);
+  if (!cs) { cs = channelStats(sample.column(ch), engine.population(sample, pid).idx); cache?.set(key, cs); }
+  return cs[stat];
+}
+
+// Few decimals for display, but a small non-zero value keeps two significant figures (0.003, not 0.00).
+const fixedOrSmall = (v, d) => v !== 0 && Math.abs(v) < 10 ** -d
+  ? v.toFixed(Math.min(20, 1 - Math.floor(Math.log10(Math.abs(v))))).replace(/0+$/, '')
+  : v.toFixed(d);
+// On-screen text of a statistic (rounded for reading). Blank when not measured.
+export function formatStat(v, stat) {
+  if (!Number.isFinite(v)) return '';
+  if (stat === 'count') return String(v);
+  if (/pct|cv/i.test(stat)) return fixedOrSmall(v, 2);
+  return Math.abs(v) >= 100 ? v.toFixed(1) : v.toPrecision(4);
+}
+// Text of a statistic for CSV, Copy, Open in Thistle Plot and the table's data-v: full precision, blank when not measured.
+export const exportStat = v => Number.isFinite(v) ? String(v) : '';
+// Percent label on plots and in the gate tree
+export const fmtPct = v => (Number.isFinite(v) ? (v >= 10 ? v.toFixed(1) : fixedOrSmall(v, 2)) + '%' : '–');

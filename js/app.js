@@ -2,8 +2,8 @@
 import { parseFCS, writeFCS, exportRanges } from './fcs.js';
 import { Sample, invertMatrix } from './model.js';
 import { defaultTransformFor, scaleProblem } from './transforms.js';
-import { GATE_COLORS, STAT_DEFS, channelStats, populationStats, pickGeom, isCustom, customSampleKeys, isGrouped, isOneD, gateFor, quadMode } from './gates.js';
-import { PlotView, buildSpec, shortLabel, fmtPct, subsampleIdx, overlayColor, QUAD_NUM, PLOT_SIZES, EVENT_LIMITS } from './plotview.js';
+import { GATE_COLORS, STAT_DEFS, populationStats, statValue, formatStat, exportStat, fmtPct, gateChannels, pickGeom, isCustom, customSampleKeys, isGrouped, isOneD, gateFor, quadMode } from './gates.js';
+import { PlotView, buildSpec, shortLabel, subsampleIdx, overlayColor, QUAD_NUM, PLOT_SIZES, EVENT_LIMITS } from './plotview.js';
 import { renderPlot, prepareCanvas, SERIES_COLORS, THEMES, PLOT_KINDS, HIST_OFFSETS, DOT_SIZES, DEFAULT_DOT, normalizeKind } from './render.js';
 import { renderSVG, renderPDF } from './vector.js';
 import { demoFiles } from './demo.js';
@@ -473,11 +473,11 @@ function renderGateTree() {
   const s = ws.activeSample();
   const node = g => {
     const id = g ? g.id : null;
-    let pct = '', count = '';
+    let pct = '', count = '', why = '';
     if (s) {
-      const st = id ? populationStats(eng, s, id) : { count: s.events };
-      count = st.count.toLocaleString();
-      pct = id ? fmtPct(st.pctParent) : '';
+      const st = id ? populationStats(eng, s, id) : { count: s.events, available: true };
+      if (!st.available) why = `${st.missing.join(', ')} not in this sample, so this gate cannot be applied`; // not measured: never "0"
+      else { count = st.count.toLocaleString(); pct = id ? fmtPct(st.pctParent) : ''; }
     }
     const row = h('div', {
       class: 'node' + (ws.selectedGate === id && id ? ' selected' : ''),
@@ -491,7 +491,7 @@ function renderGateTree() {
         class: 'custom-mark' + (s && isCustom(g, s) ? ' here' : ''),
         title: `Adjusted for ${customSampleKeys(g).length} sample(s): ${ws.samples.filter(x => isCustom(g, x)).map(x => x.name).join(', ')}${s && isCustom(g, s) ? ' (including this one)' : ''}`,
       }, `✎${customSampleKeys(g).length}`) : null,
-      h('span', { class: 'gpct' }, pct ? `${pct} · ${count}` : count),
+      why ? h('span', { class: 'gpct', title: why }, '–') : h('span', { class: 'gpct' }, pct ? `${pct} · ${count}` : count),
       h('button', { class: 'icon', title: 'Open plot of this population', onclick: e => { e.stopPropagation(); openPopulationPlot(id); } }, '＋'),
       s ? h('button', { class: 'icon', title: 'Export events of this population (FCS)', onclick: e => { e.stopPropagation(); exportPopulation(s, id); } }, '⤓') : null,
       g ? h('button', { class: 'icon', title: 'Delete gate', onclick: e => { e.stopPropagation(); deleteGate(g.id); } }, '×') : null);
@@ -1404,26 +1404,26 @@ function statsColumns() {
   return cols;
 }
 
+// Raw values (NaN = blank) plus, per sample, why cells are blank because a channel is missing
 function statsMatrix() {
-  const ws = app.ws;
+  const ws = app.ws, eng = ws.engine;
   const cols = statsColumns();
+  const missing = []; // [{ sample, channels: [], gates: [] }]
   const rows = ws.samples.map(s => {
-    const cache = new Map();
-    return [s.name, ...cols.map(c => {
-      if (!c.ch) {
-        const st = c.pid ? populationStats(ws.engine, s, c.pid) : { count: s.events, pctTotal: 100, pctParent: NaN };
-        return st[c.stat];
+    const cache = new Map(), chans = new Set(), gates = new Set();
+    const row = [s.name, ...cols.map(c => {
+      if (c.pid) for (const g of eng.path(c.pid)) {
+        const lack = gateChannels(gateFor(g, s)).filter(ch => !s.hasChannel(ch));
+        if (lack.length) { lack.forEach(ch => chans.add(ch)); gates.add(g.name); break; }
       }
-      if (!s.hasChannel(c.ch)) return NaN;
-      const key = (c.pid || '') + '|' + c.ch;
-      if (!cache.has(key)) cache.set(key, channelStats(s.column(c.ch), ws.engine.population(s, c.pid).idx));
-      return cache.get(key)[c.stat];
+      if (c.ch && !s.hasChannel(c.ch)) chans.add(c.ch);
+      return statValue(eng, s, c.pid, c.stat, c.ch, cache);
     })];
+    if (chans.size) missing.push({ sample: s.name, channels: [...chans].map(ch => ws.channelLabel(ch)), gates: [...gates] });
+    return row;
   });
-  return { cols, rows };
+  return { cols, rows, missing };
 }
-
-const fmtStat = (v, stat) => !Number.isFinite(v) ? '' : stat === 'count' ? String(v) : /pct|cv|rcv/i.test(stat) ? v.toFixed(2) : Math.abs(v) >= 100 ? v.toFixed(1) : v.toPrecision(4);
 
 function renderStatsControls() {
   const ws = app.ws;
@@ -1465,10 +1465,13 @@ function renderStatsControls() {
       h('div', { class: 'hint-box', style: 'max-width:240px' }, 'MFI values are computed on compensated data (when compensation is on). Geo. mean uses positive events only.')));
 }
 
-function statsTableData(layout) {
+// The table in the chosen layout: label cells are strings, value cells { v, stat } (v: raw number, NaN = blank)
+function statsTableCells(layout) {
   const ws = app.ws;
-  const { cols, rows } = statsMatrix();
+  const { cols, rows, missing } = statsMatrix();
   const layoutMode = layout || ws.statsCfg.layout || 'wide';
+  const cell = (v, stat) => ({ v, stat });
+  let table;
   if (layoutMode === 'long') {
     const pops = [...new Set(cols.map(c => c.pid))];
     const statCols = [];
@@ -1478,23 +1481,39 @@ function statsTableData(layout) {
     rows.forEach(r => pops.forEach(pid => {
       body.push([r[0], ws.engine.fullName(pid), ...statCols.map(sc => {
         const ci = cols.findIndex(c => c.pid === pid && c.stat === sc.stat && (c.ch || '') === (sc.ch || ''));
-        return ci < 0 ? '' : fmtStat(r[ci + 1], sc.stat);
+        return cell(ci < 0 ? NaN : r[ci + 1], sc.stat);
       })]);
     }));
-    return [header, ...body];
+    table = [header, ...body];
+  } else {
+    const header = ['Sample', ...cols.map(c => c.label)];
+    const body = rows.map(r => [r[0], ...r.slice(1).map((v, i) => cell(v, cols[i].stat))]);
+    table = layoutMode === 'wide' ? [header, ...body] : header.map((_, i) => [header[i], ...body.map(r => r[i])]);
   }
-  const header = ['Sample', ...cols.map(c => c.label)];
-  const body = rows.map(r => [r[0], ...r.slice(1).map((v, i) => fmtStat(v, cols[i].stat))]);
-  if (layoutMode === 'wide') return [header, ...body];
-  return header.map((_, i) => [header[i], ...body.map(r => r[i])]);
+  return { table, missing };
 }
 
+// Text for CSV, Copy and Open in Thistle Plot: full precision, blank where not measured
+function statsTableData(layout) {
+  return statsTableCells(layout).table.map(r => r.map(c => typeof c === 'object' ? exportStat(c.v) : c));
+}
+
+// On screen: rounded for reading; each value cell carries its raw number in data-v (blank: data-v="") so other
+// apps reading #statsTable (Thistle Notebook) get the exact value
 function renderStatsTable() {
-  const t = $('#statsTable');
+  const t = $('#statsTable'), note = $('#statsNote');
+  note.textContent = ''; note.hidden = true;
   if (!app.ws.samples.length) { t.innerHTML = '<tr><td>No samples loaded.</td></tr>'; return; }
-  const [head, ...body] = statsTableData();
+  const { table: [head, ...body], missing } = statsTableCells();
+  const td = c => typeof c === 'object' ? `<td data-v="${esc(exportStat(c.v))}">${esc(formatStat(c.v, c.stat))}</td>` : `<td>${esc(c)}</td>`;
   t.innerHTML = '<thead><tr>' + head.map(c => `<th>${esc(c)}</th>`).join('') + '</tr></thead><tbody>' +
-    body.map(r => '<tr>' + r.map(c => `<td>${esc(c)}</td>`).join('') + '</tr>').join('') + '</tbody>';
+    body.map(r => '<tr>' + r.map(td).join('') + '</tr>').join('') + '</tbody>';
+  if (missing.length) {
+    const list = a => a.length > 1 ? a.slice(0, -1).join(', ') + ' and ' + a.at(-1) : a[0];
+    note.textContent = 'Blank, not 0: ' + missing.map(m => `${m.sample} has no ${list(m.channels)} channel${m.channels.length > 1 ? 's' : ''}` +
+      (m.gates.length ? `, so ${list(m.gates)} cannot be applied (nor any gate inside ${m.gates.length > 1 ? 'them' : 'it'})` : '')).join('; ') + '.';
+    note.hidden = false;
+  }
 }
 
 const toCSV = rows => rows.map(r => r.map(c => /[",\n]/.test(c) ? `"${String(c).replace(/"/g, '""')}"` : c).join(',')).join('\n');
