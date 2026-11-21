@@ -493,7 +493,9 @@ function renderGateTree() {
       }, `✎${customSampleKeys(g).length}`) : null,
       why ? h('span', { class: 'gpct', title: why }, '–') : h('span', { class: 'gpct' }, pct ? `${pct} · ${count}` : count),
       h('button', { class: 'icon', title: 'Open plot of this population', onclick: e => { e.stopPropagation(); openPopulationPlot(id); } }, '＋'),
-      s ? h('button', { class: 'icon', title: 'Export events of this population (FCS)', onclick: e => { e.stopPropagation(); exportPopulation(s, id); } }, '⤓') : null,
+      s ? h('button', { class: 'icon', disabled: !!why,
+        title: why ? `Cannot be exported (FCS): ${why}` : 'Export events of this population (FCS)',
+        onclick: e => { e.stopPropagation(); exportPopulation(s, id); } }, '⤓') : null,
       g ? h('button', { class: 'icon', title: 'Delete gate', onclick: e => { e.stopPropagation(); deleteGate(g.id); } }, '×') : null);
     const kids = eng.children(id);
     const li = h('li', {}, row);
@@ -532,6 +534,10 @@ function openPopulationPlot(id) {
 
 function exportPopulation(s, gateId) {
   const ws = app.ws;
+  // A gate (or a gate above it) that needs a channel this sample lacks is not measured: a 0-event file would read as a
+  // measured empty population (re-review, v0.21.1). A measurable empty gate still exports a valid 0-event file.
+  const missing = gateId ? ws.engine.missingChannels(s, gateId) : [];
+  if (missing.length) { toast(`${s.name}: ${missing.join(', ')} not in this sample, so this population cannot be exported.`, true); return false; }
   const pop = ws.engine.population(s, gateId);
   const cols = s.raw.map(c => { const o = new Float32Array(pop.count); for (let i = 0; i < pop.count; i++) o[i] = c[pop.idx[i]]; return o; });
   // carry over (edited) metadata; layout keywords are rewritten by the writer
@@ -545,7 +551,9 @@ function exportPopulation(s, gateId) {
   extra['$FIL'] = `${s.name.replace(/\.fcs$/i, '')}_${popName}.fcs`;
   const buf = writeFCS({ names: s.channelNames, labels: s.params.map(p => p.label), columns: cols, ranges: exportRanges(s.params), extraText: extra });
   saveFile(extra['$FIL'], buf, 'fcs');
+  return true;
 }
+app.exportPopulation = exportPopulation;
 
 // ---------- gating tab ----------
 function channelOptions(sel, { allowHist = false } = {}) {

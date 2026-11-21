@@ -76,6 +76,22 @@ test('missing-channel gates are blank, empty gates are 0, exports keep full prec
   assert.match(tree[1].title, /CD3 not in this sample/);
   assert.equal(tree[2].t, '–', 'child gate too');
 
+  // re-review: an unavailable population cannot be exported as an FCS file (it would read as a measured 0-event file)
+  const exportBtn = sel => page.evaluate(i => { const b = document.querySelectorAll('#gateTree .node')[i].querySelector('button[title*="FCS"]');
+    return b ? { disabled: b.disabled, title: b.title } : null; }, sel);
+  for (const i of [1, 2]) { const b = await exportBtn(i); assert.ok(b && b.disabled, `export button of unavailable gate ${i} is disabled`); assert.match(b.title, /cannot be exported|not in this sample/i); }
+  assert.equal((await exportBtn(0)).disabled, false, 'All Events can still be exported');
+  const refused = await page.evaluate(() => { const ws = window.thistleFlow.ws, s = ws.activeSample(), g = ws.engine.list().find(x => x.name === 'CD3+');
+    return window.thistleFlow.exportPopulation(s, g.id); });
+  assert.equal(refused, false, 'exportPopulation refuses a population whose gate needs a missing channel');
+  // a measured empty population still exports a valid 0-event file
+  await page.evaluate(() => { const ws = window.thistleFlow.ws; ws.activeId = ws.samples.find(s => s.name.startsWith('S2')).id; window.thistleFlow.renderAll(); });
+  assert.equal((await exportBtn(1)).disabled, false, 'empty but measured gate can be exported');
+  const [fcs] = await Promise.all([page.waitForEvent('download'), page.evaluate(() => document.querySelectorAll('#gateTree .node')[1].querySelector('button[title*="FCS"]').click())]);
+  const head = fs.readFileSync(await fcs.path(), 'latin1');
+  assert.match(fcs.suggestedFilename(), /S2_CD3empty_CD3\+\.fcs/); assert.match(head, /\$TOT.0\D/, 'zero-event FCS file');
+  await page.evaluate(() => { const ws = window.thistleFlow.ws; ws.activeId = ws.samples.find(s => s.name.startsWith('S1')).id; window.thistleFlow.renderAll(); });
+
   // Statistics table
   await page.click('[data-tab=stats]');
   const table = await page.evaluate(() => {
