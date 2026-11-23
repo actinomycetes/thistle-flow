@@ -1289,8 +1289,11 @@ test('iPad (Safari, touch): files open, gates drawn and moved with a finger, dou
   const order = () => ev(() => window.thistleFlow.ws.samples.map(s => s.name));
   const before = await order();
   const rows = await ev(() => [...document.querySelectorAll('#sampleList > li')].map(li => { const r = li.getBoundingClientRect(); return r.top + r.height / 2; }));
-  const hdl = await ev(() => { const r = document.querySelector('#sampleList .drag-handle').getBoundingClientRect(); return [r.width / 2, r.height / 2]; });
-  await touch('#sampleList .drag-handle', 0, line(hdl, [hdl[0], hdl[1] + (rows[2] - rows[0]) + 15]));
+  const handle = await ev(() => document.querySelector('#sampleList .drag-handle').getBoundingClientRect().toJSON());
+  const start = [handle.width / 2, handle.height / 2];
+  // touch() takes handle-relative coordinates. The handle can sit above its row's midpoint.
+  const endY = rows[2] + 15 - handle.top;
+  await touch('#sampleList .drag-handle', 0, line(start, [start[0], endY]));
   assert.deepEqual(await order(), [before[1], before[2], before[0]], 'first sample moved to the end');
 
   // Compensation tab: tapping a preview plot selects its matrix value
