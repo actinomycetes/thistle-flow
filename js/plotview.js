@@ -97,7 +97,8 @@ export function buildSpec(ws, sample, def, w, h, opts = {}) {
   return {
     w, h, theme, kind,
     // the counts go in titleTail so a long name is shortened, never the numbers
-    title: opts.title ?? `${sample.name} · ${popName}`,
+    // titleName replaces the name but keeps the counts ("All Events (39,869 · showing 10,000)")
+    title: opts.title ?? opts.titleName ?? `${sample.name} · ${popName}`,
     titleTail: opts.title ? '' : ` (${pop.count.toLocaleString()}${shown})${def.zoom ? ' · zoomed' : ''}`,
     zoom: zoomUnits(ws, def),
     x: { name: x, label: sample.label(x), cfg: cfgX },
@@ -413,7 +414,7 @@ export class PlotView {
         const [fx, fy] = [this.L.ux2px(pts[0][0]), this.L.uy2px(pts[0][1])];
         if (Math.hypot(fx - px, fy - py) < 8) return this.finishPolygon();
       }
-      pts.push(snapUnit(u));
+      pts.push(this.snap(u));
       this.quickDraw();
       return;
     } else if (tool === 'rect' || tool === 'ellipse') {
@@ -448,11 +449,11 @@ export class PlotView {
     const mvY = v => ty.inv(ty.fwd(v) + du[1]);
     const mvLabel = () => { if (o.labelPos && !perSample) base.labelPos = [o.labelPos[0] + du[0], o.labelPos[1] + du[1]].map(v => Math.min(1, Math.max(0, v))); };
     if (g.type === 'polygon') {
-      if (d.mode === 'vertex') { const s = snapUnit(u); g.pts[d.index] = [tx.inv(s[0]), ty.inv(s[1])]; }
+      if (d.mode === 'vertex') { const s = this.snap(u); g.pts[d.index] = [tx.inv(s[0]), ty.inv(s[1])]; }
       else { g.pts = o.pts.map(([x, y]) => [mvX(x), mvY(y)]); mvLabel(); }
     } else if (g.type === 'rect') {
       if (d.mode === 'vertex') {
-        const s = snapUnit(u);
+        const s = this.snap(u);
         const [vx, vy] = [tx.inv(s[0]), ty.inv(s[1])];
         if (d.index === 0 || d.index === 3) g.x0 = vx; else g.x1 = vx;
         if (d.index === 0 || d.index === 1) g.y0 = vy; else g.y1 = vy;
@@ -470,7 +471,7 @@ export class PlotView {
         g.angles = { ...a, [d.arm]: Math.round(clampArmAngle(want, cw, acw) * 10) / 10 };
       } else if (d.mode === 'arm' && m === 'staggered') {
         const off = { up: o.cx, down: o.cx, right: o.cy, left: o.cy, ...(o.offsets || {}) };
-        const s = snapUnit(u);
+        const s = this.snap(u);
         off[d.arm] = d.arm === 'up' || d.arm === 'down' ? tx.inv(s[0]) : ty.inv(s[1]);
         g.offsets = off;
       } else {
@@ -484,8 +485,8 @@ export class PlotView {
         }
       }
     } else if (g.type === 'interval') {
-      if (d.mode === 'iv0') g.x0 = tx.inv(snapUnit(u)[0]);
-      else if (d.mode === 'iv1') g.x1 = tx.inv(snapUnit(u)[0]);
+      if (d.mode === 'iv0') g.x0 = tx.inv(this.snap(u)[0]);
+      else if (d.mode === 'iv1') g.x1 = tx.inv(this.snap(u)[0]);
       else { g.x0 = mvX(o.x0); g.x1 = mvX(o.x1); g.level = Math.min(0.97, Math.max(0.05, (o.level ?? 0.85) + du[1])); mvLabel(); }
     }
     this.app.setGateGeometry(base, g, perSample || null);
@@ -506,7 +507,7 @@ export class PlotView {
         this.app.zoomPlot(this.def, { x: [tx.inv(ux0), tx.inv(ux1)], y: ty ? [ty.inv(uy0), ty.inv(uy1)] : null });
         return;
       }
-      const a = snapUnit(d.start), b = snapUnit(d.cur);
+      const a = this.snap(d.start), b = this.snap(d.cur);
       if (Math.abs(a[0] - b[0]) < 0.01 && (d.type === 'interval' || Math.abs(a[1] - b[1]) < 0.01)) { this.draw(); return; }
       if (d.type === 'rect') {
         const [x0, y0] = this.toData([Math.min(a[0], b[0]), Math.min(a[1], b[1])]);
@@ -564,6 +565,8 @@ export class PlotView {
 
   cancel() { if (this.drawing || this.preview) { this.drawing = null; this.preview = null; this.draw(); } }
 
+  snap(u) { return this.L?.zoomed ? [u[0], u[1]] : snapUnit(u); }
+
   toData([ux, uy]) {
     const tx = makeTransform(this.app.ws.getCfg(this.def.x));
     const ty = this.def.y ? makeTransform(this.app.ws.getCfg(this.def.y)) : null;
@@ -572,6 +575,8 @@ export class PlotView {
 }
 
 // Points dragged onto/over the axis edge extend the gate well beyond it so piled-up off-scale events are included.
+// Not while zoomed in: there the user is placing points precisely, and the axis edge (0.3% of the whole axis)
+// can be a large part of the view, so a click near the corner would throw the point far outside the view.
 function snapUnit([u, v]) {
   const s = x => (x <= 0.003 ? -0.3 : x >= 0.997 ? 1.3 : x);
   return [s(u), s(v)];

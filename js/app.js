@@ -496,6 +496,7 @@ function renderGateTree() {
       s ? h('button', { class: 'icon', disabled: !!why,
         title: why ? `Cannot be exported (FCS): ${why}` : 'Export events of this population (FCS)',
         onclick: e => { e.stopPropagation(); exportPopulation(s, id); } }, '⤓') : null,
+      g ? h('button', { class: 'icon', title: 'Move under another population… (e.g. put Singlets inside Lymphocytes)', onclick: e => { e.stopPropagation(); moveGateMenu(g, e.currentTarget); } }, '↳') : null,
       g ? h('button', { class: 'icon', title: 'Delete gate', onclick: e => { e.stopPropagation(); deleteGate(g.id); } }, '×') : null);
     const kids = eng.children(id);
     const li = h('li', {}, row);
@@ -803,7 +804,40 @@ app.createGate = (def, geom) => {
   ws.engine.add(g);
   ws.selectedGate = g.id;
   renderAll();
+  // A common slip: drawing the next gate (e.g. Singlets) on a plot still showing All Events puts it next to the
+  // first gate (e.g. Lymphocytes) instead of inside it. Say so, and how to put it inside.
+  const other = !g.parent && ws.engine.children(null).find(o => o.id !== g.id && !isGrouped(o) && (o.x !== g.x || o.y !== g.y));
+  if (other) toast(`“${g.name}” was gated on All Events, next to “${other.name}” (not inside it). To gate it inside “${other.name}”, use ↳ next to “${g.name}” in the gate tree, or set the plot's population to “${other.name}” before drawing.`, false, { ms: 14000 });
 };
+
+// Move a gate (with its linked quadrants/split side and everything gated inside it) under another population.
+app.moveGate = (id, parentId) => {
+  const ws = app.ws, eng = ws.engine, g = eng.get(id);
+  if (!g) return false;
+  parentId = parentId || null;
+  const group = isGrouped(g) ? eng.list().filter(o => o.group === g.group) : [g];
+  const inside = new Set();
+  const walk = pid => eng.children(pid).forEach(c => { inside.add(c.id); walk(c.id); });
+  group.forEach(m => { inside.add(m.id); walk(m.id); });
+  if (parentId && inside.has(parentId)) { toast('A gate cannot be moved inside itself or one of its own subpopulations.', true); return false; }
+  group.forEach(m => { m.parent = parentId; });
+  eng.invalidate();
+  app.scheduleCommit();
+  renderAll();
+  toast(`“${g.name}” is now gated inside ${parentId ? `“${eng.get(parentId).name}”` : 'All Events'}; percentages and plots follow.`);
+  return true;
+};
+function moveGateMenu(g, anchor) {
+  const eng = app.ws.engine;
+  const group = isGrouped(g) ? eng.list().filter(o => o.group === g.group) : [g];
+  const bad = new Set();
+  const walk = pid => eng.children(pid).forEach(c => { bad.add(c.id); walk(c.id); });
+  group.forEach(m => { bad.add(m.id); walk(m.id); });
+  const sel = h('select', { id: 'moveGateTo', onchange: e => { closePopover(); app.moveGate(g.id, e.target.value); } },
+    popOptions(g.parent).filter(o => !bad.has(o.value)));
+  popover(anchor, h('div', { class: 'pop-form' }, h('div', { class: 'pop-title' }, `Move “${g.name}” under…`), sel,
+    h('p', { class: 'hint' }, isGrouped(g) ? 'Its linked gates and every population inside it move too.' : 'Every population inside it moves too. The gate keeps its shape; its percentages are recalculated.')));
+}
 
 app.createQuadrant = (def, [cx, cy]) => {
   const ws = app.ws, s = ws.activeSample();
@@ -1110,7 +1144,7 @@ function batchSpec(f, s, theme) {
   const ws = app.ws;
   const pop = f.pop && ws.engine.get(f.pop) ? f.pop : null;
   const spec = buildSpec(ws, s, { pop, x: f.x, y: f.y, kind: f.plotKind, maxEvents: f.maxEvents, dotSize: f.dotSize }, f.w, f.h, {
-    theme, title: `${s.name.replace(/\.fcs$/i, '')} (${ws.engine.population(s, pop).count.toLocaleString()})`,
+    theme, titleName: s.name.replace(/\.fcs$/i, ''),
     noGates: f.showGates === false, compactLabels: true, selectedGate: ws.selectedGate,
   });
   if (spec) {
@@ -1138,7 +1172,7 @@ function strategySpec(f, step, s, theme) {
   if (!step.gate && !f.allGates) only = new Set();
   const name = step.pop ? eng.get(step.pop).name : 'All Events';
   const spec = buildSpec(ws, s, { pop: step.pop, x: step.x, y: step.y, kind: f.plotKind, maxEvents: f.maxEvents, dotSize: f.dotSize }, f.w, f.h, {
-    theme, title: `${name} (${eng.population(s, step.pop).count.toLocaleString()})`,
+    theme, titleName: name,
     noGates: f.showGates === false, onlyGates: only, selectedGate: null,
   });
   if (spec) {

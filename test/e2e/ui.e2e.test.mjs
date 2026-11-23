@@ -1377,3 +1377,64 @@ test('saving to a chosen folder: shows progress, checks the written size, report
   assert.deepEqual(errors, []);
   await ctx.close();
 });
+
+test('gate drawn on All Events next to another: hint and ↳ Move under; strategy titles show counts; zoomed polygon points stay where clicked', { timeout: 180000 }, async () => {
+  browser = browser || await chromium.launch();
+  const page = await browser.newPage({ viewport: { width: 1500, height: 950 } });
+  const errors = [];
+  page.on('pageerror', e => errors.push(e.message));
+  const prompts = ['Singlets'];
+  page.on('dialog', d => d.accept(prompts.shift()));
+  const ev = f => page.evaluate(f);
+  await page.goto(BASE + '/?nosession');
+  await page.click('#btnDemo'); await page.waitForSelector('.plot-card canvas');
+  // Lymphocytes on plot 1, then Singlets drawn on plot 2, which still shows All Events (the slip in the report)
+  await ev(() => { const ws = window.thistleFlow.ws; ws.engine.add({ id: 'gL', name: 'Lymphocytes', parent: null, type: 'rect', x: 'FSC-A', y: 'SSC-A', x0: 40000, x1: 80000, y0: 8000, y1: 38000, color: '#d55e00' });
+    window.thistleFlow.createGate(ws.plots[1], { type: 'polygon', pts: [[20000, 15000], [120000, 115000], [120000, 135000], [20000, 25000]] }); });
+  await page.waitForFunction(() => /“Singlets” was gated on All Events, next to “Lymphocytes”/.test(document.getElementById('toast').textContent));
+  const sid = await ev(() => window.thistleFlow.ws.engine.list().find(g => g.name === 'Singlets').id);
+  await page.evaluate(sid => { const ws = window.thistleFlow.ws; for (const q of ['UL', 'UR', 'LR', 'LL']) ws.engine.add({ id: 'q' + q, name: q, parent: sid, type: 'quad', q, group: 'QQ', x: 'PE-A', y: 'APC-A', cx: 800, cy: 800 });
+    ws.figures.push({ id: 'fs', kind: 'strategy', pop: 'qLR', sampleKey: ws.samples[0].key, w: 230, h: 220, plotKind: 'pseudo' }); window.thistleFlow.renderAll(); }, sid);
+  const before = await ev(() => window.thistleFlow.ws.engine.population(window.thistleFlow.ws.samples[0], 'qLR').count);
+  // ↳ next to Singlets: move it (with its quadrants) inside Lymphocytes
+  const row = page.locator('#gateTree [title="Singlets"]').first();
+  await row.locator('button[title^="Move under"]').click();
+  await page.selectOption('#moveGateTo', 'gL');
+  assert.equal(await page.evaluate(sid => window.thistleFlow.ws.engine.get(sid).parent, sid), 'gL');
+  assert.equal(await ev(() => window.thistleFlow.ws.engine.get('qLR').parent), sid, 'the quadrants stay inside Singlets');
+  const after = await ev(() => window.thistleFlow.ws.engine.population(window.thistleFlow.ws.samples[0], 'qLR').count);
+  assert.ok(after < before, `counts follow the new hierarchy: ${before} -> ${after}`);
+  // a gate cannot go inside its own subpopulation (the row is now titled with its full path)
+  await page.locator('#gateTree [title="Lymphocytes/Singlets"] button[title^="Move under"]').click();
+  assert.equal(await page.locator('#moveGateTo option[value="qLR"]').count(), 0);
+  await page.keyboard.press('Escape');
+  // the strategy figure now runs All Events -> Lymphocytes -> Singlets -> quadrants, titles with counts shown
+  await page.click('[data-tab=layout]');
+  const card = page.locator('.figure-card').last();
+  await card.locator('canvas').nth(2).waitFor();
+  const t = await card.locator('canvas').evaluateAll(cs => cs.map(c => c._figView.spec.title + c._figView.spec.titleTail));
+  assert.equal(t.length, 3);
+  assert.match(t[0], /^All Events \(40,000 · showing 10,000\)/);
+  assert.match(t[1], /^Lymphocytes \(/); assert.match(t[2], /^Singlets \(/);
+  assert.match(await ev(() => window.thistleFlow.ws.engine.get('gL').name), /Lymphocytes/);
+  await page.click('[data-tab=gating]');
+  // zoomed in near the origin: a polygon point clicked at the corner stays in view (no jump to the far axis edge)
+  await ev(() => { const ws = window.thistleFlow.ws; ws.plots[0].zoom = { x: [0, 30000], y: [0, 30000] }; window.thistleFlow.renderAll(); });
+  await page.click('[data-tool=polygon]');
+  const b = await page.locator('.plot-card canvas').nth(0).boundingBox();
+  const pt = await ev(() => { const v = [...window.thistleFlow.views.values()][0]; return [v.L.ux2px(v.L.px2ux(66) ), v.L.uy2px(v.L.px2uy(v.L.ph + 22))]; });
+  await page.mouse.click(b.x + pt[0], b.y + pt[1]);
+  const p0 = await ev(() => [...window.thistleFlow.views.values()][0].drawing.pts[0]);
+  const z = await ev(() => { const v = [...window.thistleFlow.views.values()][0]; return [v.L.px2ux(64), v.L.px2ux(64 + v.L.pw)]; });
+  assert.ok(p0[0] >= z[0] - 1e-9 && p0[0] < z[1] && p0[1] > -0.01, `point where clicked: ${p0} (view ${z})`);
+  await page.keyboard.press('Escape');
+  // not zoomed: a point at the very edge still snaps beyond the axis (includes events piled up there)
+  await ev(() => { delete window.thistleFlow.ws.plots[0].zoom; window.thistleFlow.renderAll(); });
+  await page.click('[data-tool=polygon]');
+  const b2 = await page.locator('.plot-card canvas').nth(0).boundingBox();
+  const edge = await ev(() => { const v = [...window.thistleFlow.views.values()][0]; return [v.L.ux2px(0.001), v.L.uy2px(0.5)]; });
+  await page.mouse.click(b2.x + edge[0], b2.y + edge[1]);
+  assert.equal(await ev(() => [...window.thistleFlow.views.values()][0].drawing.pts[0][0]), -0.3);
+  assert.deepEqual(errors, []);
+  await page.close();
+});

@@ -66,7 +66,8 @@ makes a single-file `dist/thistle-flow.html` for offline lab PCs. Data never lea
   as tooltip; `#statsNote` under the table says why). Never turn it into 0; a measurable empty gate is 0. On screen,
   `formatStat()` rounds (small non-zero % keep 2 significant figures); CSV, Copy and Open in Thistle Plot use
   `exportStat()` (full precision, blank for NaN). Each value cell of `#statsTable` carries its raw number in `data-v`
-  (`data-v=""` when blank) for other apps reading the table (Thistle Notebook). The gate tree's ⤓ FCS export is disabled for an
+  (`data-v=""` when blank) for other apps reading the table (Thistle Notebook). Keep the first column of `#statsTable` the
+  sample name (Thistle Notebook ≥ 0.6.2 reads it as text). The gate tree's ⤓ FCS export is disabled for an
   unavailable population and `exportPopulation` refuses it (returns false; v0.21.1, re-review): a 0-event file would read
   as measured. A measurable empty gate still exports a valid 0-event file. `test/availability.test.js` and
   `test/e2e/availability.e2e.test.mjs` (fixtures from `test/fixtures/gate-availability.mjs`, numpy reference numbers).
