@@ -94,12 +94,14 @@ export function buildSpec(ws, sample, def, w, h, opts = {}) {
     });
   const popName = popId ? eng.get(popId).name : 'All Events';
   const shown = idx.length < pop.count && kind !== 'smooth' ? ` · showing ${idx.length.toLocaleString()}` : '';
+  const missing = eng.missingChannels(sample, popId);
+  const countLabel = missing.length ? `unavailable: missing ${missing.join(', ')}` : pop.count.toLocaleString() + shown;
   return {
     w, h, theme, kind,
     // the counts go in titleTail so a long name is shortened, never the numbers
     // titleName replaces the name but keeps the counts ("All Events (39,869 · showing 10,000)")
     title: opts.title ?? opts.titleName ?? `${sample.name} · ${popName}`,
-    titleTail: opts.title ? '' : ` (${pop.count.toLocaleString()}${shown})${def.zoom ? ' · zoomed' : ''}`,
+    titleTail: opts.title ? '' : ` (${countLabel})${def.zoom ? ' · zoomed' : ''}`,
     zoom: zoomUnits(ws, def),
     x: { name: x, label: sample.label(x), cfg: cfgX },
     y: y ? { name: y, label: sample.label(y), cfg: cfgY } : null,
