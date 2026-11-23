@@ -310,3 +310,6 @@ button.sample-step:disabled { opacity: .35; cursor: default; }
   padding: 8px 12px; font-size: 12.5px; box-shadow: 0 4px 16px rgba(0,0,0,.25); transition: opacity 1s; }
 .restore-note.fade { opacity: 0; }
 .toast.busy::before { content: '⏳ '; }
+.batch-grid.fixed { display: grid; max-width: none; justify-content: start; }
+.fig-controls .grid-row input[type=number] { flex: 0 0 52px; }
+.fig-controls .grid-row .times { width: auto !important; color: var(--muted); }

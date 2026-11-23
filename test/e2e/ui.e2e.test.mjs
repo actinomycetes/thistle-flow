@@ -1438,3 +1438,47 @@ test('gate drawn on All Events next to another: hint and ↳ Move under; strateg
   assert.deepEqual(errors, []);
   await page.close();
 });
+
+test('batch figure grid: 3 × 2, filled across rows or down columns, also in the export', { timeout: 180000 }, async () => {
+  browser = browser || await chromium.launch();
+  const page = await browser.newPage({ viewport: { width: 1600, height: 1000 } });
+  const errors = [];
+  page.on('pageerror', e => errors.push(e.message));
+  await page.addInitScript(() => { window.showSaveFilePicker = undefined; });
+  const ev = f => page.evaluate(f);
+  await page.goto(BASE + '/?nosession');
+  await page.click('#btnDemo'); await page.waitForSelector('.plot-card canvas');
+  await page.click('#btnDemo'); await page.waitForFunction(() => window.thistleFlow.ws.samples.length === 6);
+  await page.click('[data-tab=layout]');
+  await page.click('[data-addfig=batch]');
+  const card = page.locator('.figure-card').last();
+  const pos = () => card.locator('.batch-grid canvas').evaluateAll(cs => { const o = cs[0].getBoundingClientRect(); return cs.map(c => { const r = c.getBoundingClientRect(); return [Math.round(r.left - o.left), Math.round(r.top - o.top)]; }); });
+  const shape = p => [new Set(p.map(q => q[0])).size, new Set(p.map(q => q[1])).size]; // [columns, rows]
+  await card.locator('input.grid-cols').fill('3'); await card.locator('input.grid-cols').dispatchEvent('change');
+  assert.equal(await card.locator('input.grid-rows').inputValue(), '2', 'rows follow: 3 × 2');
+  let p = await pos();
+  assert.deepEqual(shape(p), [3, 2]);
+  assert.ok(p[1][1] === p[0][1] && p[3][1] > p[0][1], 'filled across rows: sample 2 beside sample 1, sample 4 below');
+  await card.locator('select.grid-fill').selectOption('cols');
+  p = await pos();
+  assert.deepEqual(shape(p), [3, 2]);
+  assert.ok(p[1][0] === p[0][0] && p[1][1] > p[0][1], 'filled down columns: sample 2 below sample 1');
+  // rows chosen instead: 3 rows -> 2 columns
+  await card.locator('input.grid-rows').fill('3'); await card.locator('input.grid-rows').dispatchEvent('change');
+  assert.equal(await card.locator('input.grid-cols').inputValue(), '2');
+  assert.deepEqual(shape(await pos()), [2, 3]);
+  // saved with the workspace
+  assert.match(await ev(() => JSON.stringify(window.thistleFlow.ws.serialize().figures)), /"rows":3/);
+  // the exported image has the same 2 × 3 arrangement
+  await card.locator('button:has-text("Export ▾")').click();
+  const [dl] = await Promise.all([page.waitForEvent('download'), page.click('.popover button:has-text("PNG")')]);
+  const png = fs.readFileSync(await dl.path());
+  const w = png.readUInt32BE(16), h = png.readUInt32BE(20);
+  assert.ok(h > w, `2 columns × 3 rows is taller than wide: ${w} × ${h}`);
+  await card.screenshot({ path: OUT + '/batch-grid.png' });
+  // Auto goes back to wrapping
+  await card.locator('button:has-text("Auto")').click();
+  assert.equal(await card.locator('input.grid-cols').inputValue(), '');
+  assert.deepEqual(errors, []);
+  await page.close();
+});

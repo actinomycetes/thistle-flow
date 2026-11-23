@@ -9,6 +9,16 @@ import { trackDrag, onDoubleTap } from './ui.js';
 
 const FIG_HANDLE = 6;
 
+// Grid of a batch figure for n plots: columns OR rows chosen (the other follows), or null for automatic wrapping.
+export function batchGrid(n, { cols, rows } = {}) {
+  n = Math.max(1, n);
+  const c = Number.isInteger(cols) && cols > 0 ? Math.min(cols, n) : null;
+  const r = !c && Number.isInteger(rows) && rows > 0 ? Math.min(rows, n) : null;
+  if (c) return { cols: c, rows: Math.ceil(n / c) };
+  if (r) return { cols: Math.ceil(n / r), rows: r };
+  return null;
+}
+
 export class FigureView {
   // makeSpec() returns a plot spec, or a string to show instead (e.g. "channel missing")
   constructor(app, f, canvas, makeSpec, { editable = false, onLabelDone } = {}) {

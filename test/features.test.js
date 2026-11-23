@@ -232,3 +232,13 @@ test('split gate: left + right cover the parent exactly; per-sample line positio
   assert.ok(ws.engine.population(b, 'sR').count < before);
   assert.equal(ws.engine.population(b, 'sL').count + ws.engine.population(b, 'sR').count, ws.engine.population(b, 'g1').count);
 });
+
+test('batch figure grid: columns or rows chosen, the other follows from the number of samples', async () => {
+  const { batchGrid } = await import('../js/figureview.js');
+  assert.deepEqual(batchGrid(6, { cols: 3 }), { cols: 3, rows: 2 });
+  assert.deepEqual(batchGrid(6, { rows: 3 }), { cols: 2, rows: 3 });
+  assert.deepEqual(batchGrid(7, { cols: 3 }), { cols: 3, rows: 3 });
+  assert.deepEqual(batchGrid(3, { cols: 5 }), { cols: 3, rows: 1 }, 'never more columns than plots');
+  assert.equal(batchGrid(6, {}), null, 'automatic');
+  assert.equal(batchGrid(6, { cols: 0 }), null);
+});

@@ -13,7 +13,7 @@ import { Workspace, FILE_EXT, fileFormat, checkThistleFlowFile } from './workspa
 // Files that "Load workspace" / "Apply template" accept: .tflow, and the older .json / .zip
 const OPEN_ACCEPT = '.tflow,.json,.zip';
 import { renderProperties } from './properties.js';
-import { FigureView } from './figureview.js';
+import { FigureView, batchGrid } from './figureview.js';
 import { CompPreview } from './compview.js';
 import { APP_NAME, APP_VERSION } from './version.js';
 import { sessionSupported, writeSession, readSession, clearSession } from './session.js';
@@ -1270,6 +1270,22 @@ function figureCard(f) {
       resetLabelsBtn()));
   } else if (f.kind === 'batch') {
     ctrl.append(field('Population', h('select', { onchange: e => { f.pop = e.target.value || null; redraw(); } }, popOptions(f.pop))));
+    // plots per row and column (e.g. 3 × 2); set one and the other follows from the number of samples
+    const n = ws.samples.length;
+    const num = (key, other, label) => h('input', { type: 'number', min: 1, max: Math.max(1, n), step: 1, class: 'grid-' + key, title: label, placeholder: 'auto',
+      onchange: e => { const v = parseInt(e.target.value, 10); f[key] = v > 0 ? Math.min(v, Math.max(1, n)) : null; if (f[key]) delete f[other]; syncGrid(); redraw(); } });
+    const colsIn = num('cols', 'rows', 'Plots per row (columns)'), rowsIn = num('rows', 'cols', 'Rows of plots');
+    const fillSel = h('select', { class: 'grid-fill', title: 'Order of the samples in the grid', onchange: e => { f.fill = e.target.value; redraw(); } },
+      h('option', { value: 'rows' }, 'Fill across rows'), h('option', { value: 'cols' }, 'Fill down columns'));
+    const syncGrid = () => {
+      const g = batchGrid(n, f);
+      colsIn.value = g ? g.cols : ''; rowsIn.value = g ? g.rows : '';
+      fillSel.value = f.fill === 'cols' ? 'cols' : 'rows'; fillSel.disabled = !g;
+    };
+    syncGrid();
+    ctrl.append(h('label', { class: 'grid-row' }, h('span', {}, 'Grid'), colsIn, h('span', { class: 'times' }, '×'), rowsIn,
+      h('button', { class: 'btn small', title: 'Automatic: as many plots per row as fit', onclick: () => { delete f.cols; delete f.rows; syncGrid(); redraw(); } }, 'Auto')),
+      h('label', {}, h('span', {}, ''), fillSel));
     ctrl.append(field('Style', h('select', { onchange: e => { f.plotKind = e.target.value; redraw(); } }, kindOptions(f.plotKind))));
     ctrl.append(h('div', { style: 'display:flex;gap:12px' },
       h('label', {}, h('input', { type: 'checkbox', checked: f.showGates !== false, onchange: e => { f.showGates = e.target.checked; redraw(); } }), 'Gates'),
@@ -1395,6 +1411,12 @@ function drawFigure(f, out) {
   }
   if (f.kind === 'batch') {
     const grid = h('div', { class: 'batch-grid' });
+    const g = batchGrid(ws.samples.length, f);
+    if (g) { // fixed columns × rows (in the export too, which copies the positions on screen)
+      grid.classList.add('fixed');
+      grid.style.gridTemplateColumns = `repeat(${g.cols}, max-content)`;
+      if (f.fill === 'cols') { grid.style.gridAutoFlow = 'column'; grid.style.gridTemplateRows = `repeat(${g.rows}, max-content)`; }
+    }
     if (f.title) out.append(h('div', { class: 'fig-title' }, f.title));
     for (const s of ws.samples) {
       const c = h('canvas', { 'data-sample': s.id, title: 'Drag a gate label to move it (in every plot of this figure)' });
