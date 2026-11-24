@@ -192,11 +192,17 @@ async function restoreSession() {
   if (!KEEP) return;
   let kept = null;
   try { kept = await readSession(); } catch (err) { console.warn('Could not read the kept session', err); }
+  if (window.TF_RESTORE_DELAY) await new Promise(r => setTimeout(r, window.TF_RESTORE_DELAY)); // tests: a slow restore
   try {
     const useful = kept?.meta.workspaces.filter(w => w.files.length || (w.data.gates || []).length || (w.data.plots || []).length);
     if (useful?.length) {
       const errors = [];
-      app.workspaces = [];
+      // Reading the kept copy can take a moment (large files, a slow disk). If the user has already opened or
+      // started something meanwhile (e.g. dropped a workspace right after the page loaded), never replace it:
+      // the previous session comes back in extra tabs next to it.
+      const started = app.workspaces.filter(w => w.samples.length || w.engine.list().length || w.figures.length);
+      const current = app.ws;
+      app.workspaces = started.slice();
       for (const w of useful) {
         const ws = new Workspace(w.data.name);
         app.workspaces.push(ws);
@@ -209,9 +215,10 @@ async function restoreSession() {
         ws.deserialize(w.data);
         ws.rebase(); ws.dirty = !!w.dirty;
       }
-      app.ws = app.workspaces[Math.min(kept.meta.active || 0, app.workspaces.length - 1)];
+      app.ws = started.length ? (started.includes(current) ? current : started[0])
+        : app.workspaces[Math.min(kept.meta.active || 0, app.workspaces.length - 1)];
       renderAll();
-      showRestoreNote(kept.meta.savedAt);
+      showRestoreNote(kept.meta.savedAt, started.length > 0);
       if (errors.length) toast('Some kept files could not be read: ' + errors.join('; '), true);
     }
   } catch (err) {
@@ -224,12 +231,15 @@ async function restoreSession() {
 }
 
 // A small notice after reopening, with the way back to an empty start.
-function showRestoreNote(savedAt) {
+function showRestoreNote(savedAt, besides = false) {
   const when = savedAt ? new Date(savedAt).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' }) : '';
   const note = h('div', { class: 'restore-note', role: 'status' },
-    h('span', {}, `Reopened your last session${when ? ` (${when})` : ''}. It is kept in this browser only; save a .tflow file to keep or share it.`),
+    h('span', {}, besides
+      ? `Your last session${when ? ` (${when})` : ''} was reopened in extra tabs, next to what you opened. It is kept in this browser only; save a .tflow file to keep or share it.`
+      : `Reopened your last session${when ? ` (${when})` : ''}. It is kept in this browser only; save a .tflow file to keep or share it.`),
     h('button', { class: 'btn small', onclick: () => note.remove() }, 'OK'),
-    h('button', { class: 'btn small', onclick: async () => { note.remove(); await startFresh(); } }, 'Start fresh'));
+    // next to work just opened, "Start fresh" would remove that too: the extra tabs can be closed with × instead
+    besides ? null : h('button', { class: 'btn small', onclick: async () => { note.remove(); await startFresh(); } }, 'Start fresh'));
   document.body.append(note);
   setTimeout(() => note.isConnected && note.classList.add('fade'), 15000);
   setTimeout(() => note.remove(), 16000);

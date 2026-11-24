@@ -96,3 +96,32 @@ test('inside another page (as in Thistle Notebook) nothing is restored or kept',
   assert.equal(await page.evaluate(() => window.thistleFlow.ws.samples.length), 3);
   await ctx.close();
 });
+
+test('a workspace opened while the kept session is still being read is not replaced by it', { timeout: 180000 }, async () => {
+  browser = browser || await pw.launch();
+  const ctx = await browser.newContext({ viewport: { width: 1500, height: 950 } });
+  const page = await ctx.newPage();
+  const errors = [];
+  page.on('pageerror', e => errors.push(e.message));
+  await page.goto(BASE + '/index.html');
+  await page.click('#btnDemo'); await page.waitForSelector('.plot-card canvas');
+  await page.evaluate(() => { const a = window.thistleFlow; a.ws.name = 'Kept'; a.ws.engine.add({ id: 'gK', name: 'Kept gate', parent: null, type: 'rect', x: 'FSC-A', y: 'SSC-A', x0: 1, x1: 2, y0: 1, y1: 2 }); a.renderAll(); });
+  await waitKept(page);
+  // a workspace file to open right after the reload (without its FCS files, so it opens at once)
+  const file = path.join(fs.mkdtempSync(path.join((await import('node:os')).tmpdir(), 'tf-keep-')), 'Opened.tflow');
+  const data = await page.evaluate(() => { const d = window.thistleFlow.ws.serialize(); d.name = 'Opened'; d.gates = [{ id: 'gO', name: 'Opened gate', parent: null, type: 'rect', x: 'FSC-A', y: 'SSC-A', x0: 1, x1: 2, y0: 1, y1: 2 }]; d.samples = []; return d; });
+  fs.writeFileSync(file, JSON.stringify(data));
+  await page.addInitScript(() => { window.TF_RESTORE_DELAY = 2000; }); // the kept copy takes a while to read
+  await page.reload();
+  await page.setInputFiles('#wsInput', file);
+  await page.waitForFunction(() => window.thistleFlow.ws.name === 'Opened');
+  await page.waitForSelector('.restore-note', { timeout: 15000 });
+  const f = await flow(page);
+  assert.equal(f.active, 'Opened', 'the opened workspace stays in front');
+  assert.deepEqual(f.gates, ['Opened gate']);
+  assert.deepEqual(f.tabs, ['Opened', 'Kept'], 'the earlier session comes back in an extra tab');
+  assert.match(await page.textContent('.restore-note'), /extra tabs, next to what you opened/);
+  assert.equal(await page.locator('.restore-note button:has-text("Start fresh")').count(), 0, 'no Start fresh that would also remove what was opened');
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});

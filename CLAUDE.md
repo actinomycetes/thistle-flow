@@ -16,7 +16,9 @@ makes a single-file `dist/thistle-flow.html` for offline lab PCs. Data never lea
   (`js/session.js`, database `thistle-flow-session`: `kv/session` + `files/<key>`, each file stored once) about 0.8 s
   after a change (`keepSoon()` from `renderAll` / `scheduleCommit`, and on `pagehide`), and `restoreSession()` reopens
   them on load with a notice offering **Start fresh**. Off inside an iframe (Thistle Notebook embeds TF) and with
-  `?nosession`. No "leave page?" warning when `sessionKept()`. Any new workspace state must be in `serialize()` to be
+  `?nosession`. If the user opened or started anything before `restoreSession()` finished reading (a workspace dropped
+  right after load), the kept workspaces are added as extra tabs and the current one stays (v0.23.2; this race made the
+  Firefox e2e flaky; `window.TF_RESTORE_DELAY` reproduces it in `keep.e2e.test.mjs`). No "leave page?" warning when `sessionKept()`. Any new workspace state must be in `serialize()` to be
   kept. `test/e2e/keep.e2e.test.mjs` covers it. The maintainer may revert this if it confuses users.
 - No network access at runtime. The single-file build must keep working from `file://`.
 - Never modify the user's FCS files; metadata edits live in the workspace and in exported copies.
