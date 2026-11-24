@@ -337,6 +337,11 @@ export function populationStats(engine, sample, gateId) {
   };
 }
 
+// One wording everywhere a population cannot be measured because a channel is missing:
+// "no CD3 in this sample", "no CD3 or CD4 in this sample" (or "in <sample name>" where several samples are listed).
+export const orList = a => (a.length > 1 ? a.slice(0, -1).join(', ') + ' or ' + a.at(-1) : a[0] || '');
+export const missingPhrase = (channels, where = 'this sample') => `no ${orList(channels)} in ${where}`;
+
 // One Statistics-table value: a population statistic (ch = null) or a per-channel statistic. NaN = blank
 // (not measured: the population or the channel is not in this sample, or nothing to compute).
 // cache: optional Map shared across one sample's columns.

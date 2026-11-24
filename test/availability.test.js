@@ -66,8 +66,16 @@ test('plot titles distinguish unavailable populations from measured counts', () 
   const ws = { engine: engine(), getCfg };
   const title = (sample, pop) => buildSpec(ws, sample, { x: 'CD4', pop }, 300, 280, { titleName: sample.name }).titleTail;
   for (const pop of ['g3', 'g4']) {
-    assert.match(title(samples.S1_noCD3, pop), /unavailable.*CD3/i);
+    assert.match(title(samples.S1_noCD3, pop), /\(no CD3 in this sample\)/);
     assert.equal(title(samples.S2_CD3empty, pop), ' (0)');
   }
   assert.equal(title(samples.S3_CD3rare3, 'g3'), ' (3)');
+});
+
+test('one wording for a missing channel: "no CD3 in this sample"', async () => {
+  const { missingPhrase } = await import('../js/gates.js');
+  assert.equal(missingPhrase(['CD3']), 'no CD3 in this sample');
+  assert.equal(missingPhrase(['CD3', 'CD4']), 'no CD3 or CD4 in this sample');
+  assert.equal(missingPhrase(['CD3', 'CD4', 'CD8']), 'no CD3, CD4 or CD8 in this sample');
+  assert.equal(missingPhrase(['CD3'], 'A01.fcs'), 'no CD3 in A01.fcs');
 });
