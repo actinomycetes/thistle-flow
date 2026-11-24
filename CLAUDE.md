@@ -46,7 +46,8 @@ makes a single-file `dist/thistle-flow.html` for offline lab PCs. Data never lea
   character escaped (`encodeURIComponent`, then `(`→`%28`, `)`→`%29`). Safari on iPad showed only this form (v0.17.1);
   Thistle Plot's `type="image/svg+xml"` icon never appeared there.
   Keep `document.title = ...` in `js/app.js`: Orion 1.1 (WebKit) showed the icon only on pages that set the title from
-  script (TF had it; TP v0.17.1 and TN v0.5.1 copied it). A 180×180 PNG of the icon on the slate background
+  script (TF had it; TP v0.17.1 and TN v0.5.1 copied it). Inside another page (`EMBEDDED`, e.g. Thistle Notebook) TF removes
+  its icon links so the host tab keeps its own icon (v0.23.1, `test/e2e/embed.e2e.test.mjs`). A 180×180 PNG of the icon on the slate background
   is given as `apple-touch-icon`.
   `index.html` and `help.html` carry the same icon, logo and PNG (`test/files.test.js` checks they match).
 - **Tables between apps (TF → TP, v0.20.0)**: `openStatsInThistlePlot()` opens TP in a new tab

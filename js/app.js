@@ -2218,6 +2218,9 @@ applyTheme(pref.get('themeChoice', 'dark') === 'light' ? 'light' : 'dark');
 $('#app-version').textContent = `v${APP_VERSION}`;
 // Keep: Orion 1.1 (WebKit) shows the favicon only on pages whose title is set again from script (TP v0.17.1, TN v0.5.1).
 document.title = `${APP_NAME} v${APP_VERSION} (Beta)`;
+// Shown inside another page (Thistle Notebook), drop Flow's tab icon so the host keeps its own (v0.23.1: Orion showed an
+// embedded app's icon on Thistle Notebook's tab)
+if (EMBEDDED) document.querySelectorAll('link[rel="icon"],link[rel="apple-touch-icon"]').forEach(l => l.remove());
 setupSplitters();
 setupRubberBand();
 newWorkspace('Workspace 1');
