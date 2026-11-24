@@ -373,7 +373,8 @@ test('overlay range-gate button, sample labels, workspace bundles and locating F
   const prompts = [];
   page.on('dialog', d => d.accept(prompts.shift()));
   const ev = f => page.evaluate(f);
-  await page.goto(BASE + '/');
+  // Reloads must start empty so only the selected workspace file supplies samples.
+  await page.goto(BASE + '/?nosession');
   await page.click('#btnDemo'); await page.waitForSelector('.plot-card canvas');
   await ev(() => {
     const ws = window.thistleFlow.ws;
