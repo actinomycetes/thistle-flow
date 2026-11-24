@@ -66,7 +66,8 @@ makes a single-file `dist/thistle-flow.html` for offline lab PCs. Data never lea
   or any gate above it, needs a channel the sample lacks is not measured: `populationStats()` returns
   `{available: false, missing: [...], count/pctParent/pctTotal: NaN}` (`GateEngine.missingChannels()`), `statValue()`
   gives NaN for its per-channel statistics, and every place shows a blank (gate tree: "–" with "CD3 not in this sample"
-  as tooltip; `#statsNote` under the table says why). Never turn it into 0; a measurable empty gate is 0. On screen,
+  as tooltip; `#statsNote` under the table says why). Never turn it into 0; a measurable empty gate is 0. Plot titles (gating plots, batch and strategy figures, exports)
+  say `(unavailable: missing <channel>)` instead of a count (`buildSpec` via `eng.missingChannels`, v0.23.3). On screen,
   `formatStat()` rounds (small non-zero % keep 2 significant figures); CSV, Copy and Open in Thistle Plot use
   `exportStat()` (full precision, blank for NaN). Each value cell of `#statsTable` carries its raw number in `data-v`
   (`data-v=""` when blank) for other apps reading the table (Thistle Notebook). Keep the first column of `#statsTable` the
