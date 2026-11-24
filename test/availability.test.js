@@ -1,6 +1,7 @@
 // Statistical audit, case 14: a gate that needs a channel the sample does not have is NOT measured (blank, never 0),
 // a genuinely empty gate is 0, and exported percentages keep full precision (3 of 100,000 = 0.003 %, not "0.00").
 // Reference numbers (REFERENCE in the fixture module) were computed independently with numpy from the same files.
+import { buildSpec } from '../js/plotview.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { parseFCS } from '../js/fcs.js';
@@ -59,4 +60,14 @@ test('positive control matches the numpy reference', () => {
   assert.equal(st.count, ref.CD3.count); close(st.pctTotal, ref.CD3.pctTotal, 'CD3 %Total');
   assert.equal(c.count, ref.CD4.count); close(c.pctParent, ref.CD4.pctParent, 'CD4 %Parent'); close(c.pctTotal, ref.CD4.pctTotal, 'CD4 %Total');
   assert.equal(formatStat(c.pctParent, 'pctParent'), '66.67'); // on-screen rounding unchanged for ordinary values
+});
+
+test('plot titles distinguish unavailable populations from measured counts', () => {
+  const ws = { engine: engine(), getCfg };
+  const title = (sample, pop) => buildSpec(ws, sample, { x: 'CD4', pop }, 300, 280, { titleName: sample.name }).titleTail;
+  for (const pop of ['g3', 'g4']) {
+    assert.match(title(samples.S1_noCD3, pop), /unavailable.*CD3/i);
+    assert.equal(title(samples.S2_CD3empty, pop), ' (0)');
+  }
+  assert.equal(title(samples.S3_CD3rare3, 'g3'), ' (3)');
 });
