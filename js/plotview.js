@@ -3,7 +3,7 @@ import { renderPlot, prepareCanvas, gateGeometry, MARGIN, THEMES, SERIES_COLORS,
 import { makeTransform } from './transforms.js';
 import { trackDrag, onDoubleTap } from './ui.js';
 import { densityGrid, autoGatePolygon } from './autogate.js';
-import { fmtPct, populationStats, pointInPolygon, gateFor, isCustom, isOneD, quadArms, quadRegion, quadMode, ARMS, DEFAULT_ANGLES } from './gates.js';
+import { fmtPct, missingPhrase, populationStats, pointInPolygon, gateFor, isCustom, isOneD, quadArms, quadRegion, quadMode, ARMS, DEFAULT_ANGLES } from './gates.js';
 
 // Short marker name for a channel ("CD4" rather than "PE-A")
 export function shortLabel(sample, ch) {
@@ -95,7 +95,7 @@ export function buildSpec(ws, sample, def, w, h, opts = {}) {
   const popName = popId ? eng.get(popId).name : 'All Events';
   const shown = idx.length < pop.count && kind !== 'smooth' ? ` · showing ${idx.length.toLocaleString()}` : '';
   const missing = eng.missingChannels(sample, popId);
-  const countLabel = missing.length ? `unavailable: missing ${missing.join(', ')}` : pop.count.toLocaleString() + shown;
+  const countLabel = missing.length ? missingPhrase(missing) : pop.count.toLocaleString() + shown;
   return {
     w, h, theme, kind,
     // the counts go in titleTail so a long name is shortened, never the numbers

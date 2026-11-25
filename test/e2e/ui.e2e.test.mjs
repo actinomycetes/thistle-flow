@@ -374,6 +374,8 @@ test('overlay range-gate button, sample labels, workspace bundles and locating F
   page.on('dialog', d => d.accept(prompts.shift()));
   const ev = f => page.evaluate(f);
   // Reloads must start empty so only the selected workspace file supplies samples.
+  // (?nosession was added in PR #4 to avoid the kept-session restore race, which v0.23.2 fixed: a file opened while the
+  // restore is still running now stays in front. Kept as it is for now; going back to '/' would also exercise the restore.)
   await page.goto(BASE + '/?nosession');
   await page.click('#btnDemo'); await page.waitForSelector('.plot-card canvas');
   await ev(() => {

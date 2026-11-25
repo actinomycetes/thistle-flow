@@ -73,13 +73,13 @@ test('missing-channel gates are blank, empty gates are 0, exports keep full prec
   // gate tree: not "0.00% · 0" but a dash, with the reason in plain words
   const tree = await page.evaluate(() => [...document.querySelectorAll('#gateTree .node')].map(n => ({ t: n.querySelector('.gpct').textContent, title: n.querySelector('.gpct').title })));
   assert.equal(tree[1].t, '–', `CD3+ in the gate tree of the no-CD3 sample: "${tree[1].t}"`);
-  assert.match(tree[1].title, /CD3 not in this sample/);
+  assert.match(tree[1].title, /no CD3 in this sample/);
   assert.equal(tree[2].t, '–', 'child gate too');
 
   // re-review: an unavailable population cannot be exported as an FCS file (it would read as a measured 0-event file)
   const exportBtn = sel => page.evaluate(i => { const b = document.querySelectorAll('#gateTree .node')[i].querySelector('button[title*="FCS"]');
     return b ? { disabled: b.disabled, title: b.title } : null; }, sel);
-  for (const i of [1, 2]) { const b = await exportBtn(i); assert.ok(b && b.disabled, `export button of unavailable gate ${i} is disabled`); assert.match(b.title, /cannot be exported|not in this sample/i); }
+  for (const i of [1, 2]) { const b = await exportBtn(i); assert.ok(b && b.disabled, `export button of unavailable gate ${i} is disabled`); assert.match(b.title, /Cannot be exported \(FCS\): no CD3 in this sample/); }
   assert.equal((await exportBtn(0)).disabled, false, 'All Events can still be exported');
   const refused = await page.evaluate(() => { const ws = window.thistleFlow.ws, s = ws.activeSample(), g = ws.engine.list().find(x => x.name === 'CD3+');
     return window.thistleFlow.exportPopulation(s, g.id); });
@@ -111,7 +111,7 @@ test('missing-channel gates are blank, empty gates are 0, exports keep full prec
   assert.equal(table.S4_CD3normal[C.par4].t, '66.67', 'ordinary percentages keep their on-screen rounding');
   assert.equal(table.S1_noCD3.Sample.v, null, 'sample-name cells carry no data-v');
   const note = await page.locator('#statsNote').textContent();
-  assert.match(note, /S1_noCD3.*no CD3 channel.*cannot be applied/s, `note under the table: "${note}"`);
+  assert.match(note, /no CD3 in S1_noCD3\.fcs, so CD3\+ cannot be applied/, `note under the table: "${note}"`);
 
   // the long layout is blank too
   await page.selectOption('#statsControls select', 'long');

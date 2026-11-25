@@ -2,7 +2,7 @@
 import { parseFCS, writeFCS, exportRanges } from './fcs.js';
 import { Sample, invertMatrix } from './model.js';
 import { defaultTransformFor, scaleProblem } from './transforms.js';
-import { GATE_COLORS, STAT_DEFS, populationStats, statValue, formatStat, exportStat, fmtPct, gateChannels, pickGeom, isCustom, customSampleKeys, isGrouped, isOneD, gateFor, quadMode } from './gates.js';
+import { GATE_COLORS, STAT_DEFS, missingPhrase, populationStats, statValue, formatStat, exportStat, fmtPct, gateChannels, pickGeom, isCustom, customSampleKeys, isGrouped, isOneD, gateFor, quadMode } from './gates.js';
 import { PlotView, buildSpec, shortLabel, subsampleIdx, overlayColor, QUAD_NUM, PLOT_SIZES, EVENT_LIMITS } from './plotview.js';
 import { renderPlot, prepareCanvas, SERIES_COLORS, THEMES, PLOT_KINDS, HIST_OFFSETS, DOT_SIZES, DEFAULT_DOT, normalizeKind } from './render.js';
 import { renderSVG, renderPDF } from './vector.js';
@@ -486,7 +486,7 @@ function renderGateTree() {
     let pct = '', count = '', why = '';
     if (s) {
       const st = id ? populationStats(eng, s, id) : { count: s.events, available: true };
-      if (!st.available) why = `${st.missing.join(', ')} not in this sample, so this gate cannot be applied`; // not measured: never "0"
+      if (!st.available) why = missingPhrase(st.missing); // not measured: never "0"
       else { count = st.count.toLocaleString(); pct = id ? fmtPct(st.pctParent) : ''; }
     }
     const row = h('div', {
@@ -548,7 +548,7 @@ function exportPopulation(s, gateId) {
   // A gate (or a gate above it) that needs a channel this sample lacks is not measured: a 0-event file would read as a
   // measured empty population (re-review, v0.21.1). A measurable empty gate still exports a valid 0-event file.
   const missing = gateId ? ws.engine.missingChannels(s, gateId) : [];
-  if (missing.length) { toast(`${s.name}: ${missing.join(', ')} not in this sample, so this population cannot be exported.`, true); return false; }
+  if (missing.length) { toast(`Cannot export: ${missingPhrase(missing, s.name)}.`, true); return false; }
   const pop = ws.engine.population(s, gateId);
   const cols = s.raw.map(c => { const o = new Float32Array(pop.count); for (let i = 0; i < pop.count; i++) o[i] = c[pop.idx[i]]; return o; });
   // carry over (edited) metadata; layout keywords are rewritten by the writer
@@ -1584,7 +1584,7 @@ function renderStatsTable() {
     body.map(r => '<tr>' + r.map(td).join('') + '</tr>').join('') + '</tbody>';
   if (missing.length) {
     const list = a => a.length > 1 ? a.slice(0, -1).join(', ') + ' and ' + a.at(-1) : a[0];
-    note.textContent = 'Blank, not 0: ' + missing.map(m => `${m.sample} has no ${list(m.channels)} channel${m.channels.length > 1 ? 's' : ''}` +
+    note.textContent = 'Blank, not 0: ' + missing.map(m => missingPhrase(m.channels, m.sample) +
       (m.gates.length ? `, so ${list(m.gates)} cannot be applied (nor any gate inside ${m.gates.length > 1 ? 'them' : 'it'})` : '')).join('; ') + '.';
     note.hidden = false;
   }
