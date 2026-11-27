@@ -62,7 +62,7 @@ export function zoomUnits(ws, def) {
 }
 
 // Colour of a sample in a quick overlay (same in the plots and the sample list)
-export const overlayColor = i => SERIES_COLORS[i % SERIES_COLORS.length];
+export const overlayColor = (i, colors = SERIES_COLORS) => colors[i % colors.length];
 
 export function buildSpec(ws, sample, def, w, h, opts = {}) {
   if (opts.overlay && opts.overlay.length > 1) return buildOverlaySpec(ws, opts.overlay, def, w, h, opts);
@@ -119,7 +119,7 @@ function buildOverlaySpec(ws, samples, def, w, h, opts) {
   const isHist = !y;
   const eng = ws.engine;
   const popId = def.pop && eng.get(def.pop) ? def.pop : null;
-  const list = samples.map((s, i) => ({ s, color: overlayColor(i) })).filter(({ s }) => x && s.hasChannel(x) && (!y || s.hasChannel(y)));
+  const list = samples.map((s, i) => ({ s, color: overlayColor(i, ws.palette) })).filter(({ s }) => x && s.hasChannel(x) && (!y || s.hasChannel(y)));
   if (!list.length) return null;
   const cfgX = ws.getCfg(x), cfgY = y ? ws.getCfg(y) : null;
   const max = isHist ? 0 : (def.maxEvents ?? ws.displayMax ?? 0);

@@ -1,6 +1,6 @@
 {
   "name": "thistle-flow",
-  "version": "0.23.4",
+  "version": "0.24.0",
   "private": true,
   "type": "module",
   "description": "Lightweight browser-based flow cytometry (FCS) analysis",
