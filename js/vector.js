@@ -165,7 +165,7 @@ function imageToPNGDataURL(img) {
 
 // ---------------- PDF ----------------
 // Unicode -> WinAnsi (only what the plots use beyond Latin-1)
-const WINANSI = { '…': 0x85, '–': 0x96, '—': 0x97, '•': 0x95, '™': 0x99, '‘': 0x91, '’': 0x92, '“': 0x93, '”': 0x94, '€': 0x80, '−': 0x2d };
+const WINANSI = { '…': 0x85, '–': 0x96, '—': 0x97, '•': 0x95, '™': 0x99, '‘': 0x91, '’': 0x92, '“': 0x93, '”': 0x94, '€': 0x80, '−': 0x2d, '✎': 0x2a };
 const SUPERS = { '⁰': '0', '¹': '1', '²': '2', '³': '3', '⁴': '4', '⁵': '5', '⁶': '6', '⁷': '7', '⁸': '8', '⁹': '9', '⁻': '-', '⁺': '+' };
 
 function winAnsi(s) {

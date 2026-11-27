@@ -2,7 +2,7 @@
 // (gates, axis scales, plots, layout figures, statistics settings, metadata edits),
 // with per-mode undo/redo and (de)serialisation to workspace files and data-free templates.
 import { GateEngine, validPalette } from './gates.js';
-import { defaultTransformFor } from './transforms.js';
+import { defaultTransformFor, scaleProblem } from './transforms.js';
 import { APP_VERSION } from './version.js';
 
 export const MODES = ['gating', 'comp', 'layout', 'stats', 'properties'];
@@ -68,25 +68,34 @@ export class Workspace {
   channelLabel(ch) { const s = this.samples.find(x => x.hasChannel(ch)); return s ? s.label(ch) : ch; }
   fluorChannels() { return this.allChannels().filter(c => !isScatterOrTime(c) && !/-(H|W)$/i.test(c)); }
 
-  // Display range for a channel = largest $PnR among loaded samples (log-amplified channels: 10^decades)
+  // Display range for a channel = largest $PnR among loaded samples (log-amplified channels: f2*10^decades;
+  // linear integer channels with gain: $PnR / gain)
   channelRange(ch) {
-    let r = 0, logAmp = false;
+    let r = 0, logAmp = false, logMin = Infinity;
     for (const s of this.samples) {
       const p = s.params[s.channelIndex(ch)];
       if (!p) continue;
-      if (p.ampE[0] > 0 && s.text['$DATATYPE'] === 'I') { logAmp = true; r = Math.max(r, Math.pow(10, p.ampE[0]) * (p.ampE[1] || 1)); }
-      else r = Math.max(r, p.range || 0);
+      if (p.ampE[0] > 0 && p.int) {
+        logAmp = true;
+        const f2 = p.ampE[1] > 0 ? p.ampE[1] : 1;
+        logMin = Math.min(logMin, f2);
+        r = Math.max(r, Math.pow(10, p.ampE[0]) * f2);
+      } else if (p.int && p.gain && p.gain !== 1) {
+        r = Math.max(r, (p.range || 0) / p.gain);
+      } else {
+        r = Math.max(r, p.range || 0);
+      }
     }
-    return { range: r || 262144, logAmp };
+    return { range: r || 262144, logAmp, logMin: Number.isFinite(logMin) ? logMin : 1 };
   }
   getCfg(ch) {
     if (!this.transforms[ch]) {
-      const { range, logAmp } = this.channelRange(ch);
-      this.transforms[ch] = logAmp ? { kind: 'log', min: 1, max: range, auto: true } : defaultTransformFor(ch, range);
+      const { range, logAmp, logMin } = this.channelRange(ch);
+      this.transforms[ch] = logAmp ? { kind: 'log', min: logMin, max: range, auto: true } : defaultTransformFor(ch, range);
       // Time units differ a lot between instruments: scale to the acquisition actually recorded
       if (/time/i.test(ch) && !logAmp) {
         let max = 0;
-        for (const s of this.samples) { const c = s.hasChannel(ch) ? s.raw[s.channelIndex(ch)] : null; if (c) for (let i = 0; i < c.length; i++) if (c[i] > max) max = c[i]; }
+        for (const s of this.samples) { const c = s.hasChannel(ch) ? s.raw[s.channelIndex(ch)] : null; if (c) for (let i = 0; i < c.length; i++) if (Number.isFinite(c[i]) && c[i] > max) max = c[i]; }
         if (max > 0) this.transforms[ch] = { kind: 'linear', min: 0, max: +(max * 1.02).toPrecision(3), auto: true };
       }
     }
@@ -190,7 +199,10 @@ export class Workspace {
     const byKey = k => this.samples.find(s => s.key === k || s.name === k);
     if (ws.name) this.name = ws.name;
     this.palette = validPalette(ws.palette) ? ws.palette : undefined;
-    this.transforms = ws.transforms || {};
+    this.transforms = {};
+    for (const [ch, cfg] of Object.entries(ws.transforms || {})) {
+      if (!scaleProblem(cfg)) this.transforms[ch] = cfg;
+    }
     this.engine.load(ws.gates || []);
     this.plots = ws.plots || [];
     this.statsCfg = { layout: 'long', ...(ws.statsCfg || this.statsCfg) };
@@ -251,7 +263,9 @@ export class Workspace {
     if (t.kind !== 'template') throw new Error('not a Thistle Flow template');
     this.palette = validPalette(t.palette) ? t.palette : undefined;
     this.engine.load(JSON.parse(JSON.stringify(t.gates || [])));
-    for (const [ch, cfg] of Object.entries(t.transforms || {})) this.transforms[ch] = cfg;
+    for (const [ch, cfg] of Object.entries(t.transforms || {})) {
+      if (!scaleProblem(cfg)) this.transforms[ch] = cfg;
+    }
     this.plots = (t.plots || []).map(p => ({ ...p }));
     if (t.displayMax !== undefined) this.displayMax = t.displayMax;
     if (t.statsCfg) this.statsCfg = { ...t.statsCfg };

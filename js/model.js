@@ -114,7 +114,7 @@ export class Sample {
 
   invalidate() { this._comp = null; this._unit.clear(); }
 
-  setSpill(spill) { this.spill = spill ? { names: spill.names.map(n => this.resolveChannel(n)), matrix: spill.matrix } : null; this.invalidate(); }
+  setSpill(spill) { this.spill = spill ? { names: spill.names.map(n => this.resolveChannel(n)), matrix: spill.matrix } : null; this.compError = null; this.invalidate(); }
   setCompEnabled(on) { this.compEnabled = on; this.invalidate(); }
 
   _computeComp() {
@@ -122,8 +122,10 @@ export class Sample {
     if (!this.compEnabled || !this.spill) { this._comp = comp; return; }
     const { names, matrix } = this.spill;
     const idx = names.map(n => this.channelIndex(n));
-    if (idx.some(i => i < 0)) {
-      console.warn(`[${this.name}] spillover channels not all found; compensation disabled`, names);
+    const missing = names.filter((_, i) => idx[i] < 0);
+    if (missing.length) {
+      this.compEnabled = false;
+      this.compError = `The spillover matrix refers to channel(s) not found in this file (${missing.join(', ')}); compensation was switched off.`;
       this._comp = comp;
       return;
     }

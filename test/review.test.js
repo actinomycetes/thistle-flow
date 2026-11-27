@@ -4,11 +4,14 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { parseFCS, writeFCS, parseSpillover, exportRanges } from '../js/fcs.js';
-import { makeTransform, Logicle } from '../js/transforms.js';
+import { makeTransform, Logicle, scaleProblem } from '../js/transforms.js';
 import { Sample } from '../js/model.js';
-import { GateEngine, channelStats, populationStats } from '../js/gates.js';
+import { GateEngine, channelStats, populationStats, formatStat, exportStat } from '../js/gates.js';
+import { Workspace, fileHeader } from '../js/workspace.js';
+import { createZip, readZip } from '../js/zip.js';
 import { histogramCounts } from '../js/render.js';
-import { clampArmAngle } from '../js/plotview.js';
+import { renderPDF } from '../js/vector.js';
+import { clampArmAngle, subsampleIdx, zoomUnits } from '../js/plotview.js';
 
 // ---- a minimal FCS builder for hand-made test files ----
 function buildFCS({ version = 'FCS3.1', text, data, headerData = null }) {
@@ -211,4 +214,165 @@ test('quadrant styles saved under their old names (spider, offset) still work', 
   assert.deepEqual(run({ quadMode: 'spider', angles }), run({ quadMode: 'angled', angles }));
   assert.deepEqual(run({ quadMode: 'offset', offsets }), run({ quadMode: 'staggered', offsets }));
   assert.notDeepEqual(run({ quadMode: 'angled', angles }), run({}));
+});
+
+test('channelStats returns NaN for spread statistics (sd, cv, rsd, rcv) when n < 2', () => {
+  const st1 = channelStats(new Float32Array([42]), Uint32Array.from([0]));
+  assert.equal(st1.n, 1);
+  assert.equal(st1.mean, 42);
+  assert.equal(st1.median, 42);
+  assert.ok(Number.isNaN(st1.sd) && Number.isNaN(st1.cv) && Number.isNaN(st1.rsd) && Number.isNaN(st1.rcv));
+  assert.equal(formatStat(st1.sd, 'sd'), '');
+  assert.equal(formatStat(st1.cv, 'cv'), '');
+  assert.equal(exportStat(st1.sd), '');
+
+  const st2 = channelStats(new Float32Array([10, 20]), Uint32Array.from([0, 1]));
+  assert.equal(st2.n, 2);
+  assert.ok(Math.abs(st2.sd - Math.sqrt(50)) < 1e-12);
+  assert.ok(Number.isFinite(st2.cv) && Number.isFinite(st2.rsd) && Number.isFinite(st2.rcv));
+});
+
+test('linearTicks guards non-increasing bounds, log scale supports min < 1e-3, and workspace drops invalid transforms', () => {
+  assert.deepEqual(makeTransform({ kind: 'linear', min: 100, max: 100 }).ticks(), []);
+  assert.deepEqual(makeTransform({ kind: 'linear', min: 200, max: 100 }).ticks(), []);
+
+  const t = makeTransform({ kind: 'log', min: 1e-6, max: 1e-3 });
+  assert.ok(Math.abs(t.fwd(1e-6) - 0) < 1e-12);
+  assert.ok(Math.abs(t.fwd(1e-3) - 1) < 1e-12);
+  assert.ok(Math.abs(t.inv(t.fwd(1e-4)) - 1e-4) < 1e-12);
+  assert.ok(t.ticks().length > 0);
+  // Degenerate log max <= min is safely guarded
+  const tDeg = makeTransform({ kind: 'log', min: 10, max: 10 });
+  assert.ok(Number.isFinite(tDeg.fwd(100)));
+
+  assert.ok(scaleProblem({ kind: 'unknown' }));
+  assert.ok(scaleProblem(null));
+
+  const ws = new Workspace('test');
+  const s = sampleOf([[100, 200], [300, 400]], ['FSC-A', 'FITC-A']);
+  ws.samples.push(s); ws.activeId = s.id;
+  ws.deserialize({
+    ...fileHeader('workspace'),
+    transforms: {
+      'FSC-A': { kind: 'linear', min: 100, max: 100 }, // invalid
+      'FITC-A': { kind: 'log', min: 1, max: 10000 },   // valid
+      'BAD': { kind: 'bogus', min: 0, max: 10 },       // invalid
+    },
+    samples: [{ key: s.key, compEnabled: false, spill: null, edits: {} }],
+  });
+  assert.equal(ws.transforms['FSC-A'], undefined);
+  assert.equal(ws.transforms['BAD'], undefined);
+  assert.deepEqual(ws.transforms['FITC-A'], { kind: 'log', min: 1, max: 10000 });
+  assert.equal(ws.getCfg('FSC-A').kind, 'linear');
+  assert.ok(ws.getCfg('FSC-A').max > ws.getCfg('FSC-A').min);
+
+  ws.applyTemplate({
+    ...fileHeader('template'),
+    transforms: {
+      'FSC-A': { kind: 'log', min: 0, max: 1000 }, // invalid
+      'FITC-A': { kind: 'linear', min: 0, max: 50000 }, // valid
+    },
+  }, ['#000']);
+  assert.notEqual(ws.transforms['FSC-A']?.kind, 'log');
+  assert.deepEqual(ws.transforms['FITC-A'], { kind: 'linear', min: 0, max: 50000 });
+});
+
+test('subsampleIdx returns immediately for non-positive or NaN max', () => {
+  const idx = Uint32Array.from([0, 1, 2, 3, 4]);
+  assert.equal(subsampleIdx(idx, -5), idx);
+  assert.equal(subsampleIdx(idx, 0), idx);
+  assert.equal(subsampleIdx(idx, NaN), idx);
+});
+
+test('compensation clears stale compError on setSpill and disables comp with compError when channels are missing', () => {
+  const s = sampleOf([[10, 20], [30, 40]], ['A', 'B'], { $SPILLOVER: '2,A,B,1,1,1,1' });
+  s.column('A');
+  assert.equal(s.compEnabled, false);
+  assert.ok(s.compError);
+  // Replacing spillover clears stale compError
+  s.setSpill({ names: ['A', 'B'], matrix: [[1, 0], [0, 1]] });
+  assert.equal(s.compError, null);
+  s.setCompEnabled(true);
+  s.column('A');
+  assert.equal(s.compEnabled, true);
+  assert.equal(s.compError, null);
+
+  // Missing spillover channel disables compensation and sets compError
+  const sMiss = sampleOf([[10, 20], [30, 40]], ['A', 'B'], { $SPILLOVER: '2,A,MISSING,1,0.1,0,1' });
+  assert.equal(sMiss.compEnabled, false);
+  sMiss.setCompEnabled(true);
+  sMiss.column('A');
+  assert.equal(sMiss.compEnabled, false);
+  assert.match(sMiss.compError || '', /MISSING/);
+});
+
+test('Workspace.channelRange and getCfg handle lowercase $DATATYPE=i, integer gain, $PnE f2, and Time Infinity', () => {
+  const text = {
+    $BYTEORD: '1,2', $DATATYPE: 'i', $MODE: 'L', $PAR: 2, $TOT: 2,
+    $P1N: 'FL1', $P1B: 16, $P1R: 1024, $P1E: '4,0.5',
+    $P2N: 'FSC-A', $P2B: 16, $P2R: 65536, $P2E: '0,0', $P2G: '4',
+    $BEGINDATA: 0, $ENDDATA: 0,
+  };
+  const { buf } = buildFCS({ text, data: new Uint8Array([0, 0, 100, 0, 200, 0, 200, 0]) });
+  const sInt = new Sample(parseFCS(buf, 'int.fcs')[0]);
+  const sTime = sampleOf([[1, 50, Infinity, 100]], ['Time']);
+  const ws = new Workspace('ranges');
+  ws.samples.push(sInt, sTime);
+  const rLog = ws.channelRange('FL1');
+  assert.equal(rLog.logAmp, true);
+  assert.equal(rLog.logMin, 0.5);
+  assert.equal(rLog.range, 5000);
+  const cfgLog = ws.getCfg('FL1');
+  assert.equal(cfgLog.kind, 'log');
+  assert.equal(cfgLog.min, 0.5);
+  assert.equal(cfgLog.max, 5000);
+
+  const rGain = ws.channelRange('FSC-A');
+  assert.equal(rGain.range, 16384);
+
+  const cfgTime = ws.getCfg('Time');
+  assert.equal(cfgTime.kind, 'linear');
+  assert.ok(Number.isFinite(cfgTime.max) && cfgTime.max > 100 && cfgTime.max < 110);
+});
+
+test('zoomUnits drops collapsed negative zoom ranges when switching to log scale', () => {
+  const ws = new Workspace('z');
+  ws.transforms['FL1'] = { kind: 'log', min: 10, max: 262144 };
+  ws.transforms['FL2'] = { kind: 'linear', min: 0, max: 262144 };
+  const def = { x: 'FL1', y: 'FL2', zoom: { x: [-500, -100], y: [1000, 50000] } };
+  const zu = zoomUnits(ws, def);
+  assert.equal(zu.x, null);
+  assert.ok(zu.y && zu.y[1] > zu.y[0]);
+  const defBothNeg = { x: 'FL1', y: null, zoom: { x: [-500, -100], y: null } };
+  assert.equal(zoomUnits(ws, defBothNeg), null);
+});
+
+test('GateEngine guards missing gate IDs and cyclic parents; readZip validates bounds; PDF maps pencil glyph', async () => {
+  const s = sampleOf([[100, 200], [300, 400]], ['A', 'B']);
+  const eng = new GateEngine(lin(1000));
+  assert.equal(eng.population(s, 'nonexistent').count, 0);
+  eng.add({ id: 'a', name: 'A', parent: 'b', type: 'interval', x: 'A', x0: 0, x1: 500 });
+  eng.add({ id: 'b', name: 'B', parent: 'a', type: 'interval', x: 'A', x0: 0, x1: 500 });
+  assert.equal(eng.path('a').length, 2);
+  assert.equal(eng.population(s, 'a').count, 0);
+
+  // Truncated ZIP archive throws descriptive error instead of RangeError
+  const validZip = await createZip([{ name: 'a.txt', data: 'hello world' }], { compress: false });
+  // Corrupt central directory offset in EOCD to point near end of buffer
+  const badCd = validZip.slice();
+  const dvCd = new DataView(badCd.buffer);
+  dvCd.setUint32(badCd.length - 6, badCd.length - 10, true);
+  await assert.rejects(() => readZip(badCd), /Damaged zip/i);
+  // Corrupt compressed size to extend past buffer
+  const badPayload = validZip.slice();
+  const dvPay = new DataView(badPayload.buffer);
+  const cdOff = dvPay.getUint32(badPayload.length - 6, true);
+  dvPay.setUint32(cdOff + 20, 999999, true);
+  await assert.rejects(() => readZip(badPayload), /Damaged zip/i);
+
+  // PDF WinAnsi maps custom-gate pencil mark (✎) to '*' rather than '?'
+  const pdfBytes = renderPDF(200, 100, ctx => { ctx.font = '12px Helvetica'; ctx.fillText('Gate ✎ 12%', 10, 20); });
+  const pdfStr = new TextDecoder('latin1').decode(pdfBytes);
+  assert.ok(pdfStr.includes('(Gate * 12%)'), 'PDF should encode ✎ as *');
+  assert.ok(!pdfStr.includes('(Gate ? 12%)'), 'PDF must not encode ✎ as ?');
 });
