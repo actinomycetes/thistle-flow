@@ -4,6 +4,15 @@ import { makeTransform } from './transforms.js';
 // Colour-blind-safe gate colours: Okabe–Ito hues (Okabe & Ito 2008), adjusted to mid brightness so the outline and the
 // label (drawn in the gate colour) read at 3:1 or better on both the white and the dark plot background.
 export const GATE_COLORS = ['#d55e00', '#3a8fc4', '#009e73', '#cc79a7', '#a87b00', '#0072b2', '#7f7f7f'];
+export const COLOR_SCHEMES = {
+  Default: GATE_COLORS,
+  Bright: ['#4477aa', '#ee6677', '#228833', '#ccbb44', '#66ccee', '#aa3377', '#bbbbbb'],
+  Vibrant: ['#0077bb', '#ee7733', '#009988', '#cc3311', '#33bbee', '#ee3377', '#bbbbbb'],
+};
+export function validPalette(colors) {
+  return Array.isArray(colors) && colors.length === GATE_COLORS.length && colors.every(c => /^#[0-9a-f]{6}$/i.test(c));
+}
+
 
 export function pointInPolygon(x, y, pts) {
   let inside = false;

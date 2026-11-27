@@ -1,7 +1,7 @@
 // A workspace = one tab: a group of samples plus the analysis built on them
 // (gates, axis scales, plots, layout figures, statistics settings, metadata edits),
 // with per-mode undo/redo and (de)serialisation to workspace files and data-free templates.
-import { GateEngine } from './gates.js';
+import { GateEngine, validPalette } from './gates.js';
 import { defaultTransformFor } from './transforms.js';
 import { APP_VERSION } from './version.js';
 
@@ -99,7 +99,7 @@ export class Workspace {
   snapshot(mode) {
     switch (mode) {
       case 'gating': return JSON.stringify({
-        gates: this.engine.toJSON(), transforms: this.transforms, plots: this.plots, displayMax: this.displayMax,
+        palette: this.palette, gates: this.engine.toJSON(), transforms: this.transforms, plots: this.plots, displayMax: this.displayMax,
       });
       case 'comp': return JSON.stringify(this.samples.map(s => [s.id, s.compEnabled, s.spill]));
       case 'layout': return JSON.stringify(this.figures);
@@ -110,7 +110,7 @@ export class Workspace {
   restore(mode, snap) {
     const v = JSON.parse(snap);
     if (mode === 'gating') {
-      this.engine.load(v.gates); this.transforms = v.transforms; this.plots = v.plots; this.displayMax = v.displayMax;
+      this.palette = v.palette; this.engine.load(v.gates); this.transforms = v.transforms; this.plots = v.plots; this.displayMax = v.displayMax;
       for (const s of this.samples) s.invalidate();
       this.engine.invalidate();
       if (this.selectedGate && !this.engine.get(this.selectedGate)) this.selectedGate = null;
@@ -168,7 +168,7 @@ export class Workspace {
     const keyOf = id => this.sampleById(id)?.key;
     return {
       ...fileHeader('workspace'), name: this.name, saved: new Date().toISOString(),
-      transforms: this.transforms, gates: this.engine.toJSON(), plots: this.plots, displayMax: this.displayMax,
+      palette: this.palette, transforms: this.transforms, gates: this.engine.toJSON(), plots: this.plots, displayMax: this.displayMax,
       figures: this.figures.map(f => ({ ...f, series: f.series?.map(se => ({ ...se, sampleKey: keyOf(se.sampleId), sampleId: undefined })) })),
       statsCfg: this.statsCfg,
       samples: this.samples.map(s => ({ key: s.key, file: s.source?.name || s.fileName, compEnabled: s.compEnabled, spill: s.spill, edits: s.edits })),
@@ -189,6 +189,7 @@ export class Workspace {
     if (ws.kind === 'template') throw new Error('this is a template; use “Apply template”');
     const byKey = k => this.samples.find(s => s.key === k || s.name === k);
     if (ws.name) this.name = ws.name;
+    this.palette = validPalette(ws.palette) ? ws.palette : undefined;
     this.transforms = ws.transforms || {};
     this.engine.load(ws.gates || []);
     this.plots = ws.plots || [];
@@ -226,7 +227,7 @@ export class Workspace {
     const labels = {};
     for (const smp of this.samples) for (const [ch, l] of Object.entries(smp.edits.labels)) labels[ch] = l;
     return {
-      ...fileHeader('template'), name: this.name, saved: new Date().toISOString(),
+      ...fileHeader('template'), palette: this.palette, name: this.name, saved: new Date().toISOString(),
       transforms: Object.fromEntries(Object.entries(this.transforms).filter(([, c]) => !c.auto)),
       // per-sample gate adjustments belong to specific files, so templates keep only the global gates
       gates: this.engine.toJSON().map(({ overrides, ...g }) => g), plots: this.plots, displayMax: this.displayMax, statsCfg: this.statsCfg,
@@ -239,7 +240,7 @@ export class Workspace {
         if (!f.series) return f;
         const idx = f.series.map(se => this.samples.findIndex(x => x.id === se.sampleId));
         const all = this.samples.length > 1 && new Set(idx).size === this.samples.length && f.series.length === this.samples.length;
-        return { ...f, allSamples: all, series: f.series.map((se, i) => ({ pop: se.pop, color: se.color, label: se.label, sampleIndex: idx[i] })) };
+        return { ...f, allSamples: all, series: f.series.map((se, i) => ({ pop: se.pop, color: se.color, customColor: se.customColor, label: se.label, sampleIndex: idx[i] })) };
       }),
       compensation: includeComp && s?.spill ? { names: s.spill.names, matrix: s.spill.matrix } : null,
       labels,
@@ -248,6 +249,7 @@ export class Workspace {
   applyTemplate(t, colors) {
     checkThistleFlowFile(t);
     if (t.kind !== 'template') throw new Error('not a Thistle Flow template');
+    this.palette = validPalette(t.palette) ? t.palette : undefined;
     this.engine.load(JSON.parse(JSON.stringify(t.gates || [])));
     for (const [ch, cfg] of Object.entries(t.transforms || {})) this.transforms[ch] = cfg;
     this.plots = (t.plots || []).map(p => ({ ...p }));

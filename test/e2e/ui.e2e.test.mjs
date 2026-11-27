@@ -1488,3 +1488,49 @@ test('batch figure grid: 3 × 2, filled across rows or down columns, also in the
   assert.deepEqual(errors, []);
   await page.close();
 });
+
+test('layout dot gates, size sliders, batch subset and colour scheme', async () => {
+  browser = browser || await chromium.launch();
+  const page = await browser.newPage();
+  await page.goto(BASE + '/?nosession');
+  await page.click('#btnDemo');
+  await page.waitForSelector('.plot-card canvas');
+  await page.evaluate(() => {
+    const app = window.thistleFlow;
+    for (const q of ['UL', 'UR', 'LR', 'LL']) app.ws.engine.add({
+      id: q, group: 'cross', name: q, type: 'quad', q, color: '#d55e00', parent: null,
+      x: 'PE-A', y: 'APC-A', cx: 1000, cy: 1000,
+    });
+  });
+  await page.click('[data-tab=layout]');
+  await page.click('[data-addfig=overlay-dot]');
+  const dot = page.locator('.figure-card').first();
+  await dot.getByLabel('X', { exact: true }).selectOption('PE-A');
+  await dot.getByLabel('Y', { exact: true }).selectOption('APC-A');
+  const state = () => dot.locator('canvas').evaluate(c => {
+    const { w, h, gates, series } = c._figView.spec;
+    return { w, h, labels: gates.map(g => g.text), color: series[0].color };
+  });
+  assert.deepEqual((await state()).labels, ['Q1', 'Q2', 'Q3', 'Q4']);
+  await dot.getByLabel('Gates', { exact: true }).uncheck();
+  assert.deepEqual((await state()).labels, []);
+  assert.equal((await state()).w, (await state()).h);
+  await dot.getByLabel('Figure width').fill('500');
+  assert.equal((await state()).h, 500);
+  await dot.getByLabel('Keep ratio').uncheck();
+  await dot.getByLabel('Figure height').fill('350');
+  assert.equal((await state()).w, 500);
+  await page.click('[data-addfig=batch]');
+  const batch = page.locator('.figure-card').last();
+  await batch.locator('summary').click();
+  await batch.getByLabel('Stim_6h.fcs').uncheck();
+  assert.equal(await batch.locator('canvas').count(), 2);
+  const saved = await page.evaluate(() => window.thistleFlow.ws.serialize());
+  assert.deepEqual(saved.figures.at(-1).sampleKeys, ['Unstimulated.fcs', 'Stim_24h.fcs']);
+  await page.locator('#secGates summary').click();
+  await page.getByLabel('Gate and overlay colour scheme').selectOption('Bright');
+  assert.equal((await state()).color, '#4477aa');
+  await page.getByLabel('Palette colour 1', { exact: true }).fill('#123456');
+  assert.equal((await state()).color, '#123456');
+  await page.close();
+});

@@ -2,7 +2,7 @@
 import { parseFCS, writeFCS, exportRanges } from './fcs.js';
 import { Sample, invertMatrix } from './model.js';
 import { defaultTransformFor, scaleProblem } from './transforms.js';
-import { GATE_COLORS, STAT_DEFS, missingPhrase, populationStats, statValue, formatStat, exportStat, fmtPct, gateChannels, pickGeom, isCustom, customSampleKeys, isGrouped, isOneD, gateFor, quadMode } from './gates.js';
+import { COLOR_SCHEMES, GATE_COLORS, STAT_DEFS, missingPhrase, populationStats, statValue, formatStat, exportStat, fmtPct, gateChannels, pickGeom, isCustom, customSampleKeys, isGrouped, isOneD, gateFor, quadMode } from './gates.js';
 import { PlotView, buildSpec, plotGateName, shortLabel, subsampleIdx, overlayColor, QUAD_NUM, PLOT_SIZES, EVENT_LIMITS } from './plotview.js';
 import { renderPlot, prepareCanvas, SERIES_COLORS, THEMES, PLOT_KINDS, HIST_OFFSETS, DOT_SIZES, DEFAULT_DOT, normalizeKind } from './render.js';
 import { renderSVG, renderPDF } from './vector.js';
@@ -421,7 +421,7 @@ function renderSamples() {
     },
       h('span', { class: 'drag-handle', title: 'Drag to change the order of the samples', onpointerdown: e => startSampleDrag(e, s), onclick: e => e.stopPropagation() }, '☰'),
       h('div', { class: 'meta' },
-        h('div', { class: 'name', title: s.name }, oi >= 0 ? h('span', { class: 'ov-swatch', style: `background:${overlayColor(oi)}` }) : null, s.name),
+        h('div', { class: 'name', title: s.name }, oi >= 0 ? h('span', { class: 'ov-swatch', style: `background:${overlayColor(oi, ws.palette)}` }) : null, s.name),
         h('div', { class: 'sub' }, `${s.events.toLocaleString()} events · ${s.params.length} par · ${s.version}`, compTag,
           ws.engine.list().some(g => isCustom(g, s)) ? h('span', { class: 'badge custom', title: 'Some gates are adjusted for this sample' }, '✎ gates') : null),
         h('div', { class: 'sub', title: s.instrument }, s.instrument)),
@@ -476,8 +476,36 @@ function removeSample(id) {
 }
 
 // ---------- gate tree ----------
+function renderGatePalette(ws) {
+  const colors = ws.palette || GATE_COLORS;
+  const apply = palette => {
+    const groups = new Map();
+    ws.engine.list().forEach((gate, i) => {
+      const key = gate.group || gate.id;
+      if (!groups.has(key)) groups.set(key, palette[i % palette.length]);
+      gate.color = groups.get(key);
+    });
+    ws.palette = palette.slice();
+    renderAll();
+  };
+  const selected = Object.keys(COLOR_SCHEMES).find(k => COLOR_SCHEMES[k].every((c, i) => c === colors[i])) || 'Custom';
+  const menu = h('select', { 'aria-label': 'Gate and overlay colour scheme', onchange: e => apply(COLOR_SCHEMES[e.target.value]) },
+    Object.keys(COLOR_SCHEMES).map(k => h('option', { selected: k === selected }, k)),
+    selected === 'Custom' ? h('option', { selected: true, disabled: true }, 'Custom') : null);
+  $('#gatePalette').replaceChildren(menu, ...colors.map((color, i) => h('input', {
+    type: 'color', value: color, 'aria-label': 'Palette colour ' + (i + 1),
+    onchange: e => { const edited = colors.slice(); edited[i] = e.target.value; apply(edited); },
+  })));
+}
+
+function seriesColor(ws, series) {
+  const i = SERIES_COLORS.indexOf(series.color);
+  return ws.palette && !series.customColor && i >= 0 ? ws.palette[i] : series.color;
+}
+
 function renderGateTree() {
   const ws = app.ws, eng = ws.engine;
+  renderGatePalette(ws);
   const root = $('#gateTree');
   root.innerHTML = '';
   const s = ws.activeSample();
@@ -799,7 +827,7 @@ app.selectGate = (id, { quiet = false } = {}) => {
   if (!quiet) app.redrawAll(); else renderGateTree();
 };
 
-function nextColor() { return GATE_COLORS[app.ws.engine.list().length % GATE_COLORS.length]; }
+function nextColor() { return (app.ws.palette || GATE_COLORS)[app.ws.engine.list().length % GATE_COLORS.length]; }
 
 app.createGate = (def, geom) => {
   const ws = app.ws, s = ws.activeSample();
@@ -1102,7 +1130,7 @@ function figureSpec(f, theme) {
     if (se.pop && !ws.engine.get(se.pop)) return;
     const pop = ws.engine.population(s, se.pop);
     const idx = f.kind === 'overlay-hist' ? pop.idx : subsampleIdx(pop.idx, max);
-    series.push({ ux: s.unit(f.x, cfgX), uy: f.y ? s.unit(f.y, cfgY) : null, idx, color: se.color, label: seriesLabel(se), labelPos: se.labelPos, si });
+    series.push({ ux: s.unit(f.x, cfgX), uy: f.y ? s.unit(f.y, cfgY) : null, idx, color: seriesColor(ws, se), label: seriesLabel(se), labelPos: se.labelPos, si });
   });
   return {
     w: f.w, h: f.h, theme, kind: f.kind === 'overlay-hist' ? 'histogram' : 'dot', title: f.title,
@@ -1129,13 +1157,28 @@ function overlayGates(f) {
     const s = ws.sampleById(se.sampleId);
     return s?.hasChannel(f.x) && (!f.y || s.hasChannel(f.y));
   });
-  return ws.engine.children(parent).filter(g => g.x === f.x && (f.y ? !isOneD(g) && g.y === f.y : isOneD(g))).map(g => ({
-    gate: g, color: g.color, text: plotGateName(g), selected: ws.selectedGate === g.id, labelPos: f.labelPos?.[g.id],
-    lines: [{ text: plotGateName(g), color: g.color }, ...series.map(se => {
-      const s = ws.sampleById(se.sampleId);
-      return { text: `${se.label || s.name.replace(/\.fcs$/i, '')}${isCustom(g, s) ? ' ✎' : ''}  ${fmtPct(populationStats(ws.engine, s, g.id).pctParent)}`, color: se.color };
-    })],
-  }));
+  const items = [];
+  for (const gate of ws.engine.children(parent)) {
+    if (gate.x !== f.x || (f.y ? isOneD(gate) || gate.y !== f.y : !isOneD(gate))) continue;
+    const shapes = new Map();
+    for (const se of series) {
+      const sample = ws.sampleById(se.sampleId);
+      // A dot overlay can include samples with individually adjusted quadrant boundaries.
+      const custom = f.y && isCustom(gate, sample);
+      const key = custom ? sample.key : null;
+      if (!shapes.has(key)) {
+        const color = custom ? seriesColor(ws, se) : gate.color;
+        shapes.set(key, { gate: custom ? gateFor(gate, sample) : gate, color, text: plotGateName(gate),
+          selected: ws.selectedGate === gate.id, labelPos: f.labelPos?.[gate.id],
+          lines: [{ text: plotGateName(gate), color }] });
+      }
+      const name = se.label || sample.name.replace(/\.fcs$/i, '');
+      const pct = fmtPct(populationStats(ws.engine, sample, gate.id).pctParent);
+      shapes.get(key).lines.push({ text: `${name}${isCustom(gate, sample) ? ' ✎' : ''}  ${pct}`, color: seriesColor(ws, se) });
+    }
+    items.push(...shapes.values());
+  }
+  return items;
 }
 
 app.createFigureGate = (f, geom) => {
@@ -1257,7 +1300,10 @@ function figureCard(f) {
   const out = h('div', { class: 'fig-out' });
   const rangeRow = h('div');
   const redraw = () => { drawFigure(f, out); if (f.kind === 'overlay-hist') updateRangeRow(f, rangeRow); };
-  const field = (label, el) => h('label', {}, h('span', {}, label), el);
+  const field = (label, el) => {
+    el.setAttribute('aria-label', label);
+    return h('label', {}, h('span', {}, label), el);
+  };
   const resetLabelsBtn = () => h('button', { class: 'btn small', title: 'Put all labels of this figure back in their default places', onclick: () => {
     delete f.labelPos; delete f.legendPos; (f.series || []).forEach(se => delete se.labelPos); redraw();
   } }, 'Reset label positions');
@@ -1350,7 +1396,7 @@ function figureCard(f) {
     const renderSeries = () => {
       list.innerHTML = '';
       f.series.forEach((se, i) => list.append(h('div', { class: 'series-row' },
-        h('input', { type: 'color', value: se.color, oninput: e => { se.color = e.target.value; redraw(); } }),
+        h('input', { type: 'color', value: seriesColor(ws, se), oninput: e => { se.customColor = true; se.color = e.target.value; redraw(); } }),
         h('select', { onchange: e => { se.sampleId = e.target.value; redraw(); } }, ws.samples.map(s => h('option', { value: s.id, selected: s.id === se.sampleId }, s.name))),
         h('select', { onchange: e => { se.pop = e.target.value || null; syncAllPop(); redraw(); } }, popOptions(se.pop)),
         h('button', { class: 'icon', title: 'Move up', onclick: () => { if (i) { [f.series[i - 1], f.series[i]] = [f.series[i], f.series[i - 1]]; renderSeries(); redraw(); } } }, '↑'),
@@ -1398,6 +1444,10 @@ function figureCard(f) {
   const setSize = (side, v) => {
     if (!Number.isFinite(v) || v <= 0) return;
     const ratio = f.h / f.w;
+    if (f.keepRatio !== false) {
+      const factor = side === 'w' ? ratio : 1 / ratio;
+      v = Math.min(1600 / factor, Math.max(150 / factor, v));
+    }
     if (side === 'w') { f.w = clampSize(v); if (f.keepRatio !== false) f.h = clampSize(f.w * ratio); }
     else { f.h = clampSize(v); if (f.keepRatio !== false) f.w = clampSize(f.h / ratio); }
     wSlider.value = wIn.value = f.w; hSlider.value = hIn.value = f.h;
