@@ -1126,7 +1126,7 @@ function seriesLabel(se) {
   return se.label || (s.name.replace(/\.fcs$/i, '') + (se.pop && ws.engine.get(se.pop) ? ` · ${ws.engine.get(se.pop).name}` : ''));
 }
 
-function figureSpec(f, theme) {
+function figureSpec(f, theme, { selectedGate = app.ws.selectedGate } = {}) {
   const ws = app.ws;
   const cfgX = ws.getCfg(f.x), cfgY = f.y ? ws.getCfg(f.y) : null;
   const series = [];
@@ -1144,7 +1144,7 @@ function figureSpec(f, theme) {
     x: { name: f.x, label: ws.channelLabel(f.x), cfg: cfgX }, y: f.y ? { name: f.y, label: ws.channelLabel(f.y), cfg: cfgY } : null,
     series, labels: { mode: f.labelMode || 'inside', legendPos: f.legendPos }, gateLabels: f.gateLabels !== false, dotSize: f.dotSize,
     hist: { mode: f.mode, offset: f.offset, smooth: f.smooth, fill: f.fill },
-    gates: f.showGates !== false ? overlayGates(f) : [],
+    gates: f.showGates !== false ? overlayGates(f, selectedGate) : [],
   };
 }
 
@@ -1157,7 +1157,7 @@ function overlayParent(f) {
 }
 
 // Overlay shared gates on their own axes, with each sample’s percentage in its series colour.
-function overlayGates(f) {
+function overlayGates(f, selectedGate = app.ws.selectedGate) {
   const ws = app.ws, parent = overlayParent(f);
   if (parent === undefined) return [];
   const series = f.series.filter(se => {
@@ -1176,7 +1176,7 @@ function overlayGates(f) {
       if (!shapes.has(key)) {
         const color = custom ? seriesColor(ws, se) : gate.color;
         shapes.set(key, { gate: custom ? gateFor(gate, sample) : gate, color, text: plotGateName(gate),
-          selected: ws.selectedGate === gate.id, labelPos: f.labelPos?.[gate.id],
+          selected: selectedGate === gate.id, labelPos: f.labelPos?.[gate.id],
           lines: [{ text: plotGateName(gate), color }] });
       }
       const name = se.label || sample.name.replace(/\.fcs$/i, '');
@@ -1208,12 +1208,12 @@ function batchSamples(f) {
   return f.sampleKeys ? samples.filter(s => f.sampleKeys.includes(s.key)) : samples;
 }
 
-function batchSpec(f, s, theme) {
+function batchSpec(f, s, theme, { selectedGate = app.ws.selectedGate } = {}) {
   const ws = app.ws;
   const pop = f.pop && ws.engine.get(f.pop) ? f.pop : null;
   const spec = buildSpec(ws, s, { pop, x: f.x, y: f.y, kind: f.plotKind, maxEvents: f.maxEvents, dotSize: f.dotSize }, f.w, f.h, {
     theme, titleName: s.name.replace(/\.fcs$/i, ''),
-    noGates: f.showGates === false, compactLabels: true, selectedGate: ws.selectedGate,
+    noGates: f.showGates === false, compactLabels: true, selectedGate,
   });
   if (spec) {
     for (const it of spec.gates) it.labelPos = f.labelPos?.[it.gate.id]; // positions are per figure
@@ -1276,13 +1276,13 @@ function figureComposite(f, out) {
     for (const c of out.querySelectorAll('canvas')) {
       const r = c.getBoundingClientRect();
       const s = app.ws.sampleById(c.dataset.sample);
-      const spec = s && batchSpec(f, s, THEMES.light);
+      const spec = s && batchSpec(f, s, THEMES.light, { selectedGate: null });
       if (!spec) continue;
       const x = r.left - base.left, y = r.top - base.top;
       items.push({ spec, x, y }); W = Math.max(W, x + f.w); H = Math.max(H, y + f.h);
     }
   } else {
-    const spec = figureSpec(f, THEMES.light);
+    const spec = figureSpec(f, THEMES.light, { selectedGate: null });
     if (spec.series.length) items.push({ spec, x: 0, y: 0 });
     W = f.w; H = f.h;
   }

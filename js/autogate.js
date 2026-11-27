@@ -139,10 +139,14 @@ export function autoGatePolygon(dens, click, opts = {}) {
   const mask = populationMask(dens, click, opts);
   if (!mask) return null;
   const { n, box } = dens;
-  // a lightly smoothed mask gives a rounded outline; pad it so the outline closes at the edges
-  const m = gaussianBlur(Float32Array.from(mask), n, n, 0.8);
+  // a lightly smoothed mask gives a rounded outline; zero-pad by 1 cell so edge-touching gates close cleanly
+  const N = n + 2;
+  const pad = new Float32Array(N * N);
+  for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) pad[(y + 1) * N + (x + 1)] = mask[y * n + x];
+  const m = gaussianBlur(pad, N, N, 0.8);
+  const unpad = ([fx, fy]) => [(fx * N - 1) / n, (fy * N - 1) / n];
   const toBox = ([fx, fy]) => [box.x[0] + fx * (box.x[1] - box.x[0]), box.y[0] + fy * (box.y[1] - box.y[0])];
-  const cands = loops(marchingSquares(m, n, n, 0.35)).filter(l => l.length > 4);
+  const cands = loops(marchingSquares(m, N, N, 0.35)).filter(l => l.length > 4).map(l => l.map(unpad));
   if (!cands.length) return null;
   const fx = (click[0] - box.x[0]) / (box.x[1] - box.x[0]), fy = (click[1] - box.y[0]) / (box.y[1] - box.y[0]);
   const inside = cands.filter(l => pointInPolygon(fx, fy, l));

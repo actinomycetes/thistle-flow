@@ -38,7 +38,10 @@ function drawMini(canvas, ux, uy, size, theme, zero, selected) {
   const nb = Math.max(8, Math.round(size));
   const grid = new Float32Array(nb * nb);
   const bin = v => { let b = Math.floor(v * nb); return !(b >= 0) ? 0 : b >= nb ? nb - 1 : b; };
-  for (let k = 0; k < ux.length; k++) grid[(nb - 1 - bin(uy[k])) * nb + bin(ux[k])]++;
+  for (let k = 0; k < ux.length; k++) {
+    if (ux[k] !== ux[k] || uy[k] !== uy[k]) continue;
+    grid[(nb - 1 - bin(uy[k])) * nb + bin(ux[k])]++;
+  }
   const d = gaussianBlur(grid, nb, nb, 1.1);
   let max = 0; for (let i = 0; i < d.length; i++) if (d[i] > max) max = d[i];
   const lmax = Math.log1p(max) || 1;
@@ -73,7 +76,10 @@ function drawMiniOverlay(canvas, layers, size, theme, zero, selected) {
   const c = v => (v < 0 ? 0 : v > 1 ? 1 : v);
   for (const { ux, uy, color, alpha } of layers) {
     ctx.fillStyle = color; ctx.globalAlpha = alpha;
-    for (let k = 0; k < ux.length; k++) ctx.fillRect(c(ux[k]) * (size - 1), (1 - c(uy[k])) * (size - 1), 1, 1);
+    for (let k = 0; k < ux.length; k++) {
+      if (ux[k] !== ux[k] || uy[k] !== uy[k]) continue;
+      ctx.fillRect(c(ux[k]) * (size - 1), (1 - c(uy[k])) * (size - 1), 1, 1);
+    }
   }
   ctx.globalAlpha = 1;
   ctx.strokeStyle = theme.muted; ctx.lineWidth = 1; ctx.setLineDash([3, 3]);

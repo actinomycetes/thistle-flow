@@ -139,8 +139,8 @@ export function makeTransform(cfg) {
     return {
       kind, cfg,
       // values at or below 0 cannot be shown on a log scale: they, and tiny positive values, pile up
-      // just below the axis, never below a larger value (so gates stay consistent)
-      fwd: v => (v > 0 ? Math.max(-0.02, (Math.log10(v) - lmin) / lspan) : -0.02),
+      // just below the axis, never below a larger value (so gates stay consistent); NaN stays NaN
+      fwd: v => (v !== v ? NaN : v > 0 ? Math.max(-0.02, (Math.log10(v) - lmin) / lspan) : -0.02),
       inv: u => Math.pow(10, lmin + u * lspan),
       ticks: () => logTicks(min, max),
     };

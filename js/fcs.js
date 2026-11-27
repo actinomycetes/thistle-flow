@@ -15,13 +15,16 @@ export function parseText(bytes, start, end) {
   // Prefer UTF-8 (FCS 3.1+ allows it); fall back to latin1 on replacement chars.
   let raw = UTF8.decode(bytes.subarray(start, end + 1));
   if (raw.includes('�')) raw = DEC.decode(bytes.subarray(start, end + 1));
+  if (!raw.length) return {};
   const delim = raw[0];
   const tokens = [];
   let cur = '';
   for (let i = 1; i < raw.length; i++) {
     const ch = raw[i];
     if (ch === delim) {
-      if (raw[i + 1] === delim && i + 1 < raw.length - 1) { cur += delim; i++; continue; } // escaped delimiter
+      // FCS 3.1 §3.2.7: delimiters are forbidden in keyword names, so doubled delimiters only
+      // escape inside keyword values (odd token count); empty values are delim+delim after a key.
+      if (tokens.length % 2 === 1 && raw[i + 1] === delim && i + 1 < raw.length - 1) { cur += delim; i++; continue; }
       tokens.push(cur); cur = '';
     } else cur += ch;
   }
@@ -70,16 +73,31 @@ function byteOrderIsLittle(byteord) {
 }
 
 function readDataset(bytes, offset) {
+  if (offset < 0 || offset + 58 > bytes.length) throw new Error('Not an FCS file (truncated header)');
   const header = DEC.decode(bytes.subarray(offset, offset + 6));
   if (!/^FCS\d\.\d/.test(header)) throw new Error('Not an FCS file (bad header: "' + header + '")');
   const version = header;
   const textStart = asciiInt(bytes, offset + 10, offset + 18) + offset;
   const textEnd = asciiInt(bytes, offset + 18, offset + 26) + offset;
+  if (!(textStart >= offset + 58 && textEnd >= textStart && textEnd < bytes.length)) {
+    throw new Error('Invalid FCS TEXT segment offsets');
+  }
   let dataStart = asciiInt(bytes, offset + 26, offset + 34);
   let dataEnd = asciiInt(bytes, offset + 34, offset + 42);
 
   const text = parseText(bytes, textStart, textEnd);
   const warnings = [];
+
+  // FCS 3.x supplemental TEXT segment ($BEGINSTEXT/$ENDSTEXT)
+  const sb = parseInt(text['$BEGINSTEXT'] || '0', 10), se = parseInt(text['$ENDSTEXT'] || '0', 10);
+  if (sb > 0 && se >= sb) {
+    if (offset + se < bytes.length) {
+      const stext = parseText(bytes, offset + sb, offset + se);
+      for (const [k, v] of Object.entries(stext)) if (!(k in text)) text[k] = v;
+    } else {
+      warnings.push(`Supplemental TEXT segment (${sb}–${se}) extends past the end of the file and was ignored`);
+    }
+  }
 
   // FCS 3: $BEGINDATA/$ENDDATA in TEXT are required and are used when the HEADER offsets are 0
   // (large files) or disagree with them; FCS 2 has only the HEADER offsets.
@@ -94,7 +112,9 @@ function readDataset(bytes, offset) {
   if (mode !== 'L') throw new Error(`Unsupported $MODE "${mode}" (only list mode is supported)`);
 
   const nPar = parseInt(text['$PAR'], 10);
-  const nTot = parseInt(text['$TOT'], 10);
+  if (!(nPar > 0)) throw new Error(`Invalid $PAR (${text['$PAR'] ?? 'missing'})`);
+  const nTot = parseInt(text['$TOT'] ?? '0', 10);
+  if (text['$TOT'] !== undefined && !(nTot >= 0)) throw new Error(`Invalid $TOT (${text['$TOT']})`);
   const datatype = (text['$DATATYPE'] || 'F').toUpperCase();
   const little = byteOrderIsLittle(text['$BYTEORD']);
 
@@ -113,7 +133,7 @@ function readDataset(bytes, offset) {
   let events = Number.isFinite(nTot) ? nTot : 0;
   // the data segment must hold $TOT events of the stated size; never read past it (or past the file)
   const bytesPerEvent = (datatype === 'F' ? 4 * nPar : datatype === 'D' ? 8 * nPar : params.reduce((a, p) => a + p.bits / 8, 0));
-  const segment = Math.min(dataEnd, bytes.length - 1) - dataStart + 1;
+  const segment = dataStart < offset || dataStart >= bytes.length ? 0 : Math.min(dataEnd, bytes.length - 1) - dataStart + 1;
   if (bytesPerEvent > 0 && events * bytesPerEvent > segment) {
     const fit = Math.max(0, Math.floor(segment / bytesPerEvent));
     warnings.push(`$TOT says ${events} events but the data segment holds only ${fit}; ${fit} events were read`);
@@ -164,7 +184,11 @@ function readDataset(bytes, offset) {
       if (f1 > 0) {
         const f2 = f2raw > 0 ? f2raw : 1;
         const r = pr.range;
-        for (let e = 0; e < events; e++) col[e] = f2 * Math.pow(10, f1 * col[e] / r);
+        if (r > 0) {
+          for (let e = 0; e < events; e++) col[e] = f2 * Math.pow(10, f1 * col[e] / r);
+        } else {
+          warnings.push(`Channel ${pr.name} has invalid $P${c + 1}R (${r}); log amplification was skipped`);
+        }
       } else if (pr.gain !== 1) {
         for (let e = 0; e < events; e++) col[e] /= pr.gain;
       }

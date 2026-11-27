@@ -61,7 +61,8 @@ export function layout(w, h, extraRight = 0, zoom = null) {
 // Frame fractions of one event; null if zoomed in and the event is outside the view
 // (without zoom, off-scale events pile up on the axes).
 function framePos(L, x, y) {
-  let fx = L.zx(x || 0), fy = L.zy(y || 0);
+  if (x !== x || y !== y || x == null || y == null) return null;
+  let fx = L.zx(x), fy = L.zy(y);
   if (L.zoomed) { if (!(fx >= 0 && fx <= 1 && fy >= 0 && fy <= 1)) return null; }
   else { fx = Math.min(1, Math.max(0, fx)); fy = Math.min(1, Math.max(0, fy)); }
   return [fx, fy];
@@ -156,7 +157,8 @@ function binGrid(s, nx, ny, idx = s.idx, L = null) {
   const { ux, uy } = s;
   for (let k = 0; k < idx.length; k++) {
     const i = idx[k];
-    const f = L ? framePos(L, ux[i], uy[i]) : [ux[i], uy[i]];
+    const x = ux[i], y = uy[i];
+    const f = L ? framePos(L, x, y) : (x !== x || y !== y || x == null || y == null ? null : [x, y]);
     if (!f) continue;
     let gx = Math.floor(f[0] * nx), gy = Math.floor(f[1] * ny);
     if (!(gx >= 0)) gx = 0; else if (gx >= nx) gx = nx - 1; // off-scale events pile up on the axes
