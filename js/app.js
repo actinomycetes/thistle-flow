@@ -3,7 +3,7 @@ import { parseFCS, writeFCS, exportRanges } from './fcs.js';
 import { Sample, invertMatrix } from './model.js';
 import { defaultTransformFor, scaleProblem } from './transforms.js';
 import { GATE_COLORS, STAT_DEFS, missingPhrase, populationStats, statValue, formatStat, exportStat, fmtPct, gateChannels, pickGeom, isCustom, customSampleKeys, isGrouped, isOneD, gateFor, quadMode } from './gates.js';
-import { PlotView, buildSpec, shortLabel, subsampleIdx, overlayColor, QUAD_NUM, PLOT_SIZES, EVENT_LIMITS } from './plotview.js';
+import { PlotView, buildSpec, plotGateName, shortLabel, subsampleIdx, overlayColor, QUAD_NUM, PLOT_SIZES, EVENT_LIMITS } from './plotview.js';
 import { renderPlot, prepareCanvas, SERIES_COLORS, THEMES, PLOT_KINDS, HIST_OFFSETS, DOT_SIZES, DEFAULT_DOT, normalizeKind } from './render.js';
 import { renderSVG, renderPDF } from './vector.js';
 import { demoFiles } from './demo.js';
@@ -1073,14 +1073,14 @@ function addFigure(kind) {
   const fl = ws.fluorChannels();
   const x = fl[0] || ws.allChannels()[0];
   const pop = ws.selectedGate || null;
-  const f = { id: uid('f'), kind, x, y: kind === 'overlay-hist' ? null : (fl[1] || ws.allChannels()[1]), pop, title: '', mode: 'mode', offset: 0, smooth: true, fill: true, w: 440, h: 340, plotKind: 'pseudo' };
+  const f = { id: uid('f'), kind, x, y: kind === 'overlay-hist' ? null : (fl[1] || ws.allChannels()[1]), pop, title: '', mode: 'mode', offset: 0, smooth: true, fill: true, w: 440, h: kind === 'overlay-dot' ? 440 : 340, plotKind: 'pseudo' };
   if (kind === 'strategy') {
     // the gating path of one sample: All events -> ... -> the selected (or deepest) population
     let target = pop;
     if (!target) { let g = ws.engine.children(null)[0]; while (g) { target = g.id; g = ws.engine.children(g.id)[0]; } }
-    Object.assign(f, { pop: target || null, sampleKey: (ws.activeSample() || ws.samples[0]).key, w: 230, h: 220, x: null, y: null });
+    Object.assign(f, { pop: target || null, sampleKey: (ws.activeSample() || ws.samples[0]).key, w: 230, h: 230, x: null, y: null });
   } else if (kind !== 'batch') f.series = ws.samples.map((s, i) => ({ sampleId: s.id, pop, color: SERIES_COLORS[i % SERIES_COLORS.length] }));
-  else { f.w = 230; f.h = 220; f.y = ws.plots.find(p => p.id === ws.focusedPlot)?.y ?? f.y; }
+  else { f.w = 230; f.h = 230; f.y = ws.plots.find(p => p.id === ws.focusedPlot)?.y ?? f.y; }
   ws.figures.push(f);
   renderFigures();
 }
@@ -1109,7 +1109,7 @@ function figureSpec(f, theme) {
     x: { name: f.x, label: ws.channelLabel(f.x), cfg: cfgX }, y: f.y ? { name: f.y, label: ws.channelLabel(f.y), cfg: cfgY } : null,
     series, labels: { mode: f.labelMode || 'inside', legendPos: f.legendPos }, gateLabels: f.gateLabels !== false, dotSize: f.dotSize,
     hist: { mode: f.mode, offset: f.offset, smooth: f.smooth, fill: f.fill },
-    gates: f.kind === 'overlay-hist' && f.showGates !== false ? overlayGates(f) : [],
+    gates: f.showGates !== false ? overlayGates(f) : [],
   };
 }
 
@@ -1121,16 +1121,19 @@ function overlayParent(f) {
   return pops.size === 1 ? [...pops][0] : undefined;
 }
 
-// Range gates on an overlay: one gate, with the % of each overlaid sample listed in its colour
+// Overlay shared gates on their own axes, with each sample’s percentage in its series colour.
 function overlayGates(f) {
   const ws = app.ws, parent = overlayParent(f);
   if (parent === undefined) return [];
-  const series = f.series.filter(se => ws.sampleById(se.sampleId)?.hasChannel(f.x));
-  return ws.engine.children(parent).filter(g => isOneD(g) && g.x === f.x).map(g => ({
-    gate: g, color: g.color, text: g.name, selected: ws.selectedGate === g.id, labelPos: f.labelPos?.[g.id],
-    lines: [{ text: g.name, color: g.color }, ...series.map(se => {
+  const series = f.series.filter(se => {
+    const s = ws.sampleById(se.sampleId);
+    return s?.hasChannel(f.x) && (!f.y || s.hasChannel(f.y));
+  });
+  return ws.engine.children(parent).filter(g => g.x === f.x && (f.y ? !isOneD(g) && g.y === f.y : isOneD(g))).map(g => ({
+    gate: g, color: g.color, text: plotGateName(g), selected: ws.selectedGate === g.id, labelPos: f.labelPos?.[g.id],
+    lines: [{ text: plotGateName(g), color: g.color }, ...series.map(se => {
       const s = ws.sampleById(se.sampleId);
-      return { text: `${se.label || s.name.replace(/\.fcs$/i, '')}  ${fmtPct(populationStats(ws.engine, s, g.id).pctParent)}`, color: se.color };
+      return { text: `${se.label || s.name.replace(/\.fcs$/i, '')}${isCustom(g, s) ? ' ✎' : ''}  ${fmtPct(populationStats(ws.engine, s, g.id).pctParent)}`, color: se.color };
     })],
   }));
 }
@@ -1149,6 +1152,11 @@ app.createFigureGate = (f, geom) => {
   renderAll();
   toast(`Gate “${g.name}” added for all samples — it also appears in the gate tree and Statistics`);
 };
+
+function batchSamples(f) {
+  const samples = app.ws.samples;
+  return f.sampleKeys ? samples.filter(s => f.sampleKeys.includes(s.key)) : samples;
+}
 
 function batchSpec(f, s, theme) {
   const ws = app.ws;
@@ -1281,13 +1289,25 @@ function figureCard(f) {
   } else if (f.kind === 'batch') {
     ctrl.append(field('Population', h('select', { onchange: e => { f.pop = e.target.value || null; redraw(); } }, popOptions(f.pop))));
     // plots per row and column (e.g. 3 × 2); set one and the other follows from the number of samples
-    const n = ws.samples.length;
-    const num = (key, other, label) => h('input', { type: 'number', min: 1, max: Math.max(1, n), step: 1, class: 'grid-' + key, title: label, placeholder: 'auto',
-      onchange: e => { const v = parseInt(e.target.value, 10); f[key] = v > 0 ? Math.min(v, Math.max(1, n)) : null; if (f[key]) delete f[other]; syncGrid(); redraw(); } });
+    const samples = h('details', {}, h('summary', {}, 'Samples'));
+    for (const sample of ws.samples) {
+      samples.append(h('label', {}, h('input', { type: 'checkbox', checked: !f.sampleKeys || f.sampleKeys.includes(sample.key),
+        onchange: e => {
+          const keys = new Set(batchSamples(f).map(s => s.key));
+          if (e.target.checked) keys.add(sample.key); else keys.delete(sample.key);
+          if (keys.size === ws.samples.length) delete f.sampleKeys; else f.sampleKeys = [...keys];
+          syncGrid(); redraw();
+        } }), sample.name));
+    }
+    ctrl.append(samples);
+    const num = (key, other, label) => h('input', { type: 'number', min: 1, max: Math.max(1, batchSamples(f).length), step: 1, class: 'grid-' + key, title: label, placeholder: 'auto',
+      onchange: e => { const v = parseInt(e.target.value, 10); f[key] = v > 0 ? Math.min(v, Math.max(1, batchSamples(f).length)) : null; if (f[key]) delete f[other]; syncGrid(); redraw(); } });
     const colsIn = num('cols', 'rows', 'Plots per row (columns)'), rowsIn = num('rows', 'cols', 'Rows of plots');
     const fillSel = h('select', { class: 'grid-fill', title: 'Order of the samples in the grid', onchange: e => { f.fill = e.target.value; redraw(); } },
       h('option', { value: 'rows' }, 'Fill across rows'), h('option', { value: 'cols' }, 'Fill down columns'));
     const syncGrid = () => {
+      const n = batchSamples(f).length;
+      colsIn.max = rowsIn.max = Math.max(1, n);
       const g = batchGrid(n, f);
       colsIn.value = g ? g.cols : ''; rowsIn.value = g ? g.rows : '';
       fillSel.value = f.fill === 'cols' ? 'cols' : 'rows'; fillSel.disabled = !g;
@@ -1302,6 +1322,10 @@ function figureCard(f) {
       h('label', {}, h('input', { type: 'checkbox', checked: f.gateLabels !== false, onchange: e => { f.gateLabels = e.target.checked; redraw(); } }), 'Gate labels'),
       resetLabelsBtn()));
   } else {
+    if (f.kind === 'overlay-dot') {
+      ctrl.append(h('label', {}, h('input', { type: 'checkbox', checked: f.showGates !== false, onchange: e => { f.showGates = e.target.checked; redraw(); } }), 'Gates'),
+        h('label', {}, h('input', { type: 'checkbox', checked: f.gateLabels !== false, onchange: e => { f.gateLabels = e.target.checked; redraw(); } }), 'Gate labels'));
+    }
     if (f.kind === 'overlay-hist') {
       ctrl.append(field('Y scale', h('select', { onchange: e => { f.mode = e.target.value; redraw(); } },
         h('option', { value: 'mode', selected: f.mode === 'mode' }, 'Normalized to mode'), h('option', { value: 'count', selected: f.mode === 'count' }, 'Count'))));
@@ -1368,18 +1392,21 @@ function figureCard(f) {
   const clampSize = v => Math.round(Math.min(1600, Math.max(150, v)));
   const wIn = h('input', { type: 'number', value: f.w, min: 150, max: 1600, step: 10 });
   const hIn = h('input', { type: 'number', value: f.h, min: 150, max: 1600, step: 10 });
+  const slider = (side, label) => h('input', { type: 'range', min: 150, max: 1600, step: 1, value: f[side],
+    'aria-label': label, oninput: e => setSize(side, +e.target.value) });
+  const wSlider = slider('w', 'Figure width'), hSlider = slider('h', 'Figure height');
   const setSize = (side, v) => {
     if (!Number.isFinite(v) || v <= 0) return;
     const ratio = f.h / f.w;
     if (side === 'w') { f.w = clampSize(v); if (f.keepRatio !== false) f.h = clampSize(f.w * ratio); }
     else { f.h = clampSize(v); if (f.keepRatio !== false) f.w = clampSize(f.h / ratio); }
-    wIn.value = f.w; hIn.value = f.h;
+    wSlider.value = wIn.value = f.w; hSlider.value = hIn.value = f.h;
     redraw();
   };
   wIn.addEventListener('change', e => setSize('w', +e.target.value));
   hIn.addEventListener('change', e => setSize('h', +e.target.value));
   ctrl.append(h('div', { class: 'wh', style: 'display:flex;gap:12px;align-items:center;flex-wrap:wrap' },
-    field('W', wIn), field('H', hIn),
+    field('W', wIn), wSlider, field('H', hIn), hSlider,
     h('label', { title: 'Changing the width or height scales the other side to keep the shape' },
       h('input', { type: 'checkbox', checked: f.keepRatio !== false, onchange: e => { f.keepRatio = e.target.checked; } }), 'Keep ratio')));
   const card = h('div', { class: 'figure-card', 'data-fig': f.id }, ctrl, out);
@@ -1421,14 +1448,16 @@ function drawFigure(f, out) {
   }
   if (f.kind === 'batch') {
     const grid = h('div', { class: 'batch-grid' });
-    const g = batchGrid(ws.samples.length, f);
+    const samples = batchSamples(f);
+    const g = batchGrid(samples.length, f);
     if (g) { // fixed columns × rows (in the export too, which copies the positions on screen)
       grid.classList.add('fixed');
       grid.style.gridTemplateColumns = `repeat(${g.cols}, max-content)`;
       if (f.fill === 'cols') { grid.style.gridAutoFlow = 'column'; grid.style.gridTemplateRows = `repeat(${g.rows}, max-content)`; }
     }
     if (f.title) out.append(h('div', { class: 'fig-title' }, f.title));
-    for (const s of ws.samples) {
+    if (!samples.length) out.append(h('p', { class: 'hint' }, 'Select samples to include in this batch.'));
+    for (const s of samples) {
       const c = h('canvas', { 'data-sample': s.id, title: 'Drag a gate label to move it (in every plot of this figure)' });
       grid.append(c);
       new FigureView(app, f, c, () => batchSpec(f, s, theme) || `${s.name}: channel missing`, { onLabelDone: () => drawFigure(f, out) }).draw();

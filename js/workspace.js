@@ -232,6 +232,10 @@ export class Workspace {
       gates: this.engine.toJSON().map(({ overrides, ...g }) => g), plots: this.plots, displayMax: this.displayMax, statsCfg: this.statsCfg,
       // overlay series are stored by position; a series set that covered every sample re-expands to all samples
       figures: this.figures.map(f => {
+        if (f.kind === 'batch' && f.sampleKeys) {
+          const { sampleKeys, ...settings } = f;
+          return { ...settings, sampleIndices: this.samples.flatMap((s, i) => sampleKeys.includes(s.key) ? [i] : []) };
+        }
         if (!f.series) return f;
         const idx = f.series.map(se => this.samples.findIndex(x => x.id === se.sampleId));
         const all = this.samples.length > 1 && new Set(idx).size === this.samples.length && f.series.length === this.samples.length;
@@ -250,6 +254,10 @@ export class Workspace {
     if (t.displayMax !== undefined) this.displayMax = t.displayMax;
     if (t.statsCfg) this.statsCfg = { ...t.statsCfg };
     this.figures = (t.figures || []).map(f => {
+      if (f.kind === 'batch' && f.sampleIndices) {
+        const { sampleIndices, ...settings } = f;
+        return { ...settings, sampleKeys: sampleIndices.flatMap(i => this.samples[i] ? [this.samples[i].key] : []) };
+      }
       if (!f.series) return { ...f };
       let series;
       if (f.allSamples) {
