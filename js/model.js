@@ -45,7 +45,13 @@ export class Sample {
     this.compError = null;              // set when the matrix cannot be used (e.g. singular)
     // Sony writes APPLY_COMPENSATION=FALSE when the matrix should not be applied by default
     const applyFlag = String(ds.text.APPLY_COMPENSATION ?? 'TRUE').toUpperCase() !== 'FALSE';
-    this.compEnabled = !!this.spill && applyFlag && this.spillMissing().length === 0;
+    const dupes = this.spillDuplicates();
+    if (dupes.length) {
+      this.compEnabled = false;
+      this.compError = `The spillover matrix lists the same channel more than once (${dupes.join(', ')}); compensation was switched off.`;
+    } else {
+      this.compEnabled = !!this.spill && applyFlag && this.spillMissing().length === 0;
+    }
     this._comp = null;     // Map name -> Float32Array (compensated)
     this._unit = new Map(); // key -> Float32Array
     // Editable metadata. Originals are kept so edits can be reset/undone; files on disk are never modified.
@@ -106,6 +112,12 @@ export class Sample {
     return n;
   }
   spillMissing() { return this.spill ? this.spill.names.filter(n => !this.hasChannel(n)) : []; }
+  spillDuplicates() {
+    if (!this.spill) return [];
+    const seen = new Set(), dupes = [];
+    for (const nm of this.spill.names) { if (seen.has(nm) && !dupes.includes(nm)) dupes.push(nm); seen.add(nm); }
+    return dupes;
+  }
   hasChannel(name) { return this.channelNames.includes(name); }
   label(name) {
     const p = this.params[this.channelIndex(name)];
@@ -126,6 +138,13 @@ export class Sample {
     if (missing.length) {
       this.compEnabled = false;
       this.compError = `The spillover matrix refers to channel(s) not found in this file (${missing.join(', ')}); compensation was switched off.`;
+      this._comp = comp;
+      return;
+    }
+    const dupes = this.spillDuplicates();
+    if (dupes.length) {
+      this.compEnabled = false;
+      this.compError = `The spillover matrix lists the same channel more than once (${dupes.join(', ')}); compensation was switched off.`;
       this._comp = comp;
       return;
     }

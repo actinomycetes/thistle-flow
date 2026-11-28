@@ -414,13 +414,15 @@ export class PlotView {
       this.app.createGate(this.def, { type: 'polygon', pts: poly.map(p => this.toData(p)) });
       return;
     } else if (tool === 'polygon') {
-      if (!this.drawing) this.drawing = { type: 'polygon', pts: [] };
+      if (!this.drawing) this.drawing = { type: 'polygon', pts: [], snap: [] };
       const pts = this.drawing.pts;
       if (pts.length >= 3) {
         const [fx, fy] = [this.L.ux2px(pts[0][0]), this.L.uy2px(pts[0][1])];
         if (Math.hypot(fx - px, fy - py) < 8) return this.finishPolygon();
       }
-      pts.push(this.snap(u));
+      const { u: su, snap } = this.snapInfo(u);
+      pts.push(su);
+      this.drawing.snap.push(snap);
       this.quickDraw();
       return;
     } else if (tool === 'rect' || tool === 'ellipse') {
@@ -455,15 +457,46 @@ export class PlotView {
     const mvY = v => ty.inv(ty.fwd(v) + du[1]);
     const mvLabel = () => { if (o.labelPos && !perSample) base.labelPos = [o.labelPos[0] + du[0], o.labelPos[1] + du[1]].map(v => Math.min(1, Math.max(0, v))); };
     if (g.type === 'polygon') {
-      if (d.mode === 'vertex') { const s = this.snap(u); g.pts[d.index] = [tx.inv(s[0]), ty.inv(s[1])]; }
-      else { g.pts = o.pts.map(([x, y]) => [mvX(x), mvY(y)]); mvLabel(); }
+      if (d.mode === 'vertex') {
+        const { u: s, snap } = this.snapInfo(u);
+        g.pts[d.index] = [tx.inv(s[0]), ty.inv(s[1])];
+        const arr = Array.isArray(o.snap) && o.snap.length === g.pts.length
+          ? o.snap.map(p => [p[0], p[1]]) : g.pts.map(() => [0, 0]);
+        arr[d.index] = snap;
+        g.snap = arr.some(([sx, sy]) => sx || sy) ? arr : null;
+      } else {
+        g.pts = o.pts.map(([x, y]) => [mvX(x), mvY(y)]);
+        if (Array.isArray(o.snap) && o.snap.length === g.pts.length) {
+          const arr = o.snap.map(([sx, sy]) => [Math.abs(du[0]) > 1e-6 ? 0 : sx, Math.abs(du[1]) > 1e-6 ? 0 : sy]);
+          g.snap = arr.some(([sx, sy]) => sx || sy) ? arr : null;
+        } else {
+          g.snap = null;
+        }
+        mvLabel();
+      }
     } else if (g.type === 'rect') {
       if (d.mode === 'vertex') {
-        const s = this.snap(u);
+        const { u: s, snap } = this.snapInfo(u);
         const [vx, vy] = [tx.inv(s[0]), ty.inv(s[1])];
-        if (d.index === 0 || d.index === 3) g.x0 = vx; else g.x1 = vx;
-        if (d.index === 0 || d.index === 1) g.y0 = vy; else g.y1 = vy;
-      } else { g.x0 = mvX(o.x0); g.x1 = mvX(o.x1); g.y0 = mvY(o.y0); g.y1 = mvY(o.y1); mvLabel(); }
+        const xKey = (d.index === 0 || d.index === 3) ? 'x0' : 'x1';
+        const yKey = (d.index === 0 || d.index === 1) ? 'y0' : 'y1';
+        g[xKey] = vx; g[yKey] = vy;
+        const ns = { ...(o.snap && typeof o.snap === 'object' ? o.snap : {}) };
+        if (snap[0]) ns[xKey] = snap[0]; else delete ns[xKey];
+        if (snap[1]) ns[yKey] = snap[1]; else delete ns[yKey];
+        g.snap = Object.keys(ns).length ? ns : null;
+      } else {
+        g.x0 = mvX(o.x0); g.x1 = mvX(o.x1); g.y0 = mvY(o.y0); g.y1 = mvY(o.y1);
+        if (o.snap && typeof o.snap === 'object') {
+          const ns = { ...o.snap };
+          if (Math.abs(du[0]) > 1e-6) { delete ns.x0; delete ns.x1; }
+          if (Math.abs(du[1]) > 1e-6) { delete ns.y0; delete ns.y1; }
+          g.snap = Object.keys(ns).length ? ns : null;
+        } else {
+          g.snap = null;
+        }
+        mvLabel();
+      }
     } else if (g.type === 'split') {
       g.cx = tx.inv(u[0]);
     } else if (g.type === 'quad') {
@@ -491,9 +524,19 @@ export class PlotView {
         }
       }
     } else if (g.type === 'interval') {
-      if (d.mode === 'iv0') g.x0 = tx.inv(this.snap(u)[0]);
-      else if (d.mode === 'iv1') g.x1 = tx.inv(this.snap(u)[0]);
-      else { g.x0 = mvX(o.x0); g.x1 = mvX(o.x1); g.level = Math.min(0.97, Math.max(0.05, (o.level ?? 0.85) + du[1])); mvLabel(); }
+      if (d.mode === 'iv0' || d.mode === 'iv1') {
+        const { u: s, snap } = this.snapInfo(u);
+        const key = d.mode === 'iv0' ? 'x0' : 'x1';
+        g[key] = tx.inv(s[0]);
+        const ns = { ...(o.snap && typeof o.snap === 'object' ? o.snap : {}) };
+        if (snap[0]) ns[key] = snap[0]; else delete ns[key];
+        g.snap = Object.keys(ns).length ? ns : null;
+      } else {
+        g.x0 = mvX(o.x0); g.x1 = mvX(o.x1); g.level = Math.min(0.97, Math.max(0.05, (o.level ?? 0.85) + du[1]));
+        if (o.snap && typeof o.snap === 'object' && Math.abs(du[0]) <= 1e-6) g.snap = { ...o.snap };
+        else g.snap = null;
+        mvLabel();
+      }
     }
     this.app.setGateGeometry(base, g, perSample || null);
     this.app.gateChanged(base, { live: true });
@@ -513,18 +556,29 @@ export class PlotView {
         this.app.zoomPlot(this.def, { x: [tx.inv(ux0), tx.inv(ux1)], y: ty ? [ty.inv(uy0), ty.inv(uy1)] : null });
         return;
       }
-      const a = this.snap(d.start), b = this.snap(d.cur);
+      const sa = this.snapInfo(d.start), sb = this.snapInfo(d.cur);
+      const a = sa.u, b = sb.u;
       if (Math.abs(a[0] - b[0]) < 0.01 && (d.type === 'interval' || Math.abs(a[1] - b[1]) < 0.01)) { this.draw(); return; }
       if (d.type === 'rect') {
         const [x0, y0] = this.toData([Math.min(a[0], b[0]), Math.min(a[1], b[1])]);
         const [x1, y1] = this.toData([Math.max(a[0], b[0]), Math.max(a[1], b[1])]);
-        this.app.createGate(this.def, { type: 'rect', x0, x1, y0, y1 });
+        const snap = {};
+        const sx0 = a[0] <= b[0] ? sa.snap[0] : sb.snap[0], sx1 = a[0] <= b[0] ? sb.snap[0] : sa.snap[0];
+        const sy0 = a[1] <= b[1] ? sa.snap[1] : sb.snap[1], sy1 = a[1] <= b[1] ? sb.snap[1] : sa.snap[1];
+        if (sx0) snap.x0 = sx0; if (sx1) snap.x1 = sx1; if (sy0) snap.y0 = sy0; if (sy1) snap.y1 = sy1;
+        this.app.createGate(this.def, { type: 'rect', x0, x1, y0, y1, ...(Object.keys(snap).length ? { snap } : {}) });
       } else if (d.type === 'ellipse') {
         const pts = ellipsePts(d.start, d.cur).map(p => this.toData(p));
         this.app.createGate(this.def, { type: 'polygon', shape: 'ellipse', pts });
       } else if (d.type === 'interval') {
         const tx = makeTransform(this.app.ws.getCfg(this.def.x));
-        this.app.createGate(this.def, { type: 'interval', x0: tx.inv(Math.min(a[0], b[0])), x1: tx.inv(Math.max(a[0], b[0])), level: Math.min(0.95, Math.max(0.05, d.start[1])) });
+        const snap = {};
+        const sx0 = a[0] <= b[0] ? sa.snap[0] : sb.snap[0], sx1 = a[0] <= b[0] ? sb.snap[0] : sa.snap[0];
+        if (sx0) snap.x0 = sx0; if (sx1) snap.x1 = sx1;
+        this.app.createGate(this.def, {
+          type: 'interval', x0: tx.inv(Math.min(a[0], b[0])), x1: tx.inv(Math.max(a[0], b[0])),
+          level: Math.min(0.95, Math.max(0.05, d.start[1])), ...(Object.keys(snap).length ? { snap } : {}),
+        });
       }
       return;
     }
@@ -539,6 +593,7 @@ export class PlotView {
   onDbl(e) {
     if (this.drawing?.type === 'polygon') {
       this.drawing.pts.pop(); // dblclick produced a duplicate point
+      this.drawing.snap?.pop();
       return this.finishPolygon();
     }
     if (this.app.tool === 'zoom') { // double-click while zooming = Reset zoom (whole axis range)
@@ -553,10 +608,17 @@ export class PlotView {
   }
 
   finishPolygon() {
-    const pts = this.drawing.pts.filter((p, i, arr) => i === 0 || Math.hypot(p[0] - arr[i - 1][0], p[1] - arr[i - 1][1]) > 1e-4);
+    const rawPts = this.drawing.pts, rawSnap = this.drawing.snap || rawPts.map(() => [0, 0]);
+    const pts = [], snap = [];
+    for (let i = 0; i < rawPts.length; i++) {
+      if (i === 0 || Math.hypot(rawPts[i][0] - rawPts[i - 1][0], rawPts[i][1] - rawPts[i - 1][1]) > 1e-4) {
+        pts.push(rawPts[i]); snap.push(rawSnap[i] || [0, 0]);
+      }
+    }
     this.drawing = null;
     if (pts.length < 3) { this.draw(); return; }
-    this.app.createGate(this.def, { type: 'polygon', pts: pts.map(p => this.toData(p)) });
+    const hasSnap = snap.some(([sx, sy]) => sx || sy);
+    this.app.createGate(this.def, { type: 'polygon', pts: pts.map(p => this.toData(p)), ...(hasSnap ? { snap } : {}) });
   }
 
   // Auto gate around the population at u (display units); tight = closer to the core
@@ -571,7 +633,8 @@ export class PlotView {
 
   cancel() { if (this.drawing || this.preview) { this.drawing = null; this.preview = null; this.draw(); } }
 
-  snap(u) { return this.L?.zoomed ? [u[0], u[1]] : snapUnit(u); }
+  snapInfo(u) { return this.L?.zoomed ? { u: [u[0], u[1]], snap: [0, 0] } : snapUnitInfo(u); }
+  snap(u) { return this.snapInfo(u).u; }
 
   toData([ux, uy]) {
     const tx = makeTransform(this.app.ws.getCfg(this.def.x));
@@ -583,9 +646,11 @@ export class PlotView {
 // Points dragged onto/over the axis edge extend the gate well beyond it so piled-up off-scale events are included.
 // Not while zoomed in: there the user is placing points precisely, and the axis edge (0.3% of the whole axis)
 // can be a large part of the view, so a click near the corner would throw the point far outside the view.
-function snapUnit([u, v]) {
-  const s = x => (x <= 0.003 ? -0.3 : x >= 0.997 ? 1.3 : x);
-  return [s(u), s(v)];
+function snapUnitInfo([u, v]) {
+  const f = x => (x <= 0.003 ? -1 : x >= 0.997 ? 1 : 0);
+  const s = (x, dir) => (dir < 0 ? -0.3 : dir > 0 ? 1.3 : x);
+  const fx = f(u), fy = f(v);
+  return { u: [s(u, fx), s(v, fy)], snap: [fx, fy] };
 }
 
 function ellipsePts(a, b, n = 48) {

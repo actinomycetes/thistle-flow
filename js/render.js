@@ -1,7 +1,7 @@
 // Rendering of pseudocolor / density / contour / dot plots, histograms, overlays and gates.
 // Works on a Canvas 2D context or on the canvas-compatible SVG/PDF contexts from vector.js.
 import { makeTransform } from './transforms.js';
-import { quadArms, quadHandles, quadMode, DEFAULT_ANGLES, QUAD_REGION_ARMS } from './gates.js';
+import { quadArms, quadHandles, quadMode, DEFAULT_ANGLES, QUAD_REGION_ARMS, snapBound } from './gates.js';
 
 export const MARGIN = { l: 64, r: 14, t: 24, b: 48 };
 
@@ -61,7 +61,8 @@ export function layout(w, h, extraRight = 0, zoom = null) {
 // Frame fractions of one event; null if zoomed in and the event is outside the view
 // (without zoom, off-scale events pile up on the axes).
 function framePos(L, x, y) {
-  let fx = L.zx(x || 0), fy = L.zy(y || 0);
+  if (x !== x || y !== y || x == null || y == null) return null;
+  let fx = L.zx(x), fy = L.zy(y);
   if (L.zoomed) { if (!(fx >= 0 && fx <= 1 && fy >= 0 && fy <= 1)) return null; }
   else { fx = Math.min(1, Math.max(0, fx)); fy = Math.min(1, Math.max(0, fy)); }
   return [fx, fy];
@@ -156,7 +157,8 @@ function binGrid(s, nx, ny, idx = s.idx, L = null) {
   const { ux, uy } = s;
   for (let k = 0; k < idx.length; k++) {
     const i = idx[k];
-    const f = L ? framePos(L, ux[i], uy[i]) : [ux[i], uy[i]];
+    const x = ux[i], y = uy[i];
+    const f = L ? framePos(L, x, y) : (x !== x || y !== y || x == null || y == null ? null : [x, y]);
     if (!f) continue;
     let gx = Math.floor(f[0] * nx), gy = Math.floor(f[1] * ny);
     if (!(gx >= 0)) gx = 0; else if (gx >= nx) gx = nx - 1; // off-scale events pile up on the axes
@@ -508,13 +510,21 @@ export function gateGeometry(L, spec, g) {
   const X = v => (v === -Infinity ? L.fx2px(-0.05) : v === Infinity ? L.fx2px(1.05) : L.ux2px(tx.fwd(v)));
   if (g.type === 'split') return { kind: 'split', cx: X(g.cx) };
   if (g.type === 'interval') {
-    const lvl = g.level ?? 0.85;
-    return { kind: 'interval', x0: X(g.x0), x1: X(g.x1), y: L.fy2px(lvl) };
+    const lvl = g.level ?? 0.85, sp = g.snap && typeof g.snap === 'object' ? g.snap : null;
+    return { kind: 'interval', x0: X(snapBound(g.x0, sp?.x0, -1)), x1: X(snapBound(g.x1, sp?.x1, 1)), y: L.fy2px(lvl) };
   }
   const ty = makeTransform(spec.y.cfg);
   const Y = v => (v === -Infinity ? L.fy2px(-0.05) : v === Infinity ? L.fy2px(1.05) : L.uy2px(ty.fwd(v)));
-  if (g.type === 'rect') return { kind: 'poly', pts: [[X(g.x0), Y(g.y0)], [X(g.x1), Y(g.y0)], [X(g.x1), Y(g.y1)], [X(g.x0), Y(g.y1)]] };
-  if (g.type === 'polygon') return { kind: 'poly', pts: g.pts.map(([x, y]) => [X(x), Y(y)]) };
+  if (g.type === 'rect') {
+    const sp = g.snap && typeof g.snap === 'object' ? g.snap : null;
+    const x0 = X(snapBound(g.x0, sp?.x0, -1)), x1 = X(snapBound(g.x1, sp?.x1, 1));
+    const y0 = Y(snapBound(g.y0, sp?.y0, -1)), y1 = Y(snapBound(g.y1, sp?.y1, 1));
+    return { kind: 'poly', pts: [[x0, y0], [x1, y0], [x1, y1], [x0, y1]] };
+  }
+  if (g.type === 'polygon') {
+    const sp = Array.isArray(g.snap) && g.snap.length === g.pts.length ? g.snap : null;
+    return { kind: 'poly', pts: g.pts.map(([x, y], i) => [X(snapBound(x, sp?.[i]?.[0])), Y(snapBound(y, sp?.[i]?.[1]))]) };
+  }
   if (g.type === 'quad') {
     const P = ([u, v]) => [L.ux2px(u), L.uy2px(v)];
     const A = quadArms(g, tx, ty), H = quadHandles(g, tx, ty);

@@ -145,14 +145,22 @@ export class FigureView {
     }
     const g = this.app.ws.engine.get(d.gate.id);
     const tx = makeTransform(this.app.ws.getCfg(g.x));
-    const snap = v => (v <= 0.003 ? -0.3 : v >= 0.997 ? 1.3 : v);
+    const snapDir = v => (v <= 0.003 ? -1 : v >= 0.997 ? 1 : 0);
+    const snapVal = (v, dir) => (dir < 0 ? -0.3 : dir > 0 ? 1.3 : v);
     const du = [u[0] - d.start[0], u[1] - d.start[1]];
     if (d.mode === 'split') { this.app.setGateGeometry(g, { ...g, cx: tx.inv(u[0]) }, null); this.app.gateChanged(g, { live: true }); this.draw(); return; }
-    if (d.mode === 'iv0') g.x0 = tx.inv(snap(u[0]));
-    else if (d.mode === 'iv1') g.x1 = tx.inv(snap(u[0]));
-    else {
+    if (d.mode === 'iv0' || d.mode === 'iv1') {
+      const dir = snapDir(u[0]);
+      const key = d.mode === 'iv0' ? 'x0' : 'x1';
+      g[key] = tx.inv(snapVal(u[0], dir));
+      const ns = { ...(d.orig.snap && typeof d.orig.snap === 'object' ? d.orig.snap : {}) };
+      if (dir) ns[key] = dir; else delete ns[key];
+      g.snap = Object.keys(ns).length ? ns : null;
+    } else {
       g.x0 = tx.inv(tx.fwd(d.orig.x0) + du[0]); g.x1 = tx.inv(tx.fwd(d.orig.x1) + du[0]);
       g.level = Math.min(0.97, Math.max(0.05, (d.orig.level ?? 0.85) + du[1]));
+      if (d.orig.snap && typeof d.orig.snap === 'object' && Math.abs(du[0]) <= 1e-6) g.snap = { ...d.orig.snap };
+      else g.snap = null;
     }
     this.app.gateChanged(g, { live: true });
     this.draw();
@@ -164,9 +172,17 @@ export class FigureView {
       const { start, cur } = this.drawing; this.drawing = null;
       if (!cur || Math.abs(cur[0] - start[0]) < 0.01) { this.draw(); return; }
       const tx = makeTransform(this.app.ws.getCfg(this.f.x));
-      const snap = v => (v <= 0.003 ? -0.3 : v >= 0.997 ? 1.3 : v);
-      const a = snap(Math.min(start[0], cur[0])), b = snap(Math.max(start[0], cur[0]));
-      this.app.createFigureGate(this.f, { x0: tx.inv(a), x1: tx.inv(b), level: Math.min(0.95, Math.max(0.05, start[1])) });
+      const snapDir = v => (v <= 0.003 ? -1 : v >= 0.997 ? 1 : 0);
+      const snapVal = (v, dir) => (dir < 0 ? -0.3 : dir > 0 ? 1.3 : v);
+      const lo = Math.min(start[0], cur[0]), hi = Math.max(start[0], cur[0]);
+      const d0 = snapDir(lo), d1 = snapDir(hi);
+      const snap = {};
+      if (d0) snap.x0 = d0; if (d1) snap.x1 = d1;
+      this.app.createFigureGate(this.f, {
+        x0: tx.inv(snapVal(lo, d0)), x1: tx.inv(snapVal(hi, d1)),
+        level: Math.min(0.95, Math.max(0.05, start[1])),
+        ...(Object.keys(snap).length ? { snap } : {}),
+      });
       return;
     }
     const d = this.drag; this.drag = null;

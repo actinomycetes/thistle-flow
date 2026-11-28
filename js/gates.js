@@ -31,16 +31,34 @@ function unitRange(t, a, b) {
   return [a === -Infinity ? -Infinity : f32(t.fwd(a)), b === Infinity ? Infinity : f32(t.fwd(b))];
 }
 
-// Events beyond the plot are drawn piled up on its axes, so gates treat them as lying just inside
-// the axis: display units are clamped to [PILE_LO, PILE_HI] before testing. A gate edge dragged onto an
-// axis is stored at -0.3 / 1.3 (outside this range), so it holds the whole pile, as drawn.
+// Events beyond the plot are drawn piled up on its axes. When a user drags a gate edge or
+// polygon vertex onto an axis edge, plotview/figureview records an explicit `snap` flag alongside
+// the stored coordinate (-0.3 / 1.3 display units):
+//   - rect / interval: `snap: { x0?, x1?, y0?, y1? }` (-1 = low axis, 1 = high axis, or boolean true
+//     meaning low axis for x0/y0 and high axis for x1/y1).
+//   - polygon: `snap: [[sx, sy], ...]` per vertex (-1 = low axis, 0 = finite, 1 = high axis).
+// Finite coordinates without a `snap` flag are always evaluated at their exact (unclamped) display
+// positions so changing an axis scale never turns a finite gate into ±Infinity. Older workspaces
+// saved before `snap` existed have no `snap` metadata, so any ambiguous legacy coordinate (such as
+// one saved at 1.3 display units) is evaluated as a finite value unless re-snapped onto an axis.
 // NaN (missing) values are in no gate.
 export const PILE_LO = -0.25, PILE_HI = 1.25;
-const pile = v => (v < PILE_LO ? PILE_LO : v > PILE_HI ? PILE_HI : v);
+export function snapBound(v, flag, defaultSign = 0) {
+  if (flag === -1 || (flag === true && defaultSign < 0)) return -Infinity;
+  if (flag === 1 || (flag === true && defaultSign > 0)) return Infinity;
+  return v;
+}
+const inRange = (v, lo, hi) => v >= lo && (hi === Infinity ? v <= Infinity : v < hi);
 
 // ---- per-sample gate adjustments ----
 // A gate may carry overrides: { [sample.key]: geometry } (keyed by file name so they survive saving).
-const GEOM_KEYS = { rect: ['x0', 'x1', 'y0', 'y1'], polygon: ['pts'], quad: ['cx', 'cy', 'quadMode', 'angles', 'offsets'], interval: ['x0', 'x1', 'level'], split: ['cx'] };
+const GEOM_KEYS = {
+  rect: ['x0', 'x1', 'y0', 'y1', 'snap'],
+  polygon: ['pts', 'snap'],
+  quad: ['cx', 'cy', 'quadMode', 'angles', 'offsets'],
+  interval: ['x0', 'x1', 'level', 'snap'],
+  split: ['cx'],
+};
 // Gates that come in linked groups (moved together): quadrants (4) and splits (left/right)
 export const isGrouped = g => g.type === 'quad' || g.type === 'split';
 export function pickGeom(g) {
@@ -61,20 +79,27 @@ export const customSampleKeys = g => Object.keys(g.overrides || {});
 //            the right/left arms horizontally at their own y (offsets.right / .left), each joined to
 //            the centre by a step (values in data units).
 // Each quadrant is the region between two neighbouring arms, closed along a frame that extends well
-// past the axes (so piled-up off-scale events are included); the four regions tile the plane.
+// past the axes (and any out-of-frame centre/offsets); the four regions tile the plane.
 export const ARMS = ['up', 'right', 'down', 'left'];
 export const QUAD_REGION_ARMS = { UR: ['up', 'right'], LR: ['right', 'down'], LL: ['down', 'left'], UL: ['left', 'up'] };
 export const DEFAULT_ANGLES = { up: 90, right: 0, down: 270, left: 180 };
-const B0 = -0.5, B1 = 1.5; // extended frame in display units
+const B0 = -0.5, B1 = 1.5; // minimum extended frame in display units
 // 'spider' and 'offset' are the names used before v0.15.2 (saved workspaces still use them)
 const LEGACY_QMODE = { spider: 'angled', offset: 'staggered' };
 export const quadMode = g => LEGACY_QMODE[g.quadMode] || g.quadMode || 'standard';
 
-function rayToFrame([x, y], deg) {
+function frameBounds(xs, ys) {
+  let b0 = B0, b1 = B1;
+  for (const v of xs) if (Number.isFinite(v)) { b0 = Math.min(b0, v - 1); b1 = Math.max(b1, v + 1); }
+  for (const v of ys) if (Number.isFinite(v)) { b0 = Math.min(b0, v - 1); b1 = Math.max(b1, v + 1); }
+  return [b0, b1];
+}
+
+function rayToFrame([x, y], deg, b0 = B0, b1 = B1) {
   const dx = Math.cos(deg * Math.PI / 180), dy = Math.sin(deg * Math.PI / 180);
   let t = Infinity;
-  if (dx > 1e-12) t = Math.min(t, (B1 - x) / dx); else if (dx < -1e-12) t = Math.min(t, (B0 - x) / dx);
-  if (dy > 1e-12) t = Math.min(t, (B1 - y) / dy); else if (dy < -1e-12) t = Math.min(t, (B0 - y) / dy);
+  if (dx > 1e-12) t = Math.min(t, (b1 - x) / dx); else if (dx < -1e-12) t = Math.min(t, (b0 - x) / dx);
+  if (dy > 1e-12) t = Math.min(t, (b1 - y) / dy); else if (dy < -1e-12) t = Math.min(t, (b0 - y) / dy);
   return [x + dx * t, y + dy * t];
 }
 
@@ -83,44 +108,101 @@ export function quadArms(g, tx, ty) {
   const c = [tx.fwd(g.cx), ty.fwd(g.cy)];
   const m = quadMode(g);
   if (m === 'angled') {
+    const [b0, b1] = frameBounds([c[0]], [c[1]]);
     const a = { ...DEFAULT_ANGLES, ...(g.angles || {}) };
-    return { c, arms: Object.fromEntries(ARMS.map(k => [k, [c, rayToFrame(c, a[k])]])) };
+    return { c, b0, b1, arms: Object.fromEntries(ARMS.map(k => [k, [c, rayToFrame(c, a[k], b0, b1)]])) };
   }
   if (m === 'staggered') {
     const o = g.offsets || {};
     const xu = tx.fwd(o.up ?? g.cx), xd = tx.fwd(o.down ?? g.cx), yr = ty.fwd(o.right ?? g.cy), yl = ty.fwd(o.left ?? g.cy);
+    const [b0, b1] = frameBounds([c[0], xu, xd], [c[1], yr, yl]);
     // each arm leaves the centre along its own direction until it is past the neighbouring arms' jogs,
     // then steps sideways to its own line: arms never cross, so the four regions always tile the plane
     const top = Math.max(c[1], yl, yr), bot = Math.min(c[1], yl, yr);
     const rgt = Math.max(c[0], xu, xd), lft = Math.min(c[0], xu, xd);
-    return { c, arms: {
-      up: [c, [c[0], top], [xu, top], [xu, B1]], down: [c, [c[0], bot], [xd, bot], [xd, B0]],
-      right: [c, [rgt, c[1]], [rgt, yr], [B1, yr]], left: [c, [lft, c[1]], [lft, yl], [B0, yl]],
+    return { c, b0, b1, arms: {
+      up: [c, [c[0], top], [xu, top], [xu, b1]], down: [c, [c[0], bot], [xd, bot], [xd, b0]],
+      right: [c, [rgt, c[1]], [rgt, yr], [b1, yr]], left: [c, [lft, c[1]], [lft, yl], [b0, yl]],
     } };
   }
-  return { c, arms: { up: [c, [c[0], B1]], right: [c, [B1, c[1]]], down: [c, [c[0], B0]], left: [c, [B0, c[1]]] } };
+  const [b0, b1] = frameBounds([c[0]], [c[1]]);
+  return { c, b0, b1, arms: { up: [c, [c[0], b1]], right: [c, [b1, c[1]]], down: [c, [c[0], b0]], left: [c, [b0, c[1]]] } };
 }
 
-// position along the frame, clockwise from the top-left corner (0..8)
-function frameT([x, y]) {
-  const e = 1e-9;
-  if (Math.abs(y - B1) < e) return x - B0;
-  if (Math.abs(x - B1) < e) return 2 + (B1 - y);
-  if (Math.abs(y - B0) < e) return 4 + (B1 - x);
-  return 6 + (y - B0);
+// position along the frame [b0, b1]^2, clockwise from the top-left corner (0..4*(b1-b0))
+function frameT([x, y], b0 = B0, b1 = B1) {
+  const S = b1 - b0, e = 1e-9 * Math.max(1, S);
+  if (Math.abs(y - b1) < e) return x - b0;
+  if (Math.abs(x - b1) < e) return S + (b1 - y);
+  if (Math.abs(y - b0) < e) return 2 * S + (b1 - x);
+  return 3 * S + (y - b0);
 }
-const CORNERS = [[0, [B0, B1]], [2, [B1, B1]], [4, [B1, B0]], [6, [B0, B0]]];
 
 // Polygon (display units) of one quadrant: arm A out, clockwise along the frame, arm B back.
 export function quadRegion(armsObj, q) {
+  const b0 = armsObj.b0 ?? B0, b1 = armsObj.b1 ?? B1;
+  const S = b1 - b0, P = 4 * S;
+  const corners = [[0, [b0, b1]], [S, [b1, b1]], [2 * S, [b1, b0]], [3 * S, [b0, b0]]];
   const [ka, kb] = QUAD_REGION_ARMS[q];
   const A = armsObj.arms[ka], B = armsObj.arms[kb];
-  const ta = frameT(A.at(-1));
-  let tb = frameT(B.at(-1));
-  if (tb <= ta) tb += 8;
+  const ta = frameT(A.at(-1), b0, b1);
+  let tb = frameT(B.at(-1), b0, b1);
+  if (tb <= ta) tb += P;
   const walk = [];
-  for (const add of [0, 8]) for (const [t, pt] of CORNERS) if (t + add > ta && t + add < tb) walk.push(pt);
+  for (const add of [0, P]) for (const [t, pt] of corners) if (t + add > ta && t + add < tb) walk.push(pt);
   return [...A, ...walk, ...B.slice().reverse().slice(0, -1)];
+}
+
+const TAU = 2 * Math.PI;
+const normAngle = r => ((r % TAU) + TAU) % TAU;
+
+// Exact analytical classification for angled quadrants: half-open polar sectors [θ_k, θ_{k+1}),
+// centre assigned deterministically to UR, NaN in no quadrant, ±Infinity handled natively by atan2.
+function angledQuadMask(ux, uy, cx, cy, angles, q, out) {
+  const a = { ...DEFAULT_ANGLES, ...(angles || {}) };
+  const sectors = [
+    { q: 'UR', s: normAngle(a.right * Math.PI / 180) },
+    { q: 'UL', s: normAngle(a.up * Math.PI / 180) },
+    { q: 'LL', s: normAngle(a.left * Math.PI / 180) },
+    { q: 'LR', s: normAngle(a.down * Math.PI / 180) },
+  ].sort((p, r) => p.s - r.s);
+  const s0 = sectors[0].s, s1 = sectors[1].s, s2 = sectors[2].s, s3 = sectors[3].s;
+  const q0 = sectors[0].q, q1 = sectors[1].q, q2 = sectors[2].q, q3 = sectors[3].q;
+  for (let i = 0; i < out.length; i++) {
+    const x = ux[i], y = uy[i];
+    if (x !== x || y !== y) continue; // NaN: in no quadrant
+    let hit;
+    if (x === cx && y === cy) {
+      hit = 'UR';
+    } else {
+      const ang = normAngle(Math.atan2(y - cy, x - cx));
+      if (ang >= s3 || ang < s0) hit = q3;
+      else if (ang >= s2) hit = q2;
+      else if (ang >= s1) hit = q1;
+      else hit = q0;
+    }
+    out[i] = hit === q ? 1 : 0;
+  }
+  return out;
+}
+
+// Exact analytical classification for staggered quadrants: every finite and ±Infinity point
+// lands in exactly one quadrant, regardless of axis scale or out-of-frame offsets.
+function staggeredQuadMask(ux, uy, cx, cy, xu, xd, yr, yl, q, out) {
+  const top = Math.max(cy, yl, yr), bot = Math.min(cy, yl, yr);
+  const rgt = Math.max(cx, xu, xd), lft = Math.min(cx, xu, xd);
+  for (let i = 0; i < out.length; i++) {
+    const x = ux[i], y = uy[i];
+    if (x !== x || y !== y) continue; // NaN: in no quadrant
+    let hit;
+    if (y >= top) hit = x >= xu ? 'UR' : 'UL';
+    else if (y < bot) hit = x >= xd ? 'LR' : 'LL';
+    else if (x >= rgt) hit = y >= yr ? 'UR' : 'LR';
+    else if (x < lft) hit = y >= yl ? 'UL' : 'LL';
+    else hit = x >= cx ? (y >= cy ? 'UR' : 'LR') : (y >= cy ? 'UL' : 'LL');
+    out[i] = hit === q ? 1 : 0;
+  }
+  return out;
 }
 
 // Handles for reshaping (display units): one on each arm (angled: along the arm; staggered: on its outer part)
@@ -147,14 +229,40 @@ export function quadHandles(g, tx, ty) {
 export const isOneD = g => g.type === 'interval' || g.type === 'split'; // histogram gates
 export function gateChannels(g) { return isOneD(g) ? [g.x] : [g.x, g.y]; }
 
-function polygonMask(ux, uy, pts, out) {
+function polygonMask(ux, uy, pts, out, snap = null) {
+  const sp = Array.isArray(snap) && snap.length === pts.length ? snap : null;
+  let snapLoX = false, snapHiX = false, snapLoY = false, snapHiY = false;
+  let finMinX = Infinity, finMaxX = -Infinity, finMinY = Infinity, finMaxY = -Infinity;
+  for (let i = 0; i < pts.length; i++) {
+    const sx = sp ? sp[i]?.[0] || 0 : 0;
+    const sy = sp ? sp[i]?.[1] || 0 : 0;
+    const [x, y] = pts[i];
+    if (sx < 0) snapLoX = true; else if (sx > 0) snapHiX = true;
+    else { if (x < finMinX) finMinX = x; if (x > finMaxX) finMaxX = x; }
+    if (sy < 0) snapLoY = true; else if (sy > 0) snapHiY = true;
+    else { if (y < finMinY) finMinY = y; if (y > finMaxY) finMaxY = y; }
+  }
+  const hasSnap = snapLoX || snapHiX || snapLoY || snapHiY;
+  const loX = Math.min(PILE_LO, Number.isFinite(finMinX) ? finMinX - 0.25 : PILE_LO);
+  const hiX = Math.max(PILE_HI, Number.isFinite(finMaxX) ? finMaxX + 0.25 : PILE_HI);
+  const loY = Math.min(PILE_LO, Number.isFinite(finMinY) ? finMinY - 0.25 : PILE_LO);
+  const hiY = Math.max(PILE_HI, Number.isFinite(finMaxY) ? finMaxY + 0.25 : PILE_HI);
+  const effPts = hasSnap ? pts.map(([x, y], i) => [
+    sp[i]?.[0] < 0 ? loX - 0.05 : sp[i]?.[0] > 0 ? hiX + 0.05 : x,
+    sp[i]?.[1] < 0 ? loY - 0.05 : sp[i]?.[1] > 0 ? hiY + 0.05 : y,
+  ]) : pts;
   let minx = Infinity, maxx = -Infinity, miny = Infinity, maxy = -Infinity;
-  for (const [x, y] of pts) { minx = Math.min(minx, x); maxx = Math.max(maxx, x); miny = Math.min(miny, y); maxy = Math.max(maxy, y); }
+  for (const [x, y] of effPts) {
+    if (x < minx) minx = x; if (x > maxx) maxx = x;
+    if (y < miny) miny = y; if (y > maxy) maxy = y;
+  }
   for (let i = 0; i < out.length; i++) {
-    const x = pile(ux[i]), y = pile(uy[i]);
-    if (x !== x || y !== y) continue; // NaN: in no gate
+    const rx = ux[i], ry = uy[i];
+    if (rx !== rx || ry !== ry) continue; // NaN: in no gate
+    const x = snapLoX && rx < loX ? loX : snapHiX && rx > hiX ? hiX : rx;
+    const y = snapLoY && ry < loY ? loY : snapHiY && ry > hiY ? hiY : ry;
     if (x < minx || x > maxx || y < miny || y > maxy) continue;
-    out[i] = pointInPolygon(x, y, pts) ? 1 : 0;
+    out[i] = pointInPolygon(x, y, effPts) ? 1 : 0;
   }
   return out;
 }
@@ -214,41 +322,50 @@ export class GateEngine {
     const out = new Uint8Array(N);
     if (!this.canApply(sample, g)) return out; // channels missing -> empty
     if (g.type === 'quad' && quadMode(g) !== 'standard') {
-      const tx = makeTransform(this.getCfg(g.x)), ty = makeTransform(this.getCfg(g.y));
-      const pts = quadRegion(quadArms(g, tx, ty), g.q);
-      return polygonMask(sample.unit(g.x, this.getCfg(g.x)), sample.unit(g.y, this.getCfg(g.y)), pts, out);
+      const cfgX = this.getCfg(g.x), cfgY = this.getCfg(g.y);
+      const tx = makeTransform(cfgX), ty = makeTransform(cfgY);
+      const ux = sample.unit(g.x, cfgX), uy = sample.unit(g.y, cfgY);
+      const cx = f32(tx.fwd(g.cx)), cy = f32(ty.fwd(g.cy));
+      if (quadMode(g) === 'angled') return angledQuadMask(ux, uy, cx, cy, g.angles, g.q, out);
+      const o = g.offsets || {};
+      const xu = f32(tx.fwd(o.up ?? g.cx)), xd = f32(tx.fwd(o.down ?? g.cx));
+      const yr = f32(ty.fwd(o.right ?? g.cy)), yl = f32(ty.fwd(o.left ?? g.cy));
+      return staggeredQuadMask(ux, uy, cx, cy, xu, xd, yr, yl, g.q, out);
     }
     if (g.type === 'rect' || g.type === 'quad' || g.type === 'interval' || g.type === 'split') {
       let x0, x1, y0 = -Infinity, y1 = Infinity;
-      if (g.type === 'rect') ({ x0, x1, y0, y1 } = g);
-      else if (g.type === 'interval') ({ x0, x1 } = g);
-      else if (g.type === 'split') { x0 = g.side === 'L' ? -Infinity : g.cx; x1 = g.side === 'L' ? g.cx : Infinity; }
+      const sp = g.snap && typeof g.snap === 'object' ? g.snap : null;
+      if (g.type === 'rect') {
+        x0 = snapBound(g.x0, sp?.x0, -1); x1 = snapBound(g.x1, sp?.x1, 1);
+        y0 = snapBound(g.y0, sp?.y0, -1); y1 = snapBound(g.y1, sp?.y1, 1);
+      } else if (g.type === 'interval') {
+        x0 = snapBound(g.x0, sp?.x0, -1); x1 = snapBound(g.x1, sp?.x1, 1);
+      } else if (g.type === 'split') { x0 = g.side === 'L' ? -Infinity : g.cx; x1 = g.side === 'L' ? g.cx : Infinity; }
       else {
         const right = g.q === 'UR' || g.q === 'LR', up = g.q === 'UR' || g.q === 'UL';
         x0 = right ? g.cx : -Infinity; x1 = right ? Infinity : g.cx;
         y0 = up ? g.cy : -Infinity; y1 = up ? Infinity : g.cy;
       }
-      // Compare in unit space so that out-of-range events piled on axes behave consistently
-      const tx = makeTransform(this.getCfg(g.x));
-      const ux = sample.unit(g.x, this.getCfg(g.x));
+      const cfgX = this.getCfg(g.x);
+      const tx = makeTransform(cfgX);
+      const ux = sample.unit(g.x, cfgX);
       const [lox, hix] = unitRange(tx, x0, x1);
       if (isOneD(g)) {
-        for (let i = 0; i < N; i++) { const v = pile(ux[i]); out[i] = v >= lox && v < hix ? 1 : 0; }
+        for (let i = 0; i < N; i++) out[i] = inRange(ux[i], lox, hix) ? 1 : 0;
         return out;
       }
-      const ty = makeTransform(this.getCfg(g.y));
-      const uy = sample.unit(g.y, this.getCfg(g.y));
+      const cfgY = this.getCfg(g.y);
+      const ty = makeTransform(cfgY);
+      const uy = sample.unit(g.y, cfgY);
       const [loy, hiy] = unitRange(ty, y0, y1);
-      for (let i = 0; i < N; i++) {
-        const vx = pile(ux[i]), vy = pile(uy[i]);
-        out[i] = vx >= lox && vx < hix && vy >= loy && vy < hiy ? 1 : 0;
-      }
+      for (let i = 0; i < N; i++) out[i] = inRange(ux[i], lox, hix) && inRange(uy[i], loy, hiy) ? 1 : 0;
       return out;
     }
     if (g.type === 'polygon') {
-      const tx = makeTransform(this.getCfg(g.x)), ty = makeTransform(this.getCfg(g.y));
+      const cfgX = this.getCfg(g.x), cfgY = this.getCfg(g.y);
+      const tx = makeTransform(cfgX), ty = makeTransform(cfgY);
       const pts = g.pts.map(([x, y]) => [f32(tx.fwd(x)), f32(ty.fwd(y))]);
-      return polygonMask(sample.unit(g.x, this.getCfg(g.x)), sample.unit(g.y, this.getCfg(g.y)), pts, out);
+      return polygonMask(sample.unit(g.x, cfgX), sample.unit(g.y, cfgY), pts, out, g.snap);
     }
     throw new Error('Unknown gate type ' + g.type);
   }

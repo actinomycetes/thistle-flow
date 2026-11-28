@@ -77,6 +77,24 @@ class VectorContext {
   lineTo(x, y) { if (!this.path.length) return this.moveTo(x, y); this.path.at(-1).pts.push(this.tp(x, y)); }
   closePath() { if (this.path.length) this.path.at(-1).closed = true; }
   rect(x, y, w, h) { this.path.push({ pts: [this.tp(x, y), this.tp(x + w, y), this.tp(x + w, y + h), this.tp(x, y + h)], closed: true }); }
+  arc(x, y, r, startAngle, endAngle, ccw = false) {
+    if (!(r >= 0) || !Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(startAngle) || !Number.isFinite(endAngle)) return;
+    const TAU = Math.PI * 2;
+    let delta = endAngle - startAngle;
+    if (Math.abs(delta) >= TAU) {
+      delta = ccw ? -TAU : TAU;
+    } else {
+      delta = ((delta % TAU) + TAU) % TAU;
+      if (ccw) delta = delta === 0 ? 0 : delta - TAU;
+    }
+    const steps = Math.max(1, Math.ceil(Math.abs(delta) / (Math.PI / 18)));
+    for (let i = 0; i <= steps; i++) {
+      const a = startAngle + (delta * i) / steps;
+      const px = x + r * Math.cos(a), py = y + r * Math.sin(a);
+      if (i === 0 && !this.path.length) this.moveTo(px, py);
+      else this.lineTo(px, py);
+    }
+  }
   fill() { this.paint(this.path, 'fill'); }
   stroke() { this.paint(this.path, 'stroke'); }
   fillRect(x, y, w, h) { const p = this.path; this.path = []; this.rect(x, y, w, h); this.paint(this.path, 'fill'); this.path = p; }
