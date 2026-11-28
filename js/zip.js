@@ -80,15 +80,19 @@ export async function readZip(buf) {
   const dec = new TextDecoder();
   const out = [];
   for (let k = 0; k < n; k++) {
+    if (p + 46 > u8.length) throw new Error('Damaged zip file (truncated central directory)');
     if (dv.getUint32(p, true) !== 0x02014b50) throw new Error('Damaged zip directory');
     const method = dv.getUint16(p + 10, true), crc = dv.getUint32(p + 16, true);
     const csize = dv.getUint32(p + 20, true), size = dv.getUint32(p + 24, true);
     const nameLen = dv.getUint16(p + 28, true), extraLen = dv.getUint16(p + 30, true), commentLen = dv.getUint16(p + 32, true);
     const local = dv.getUint32(p + 42, true);
+    if (p + 46 + nameLen + extraLen + commentLen > u8.length) throw new Error('Damaged zip file (truncated directory entry)');
     const name = dec.decode(u8.subarray(p + 46, p + 46 + nameLen));
     p += 46 + nameLen + extraLen + commentLen;
     if (name.endsWith('/')) continue; // folder
+    if (local + 30 > u8.length || dv.getUint32(local, true) !== 0x04034b50) throw new Error(`Damaged zip file (bad header for ${name})`);
     const start = local + 30 + dv.getUint16(local + 26, true) + dv.getUint16(local + 28, true);
+    if (start + csize > u8.length) throw new Error(`Damaged zip file (truncated entry ${name})`);
     const body = u8.subarray(start, start + csize);
     let data;
     if (method === 0) data = body.slice();

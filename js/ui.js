@@ -260,7 +260,7 @@ export function saveDialog({ title, baseName, ext = 'json', note, extra, makeDat
       h('div', { class: 'row', style: 'justify-content:flex-end' },
         h('button', { class: 'btn', onclick: () => { closeModal(); } }, 'Cancel'),
         h('button', { class: 'btn primary', onclick: go }, canPickLocation() ? 'Choose location…' : 'Save')));
-    body.addEventListener('change', () => { suffixEl.textContent = `.${extOf()}`; prepare(); });
+    body.addEventListener('change', e => { if (e.target === input) return; suffixEl.textContent = `.${extOf()}`; prepare(); });
     prepare();
     openModal(title, body, { onClose: () => { if (!saving) finish(null); } });
     setTimeout(() => { input.focus(); input.select(); }, 0);
@@ -271,6 +271,7 @@ export function saveDialog({ title, baseName, ext = 'json', note, extra, makeDat
 export function pickFiles({ accept = '', folder = false } = {}) {
   // iOS has no file type for .fcs, so an extension filter would grey the files out
   if (IS_IOS && /\.(fcs|tflow)/i.test(accept)) accept = '';
+  for (const old of document.querySelectorAll('input.file-input')) old.remove();
   return new Promise(resolve => {
     const inp = h('input', { type: 'file', accept, multiple: true, class: 'file-input', onchange: () => { resolve([...inp.files]); inp.remove(); } });
     if (folder) inp.setAttribute('webkitdirectory', '');
@@ -288,6 +289,7 @@ export function exportScale(w, h, ios = IS_IOS) {
 
 // Read a user-picked text file
 export function pickFile(accept) {
+  for (const old of document.querySelectorAll('input.file-input')) old.remove();
   return new Promise(resolve => {
     const inp = h('input', { type: 'file', accept: IS_IOS && /\.(fcs|tflow)/i.test(accept || '') ? '' : accept, class: 'file-input', onchange: () => { resolve(inp.files[0] || null); inp.remove(); } });
     document.body.append(inp); inp.click();

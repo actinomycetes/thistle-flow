@@ -585,7 +585,11 @@ function exportPopulation(s, gateId) {
     if (Sample.isStructural(k) || /^\$P\d+[NS]$/.test(k) || /^(\$SPILLOVER|SPILL|SPILLOVER|\$COMP)$/.test(k)) continue;
     extra[k] = v;
   }
-  if (s.spill) extra['$SPILLOVER'] = [s.spill.names.length, ...s.spill.names, ...s.spill.matrix.flat()].join(',');
+  if (s.spill) {
+    extra['$SPILLOVER'] = [s.spill.names.length, ...s.spill.names, ...s.spill.matrix.flat()].join(',');
+    if (s.compEnabled) { if ('APPLY_COMPENSATION' in extra) extra['APPLY_COMPENSATION'] = 'TRUE'; }
+    else extra['APPLY_COMPENSATION'] = 'FALSE';
+  }
   const popName = gateId ? ws.engine.fullName(gateId).replace(/[\\/:*?"<>|]+/g, '_') : 'All';
   extra['$FIL'] = `${s.name.replace(/\.fcs$/i, '')}_${popName}.fcs`;
   const buf = writeFCS({ names: s.channelNames, labels: s.params.map(p => p.label), columns: cols, ranges: exportRanges(s.params), extraText: extra });
@@ -752,11 +756,14 @@ function axisMenu(p, axis, anchor) {
 // Logicle W from the 5th percentile of negative values in the active sample (Parks et al. 2006)
 function autoW(ch, cfg) {
   const col = app.ws.activeSample()?.column(ch); if (!col) return null;
-  const negs = []; for (let i = 0; i < col.length; i++) if (col[i] < 0) negs.push(col[i]);
+  const negs = []; for (let i = 0; i < col.length; i++) if (Number.isFinite(col[i]) && col[i] < 0) negs.push(col[i]);
   if (negs.length < 20) { toast('Too few negative events to estimate W'); return null; }
   negs.sort((a, b) => a - b);
   const r = negs[Math.floor(negs.length * 0.05)];
-  return +Math.max(0, Math.min(Math.min(cfg.M, cfg.M - (cfg.A || 0)) / 2 - 0.01, (cfg.M - Math.log10(cfg.T / Math.abs(r))) / 2)).toFixed(2);
+  const lo = Math.max(0, -(cfg.A || 0));
+  const hi = Math.max(lo, Math.min(cfg.M, cfg.M - (cfg.A || 0)) / 2 - 0.01);
+  const raw = Math.max(lo, Math.min(hi, (cfg.M - Math.log10(cfg.T / Math.abs(r))) / 2));
+  return Math.max(lo, Math.min(hi, +raw.toFixed(2)));
 }
 
 // ---- zoom (view only: gates, percentages and statistics are unaffected) ----
@@ -1696,7 +1703,10 @@ function openStatsInThistlePlot() {
   if (rows[0].length < 2) return toast('Tick at least one population and statistic first', true);
   const msg = { type: 'thistle-table', version: 1, from: APP_NAME, appVersion: APP_VERSION, title: `${ws.name}: statistics`,
     csv: toCSV(rows), rows: rows.length - 1, columns: rows[0].length - 1 };
-  const tab = window.open((window.TF_TP_URL || TP_URL) + '#from=thistle-flow', '_blank');
+  const targetUrl = window.TF_TP_URL || TP_URL;
+  let expectedOrigin = 'null';
+  try { expectedOrigin = new URL(targetUrl, location.href).origin; } catch { /* keep 'null' */ }
+  const tab = window.open(targetUrl + '#from=thistle-flow', '_blank');
   const viaCSV = 'save the table with Export CSV… here and open it in Thistle Plot with ⬆ Open CSV…';
   if (!tab) return toast(`The new tab was blocked by the browser. Allow pop-ups for Thistle Flow, or ${viaCSV}`, true, { ms: 15000 });
   toast('Opening Thistle Plot in a new tab…', false, { ms: 6000 });
@@ -1704,11 +1714,13 @@ function openStatsInThistlePlot() {
   const stop = () => { window.removeEventListener('message', onMsg); clearTimeout(timer); };
   const onMsg = e => {
     if (e.source !== tab || !e.data || typeof e.data !== 'object') return;
-    if (e.data.type === 'thistle-ready' && !sent) { sent = true; tab.postMessage(msg, e.origin && e.origin !== 'null' ? e.origin : '*'); }
+    if (expectedOrigin !== 'null' && e.origin !== expectedOrigin) return;
+    if (e.data.type === 'thistle-ready' && !sent) { sent = true; tab.postMessage(msg, expectedOrigin !== 'null' ? expectedOrigin : '*'); }
     else if (e.data.type === 'thistle-table-received') { stop(); toast(`Opened in Thistle Plot: ${msg.rows} samples × ${msg.columns} columns`); }
   };
   window.addEventListener('message', onMsg);
-  const timer = setTimeout(() => { stop(); toast(`Thistle Plot did not take the table (it may need updating). Instead, ${viaCSV}`, false, { ms: 20000 }); }, window.TF_TP_WAIT || 20000);
+  const reason = location.protocol === 'file:' ? 'browsers block direct hand-off from a local file://' : 'it may need updating';
+  const timer = setTimeout(() => { stop(); toast(`Thistle Plot did not take the table (${reason}). Instead, ${viaCSV}`, false, { ms: 20000 }); }, window.TF_TP_WAIT || 20000);
 }
 
 // ---------- compensation & axis scales ----------
@@ -1815,7 +1827,7 @@ function renderComp(root) {
       h('label', { title: 'Draw the uncompensated events (grey) under the compensated ones (cyan) to see what the matrix changes' },
         overlayBox, ' Overlay uncompensated'));
     const actions = h('div', { class: 'row' },
-      h('button', { class: 'btn primary', onclick: () => { if (!invertible()) return; s.setSpill({ names, matrix: m.map(r => [...r]) }); if (s.compError) s.setCompEnabled(true); delete st.edits[s.id]; afterDataChange(); toast('Matrix applied'); } }, 'Apply to this sample'),
+      h('button', { class: 'btn primary', disabled: missing.length > 0, onclick: () => { if (!invertible()) return; const hadErr = !!s.compError; s.setSpill({ names, matrix: m.map(r => [...r]) }); if (hadErr) s.setCompEnabled(true); delete st.edits[s.id]; afterDataChange(); toast('Matrix applied'); } }, 'Apply to this sample'),
       h('button', { class: 'btn', onclick: () => {
         if (!invertible()) return;
         let n = 0;
@@ -1852,7 +1864,7 @@ function renderComp(root) {
         } catch (err) { toast('Import failed: ' + err.message, true); }
       } })), status);
     const left = h('div', { class: 'comp-left' },
-      h('div', { class: 'row' }, h('label', {}, 'Compensation'), h('label', {}, h('input', { type: 'checkbox', checked: s.compEnabled, onchange: e => { s.setCompEnabled(e.target.checked); afterDataChange(); } }), ' apply to this sample')),
+      h('div', { class: 'row' }, h('label', {}, 'Compensation'), h('label', {}, h('input', { type: 'checkbox', checked: s.compEnabled, disabled: missing.length > 0, onchange: e => { s.setCompEnabled(e.target.checked); afterDataChange(); } }), ' apply to this sample')),
       h('p', { class: 'hint' }, 'Spillover fractions: row = fluorochrome (source), column = detector; 0.15 = 15%. The diagonal should be 1. Larger values are shaded yellow to orange, negative ones blue. Click a value (or a preview plot) and use ↑/↓ to nudge it: the preview updates as you type, and nothing changes in the samples until you apply. ⟲ Matrix from file puts back the matrix stored in the FCS file (files are never changed).'),
       matrixTable, actions);
     body.append(h('div', { class: 'comp-cols' }, left, h('div', { class: 'comp-right' }, opts)));
@@ -1907,13 +1919,8 @@ function openTransforms(initial, axis) {
       h('p', { class: 'hint' }, 'Increase W to compress the region around zero (more linear area for spread-out negatives).'));
     body.append(h('div', { class: 'row' },
       cfg.kind === 'logicle' ? h('button', { class: 'btn', title: 'Estimate W from the 5th percentile of negative values in the active sample (Parks et al. 2006)', onclick: () => {
-        const s = ws.activeSample(); const col = s?.column(ch); if (!col) return;
-        const negs = []; for (let i = 0; i < col.length; i++) if (col[i] < 0) negs.push(col[i]);
-        if (negs.length < 20) { toast('Too few negative events to estimate W'); return; }
-        negs.sort((a, b) => a - b);
-        const r = negs[Math.floor(negs.length * 0.05)];
-        cfg.W = +Math.max(0, Math.min(Math.min(cfg.M, cfg.M - (cfg.A || 0)) / 2 - 0.01, (cfg.M - Math.log10(cfg.T / Math.abs(r))) / 2)).toFixed(2);
-        apply(); draw();
+        const W = autoW(ch, cfg);
+        if (W !== null) { cfg.W = W; apply(); draw(); }
       } }, 'Auto W') : null,
       h('button', { class: 'btn', onclick: () => { for (const c of ws.fluorChannels()) ws.transforms[c] = { ...cfg }; afterTransform(); toast('Applied to all fluorescence channels'); } }, 'Apply to all fluorescence channels'),
       h('button', { class: 'btn primary', onclick: closeModal }, 'Done')));

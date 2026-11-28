@@ -99,6 +99,8 @@ class FastLogicle {
 
 // What is wrong with a scale setting (a message for the user), or null if it can be used as it is.
 export function scaleProblem(cfg) {
+  if (!cfg || typeof cfg !== 'object') return 'Invalid scale setting.';
+  if (!['linear', 'log', 'arcsinh', 'logicle'].includes(cfg.kind)) return `Unknown scale kind "${cfg.kind}".`;
   const fin = k => Number.isFinite(cfg[k]);
   if (cfg.kind === 'linear' || cfg.kind === 'log' || cfg.kind === 'arcsinh') {
     if (!fin('min') || !fin('max')) return 'Minimum and maximum must be numbers.';
@@ -131,7 +133,8 @@ export function makeTransform(cfg) {
     };
   }
   if (kind === 'log') {
-    const min = Math.max(cfg.min ?? 1, 1e-3), max = cfg.max ?? 262144;
+    const min = cfg.min > 0 ? cfg.min : 1;
+    const max = cfg.max > min ? cfg.max : Math.max(262144, min * 10);
     const lmin = Math.log10(min), lspan = Math.log10(max) - lmin;
     return {
       kind, cfg,
@@ -169,10 +172,12 @@ export function makeTransform(cfg) {
 }
 
 function linearTicks(min, max) {
+  if (!(max > min)) return [];
   const span = max - min;
   const raw = span / 5;
   const mag = Math.pow(10, Math.floor(Math.log10(raw)));
   const step = [1, 2, 2.5, 5, 10].map(m => m * mag).find(s => span / s <= 6) || mag * 10;
+  if (!(step > 0)) return [];
   const ticks = [];
   for (let v = Math.ceil(min / step) * step; v <= max + 1e-9; v += step) ticks.push({ v, label: fmtNum(v), major: true });
   return ticks;

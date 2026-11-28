@@ -188,9 +188,13 @@ export class GateEngine {
 
   // Path from root to gate (array of gates)
   path(id) {
-    const out = [];
+    const out = [], visited = new Set();
     let g = this.gates.get(id);
-    while (g) { out.unshift(g); g = g.parent ? this.gates.get(g.parent) : null; }
+    while (g && !visited.has(g.id)) {
+      visited.add(g.id);
+      out.unshift(g);
+      g = g.parent ? this.gates.get(g.parent) : null;
+    }
     return out;
   }
   fullName(id) { return id ? this.path(id).map(g => g.name).join('/') : 'All Events'; }
@@ -250,7 +254,7 @@ export class GateEngine {
   }
 
   // Returns { mask: Uint8Array|null (null = all), idx: Uint32Array, count }
-  population(sample, gateId) {
+  population(sample, gateId, _vis = null) {
     let sc = this.cache.get(sample.id);
     if (!sc) { sc = new Map(); this.cache.set(sample.id, sc); }
     const key = gateId || '__root';
@@ -262,7 +266,12 @@ export class GateEngine {
       res = { mask: null, idx, count: sample.events };
     } else {
       const g = this.gates.get(gateId);
-      const parent = this.population(sample, g.parent);
+      if (!g || (_vis && _vis.has(gateId))) {
+        return { mask: new Uint8Array(sample.events), idx: new Uint32Array(0), count: 0 };
+      }
+      const vis = _vis || new Set();
+      vis.add(gateId);
+      const parent = this.population(sample, g.parent, vis);
       const own = this._test(sample, g);
       if (parent.mask) for (let i = 0; i < own.length; i++) own[i] &= parent.mask[i];
       let count = 0;
@@ -301,17 +310,17 @@ export function channelStats(col, idx) {
   const mean = sum / n;
   let ss = 0;
   for (let i = 0; i < n; i++) { const d = vals[i] - mean; ss += d * d; }
-  const sd = n > 1 ? Math.sqrt(ss / (n - 1)) : 0;
+  const sd = n > 1 ? Math.sqrt(ss / (n - 1)) : NaN;
   vals.sort();
   const median = quantileSorted(vals, 0.5);
   const p16 = quantileSorted(vals, 0.15866), p84 = quantileSorted(vals, 0.84134);
-  const rsd = (p84 - p16) / 2;
+  const rsd = n > 1 ? (p84 - p16) / 2 : NaN;
   return {
     n, mean, median, sd,
     gmean: logN ? Math.exp(logSum / logN) : NaN, gmeanN: logN,
-    cv: mean !== 0 ? 100 * sd / Math.abs(mean) : NaN,
+    cv: n > 1 && mean !== 0 ? 100 * sd / Math.abs(mean) : NaN,
     rsd,
-    rcv: median !== 0 ? 100 * rsd / Math.abs(median) : NaN,
+    rcv: n > 1 && median !== 0 ? 100 * rsd / Math.abs(median) : NaN,
     min: vals[0], max: vals[n - 1],
     p5: quantileSorted(vals, 0.05), p95: quantileSorted(vals, 0.95),
   };

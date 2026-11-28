@@ -25,7 +25,7 @@ function hash32(i) {
 const subCache = new WeakMap();
 export function subsampleIdx(idx, max) {
   max = Math.floor(max);
-  if (!max || idx.length <= max) return idx;
+  if (!(max > 0) || idx.length <= max) return idx;
   let m = subCache.get(idx);
   if (!m) { m = new Map(); subCache.set(idx, m); }
   if (m.has(max)) return m.get(max);
@@ -56,7 +56,11 @@ export function zoomUnits(ws, def) {
   const z = def.zoom;
   if (!z) return null;
   const tx = makeTransform(ws.getCfg(def.x)), ty = def.y ? makeTransform(ws.getCfg(def.y)) : null;
-  const u = (t, r) => (r && t ? r.map(v => t.fwd(v)).sort((a, b) => a - b) : null);
+  const u = (t, r) => {
+    if (!r || !t) return null;
+    const a = r.map(v => t.fwd(v)).sort((p, q) => p - q);
+    return Number.isFinite(a[0]) && Number.isFinite(a[1]) && a[1] > a[0] ? a : null;
+  };
   const out = { x: u(tx, z.x), y: def.y ? u(ty, z.y) : null };
   return out.x || out.y ? out : null;
 }
