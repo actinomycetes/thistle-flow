@@ -44,8 +44,8 @@ test('a gate edge snapped to an axis includes every event piled up on that axis'
   const s = sampleOf([[50000, 250000, 30000, 500000], [80000, 80000, 80000, 90000]]);
   const t = makeTransform(lin(100000)());
   const eng = new GateEngine(lin(100000));
-  // edges dragged onto the right/top axis are stored at 1.3 display units (as the plot does)
-  eng.add({ id: 'r', name: 'r', parent: null, type: 'rect', x: 'P1', y: 'P2', x0: 40000, x1: t.inv(1.3), y0: 40000, y1: t.inv(1.3) });
+  // edges dragged onto the right/top axis carry explicit snap flags (and store 1.3 display units as the plot does)
+  eng.add({ id: 'r', name: 'r', parent: null, type: 'rect', x: 'P1', y: 'P2', x0: 40000, x1: t.inv(1.3), y0: 40000, y1: t.inv(1.3), snap: { x1: 1, y1: 1 } });
   assert.deepEqual(ids(eng, s, 'r'), [0, 1, 3], 'events beyond the right axis are drawn on it, inside the gate');
 });
 
@@ -495,10 +495,55 @@ test('tightening an axis scale preserves rect, interval, split, and polygon gate
   assert.deepEqual(ids(eng, s, 's13L'), [0]);
   assert.deepEqual(ids(eng, s, 's13R'), [1, 2, 3]);
 
-  // Axis-snapped polygon right edge still includes piled events
+  // Explicitly axis-snapped polygon right edge includes piled events across scale changes
   const t = makeTransform(lin(100000)());
-  eng.add({ id: 'snapPoly', name: 'sp', parent: null, type: 'polygon', x: 'P1', y: 'P2', pts: [[40000, 10000], [t.inv(1.3), 10000], [t.inv(1.3), 90000], [40000, 90000]] });
+  eng.add({
+    id: 'snapPoly', name: 'sp', parent: null, type: 'polygon', x: 'P1', y: 'P2',
+    pts: [[40000, 10000], [t.inv(1.3), 10000], [t.inv(1.3), 90000], [40000, 90000]],
+    snap: [[0, 0], [1, 0], [1, 0], [0, 0]],
+  });
   assert.deepEqual(ids(eng, s, 'snapPoly'), [0, 1, 2, 3]);
+});
+
+test('finite gate endpoints stay finite across scale changes while explicitly snapped edges include piled events and survive workspace round-trip', () => {
+  const s1 = sampleOf([[50000, 125000, 150000, 200000], [50000, 50000, 50000, 50000]], ['P1', 'P2']);
+  const s2 = sampleOf([[50000, 125000, 150000, 200000], [50000, 50000, 50000, 50000]], ['P1', 'P2']);
+  s2.key = 'sample2.fcs';
+  const maxima = [200000, 100000, 100100];
+
+  const checkBoth = (ws) => {
+    for (const max of maxima) {
+      ws.transforms.P1 = { kind: 'linear', min: 0, max };
+      ws.engine.invalidate();
+      assert.deepEqual(ids(ws.engine, s1, 'ivFin'), [0, 1], `finite interval at max=${max}`);
+      assert.deepEqual(ids(ws.engine, s1, 'ivSnap'), [0, 1, 2, 3], `snapped interval at max=${max}`);
+      // per-sample override clears snap on s2 (back to finite [0, 130000))
+      assert.deepEqual(ids(ws.engine, s2, 'ivSnap'), [0, 1], `per-sample unsnapped override at max=${max}`);
+      // per-sample override enables snap on s2 for ivFin
+      assert.deepEqual(ids(ws.engine, s2, 'ivFin'), [0, 1, 2, 3], `per-sample snapped override at max=${max}`);
+    }
+  };
+
+  const ws = new Workspace('snap-test');
+  ws.samples.push(s1, s2);
+  ws.activeId = s1.id;
+  ws.engine.add({
+    id: 'ivFin', name: 'Finite', parent: null, type: 'interval', x: 'P1', x0: 0, x1: 130000,
+    overrides: { [s2.key]: { x0: 0, x1: 130000, snap: { x1: 1 } } },
+  });
+  ws.engine.add({
+    id: 'ivSnap', name: 'Snapped', parent: null, type: 'interval', x: 'P1', x0: 0, x1: 130000, snap: { x1: 1 },
+    overrides: { [s2.key]: { x0: 0, x1: 130000, snap: null } },
+  });
+  checkBoth(ws);
+
+  // Repeat both checks after JSON workspace serialize + deserialize round-trip
+  const saved = JSON.parse(JSON.stringify(ws.serialize()));
+  const ws2 = new Workspace('reopened');
+  ws2.samples.push(s1, s2);
+  ws2.activeId = s1.id;
+  ws2.deserialize(saved);
+  checkBoth(ws2);
 });
 
 test('angled and staggered quadrants tile exactly on diagonal arms and out-of-frame centres/offsets', () => {

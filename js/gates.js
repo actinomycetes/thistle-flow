@@ -31,19 +31,34 @@ function unitRange(t, a, b) {
   return [a === -Infinity ? -Infinity : f32(t.fwd(a)), b === Infinity ? Infinity : f32(t.fwd(b))];
 }
 
-// Events beyond the plot are drawn piled up on its axes. A gate edge dragged onto an axis is
-// stored at -0.3 / 1.3 display units so it holds the whole pile; finite boundaries elsewhere are
-// tested against the events' true (unclamped) display coordinates so tightening an axis scale
-// never empties or inverts gates. NaN (missing) values are in no gate.
+// Events beyond the plot are drawn piled up on its axes. When a user drags a gate edge or
+// polygon vertex onto an axis edge, plotview/figureview records an explicit `snap` flag alongside
+// the stored coordinate (-0.3 / 1.3 display units):
+//   - rect / interval: `snap: { x0?, x1?, y0?, y1? }` (-1 = low axis, 1 = high axis, or boolean true
+//     meaning low axis for x0/y0 and high axis for x1/y1).
+//   - polygon: `snap: [[sx, sy], ...]` per vertex (-1 = low axis, 0 = finite, 1 = high axis).
+// Finite coordinates without a `snap` flag are always evaluated at their exact (unclamped) display
+// positions so changing an axis scale never turns a finite gate into ±Infinity. Older workspaces
+// saved before `snap` existed have no `snap` metadata, so any ambiguous legacy coordinate (such as
+// one saved at 1.3 display units) is evaluated as a finite value unless re-snapped onto an axis.
+// NaN (missing) values are in no gate.
 export const PILE_LO = -0.25, PILE_HI = 1.25;
-const SNAP_LO = -0.3, SNAP_HI = 1.3, SNAP_TOL = 1e-3;
-const isSnapLo = u => Math.abs(u - SNAP_LO) < SNAP_TOL;
-const isSnapHi = u => Math.abs(u - SNAP_HI) < SNAP_TOL;
+export function snapBound(v, flag, defaultSign = 0) {
+  if (flag === -1 || (flag === true && defaultSign < 0)) return -Infinity;
+  if (flag === 1 || (flag === true && defaultSign > 0)) return Infinity;
+  return v;
+}
 const inRange = (v, lo, hi) => v >= lo && (hi === Infinity ? v <= Infinity : v < hi);
 
 // ---- per-sample gate adjustments ----
 // A gate may carry overrides: { [sample.key]: geometry } (keyed by file name so they survive saving).
-const GEOM_KEYS = { rect: ['x0', 'x1', 'y0', 'y1'], polygon: ['pts'], quad: ['cx', 'cy', 'quadMode', 'angles', 'offsets'], interval: ['x0', 'x1', 'level'], split: ['cx'] };
+const GEOM_KEYS = {
+  rect: ['x0', 'x1', 'y0', 'y1', 'snap'],
+  polygon: ['pts', 'snap'],
+  quad: ['cx', 'cy', 'quadMode', 'angles', 'offsets'],
+  interval: ['x0', 'x1', 'level', 'snap'],
+  split: ['cx'],
+};
 // Gates that come in linked groups (moved together): quadrants (4) and splits (left/right)
 export const isGrouped = g => g.type === 'quad' || g.type === 'split';
 export function pickGeom(g) {
@@ -214,26 +229,40 @@ export function quadHandles(g, tx, ty) {
 export const isOneD = g => g.type === 'interval' || g.type === 'split'; // histogram gates
 export function gateChannels(g) { return isOneD(g) ? [g.x] : [g.x, g.y]; }
 
-function polygonMask(ux, uy, pts, out) {
-  let minx = Infinity, maxx = -Infinity, miny = Infinity, maxy = -Infinity;
+function polygonMask(ux, uy, pts, out, snap = null) {
+  const sp = Array.isArray(snap) && snap.length === pts.length ? snap : null;
   let snapLoX = false, snapHiX = false, snapLoY = false, snapHiY = false;
-  for (const [x, y] of pts) {
+  let finMinX = Infinity, finMaxX = -Infinity, finMinY = Infinity, finMaxY = -Infinity;
+  for (let i = 0; i < pts.length; i++) {
+    const sx = sp ? sp[i]?.[0] || 0 : 0;
+    const sy = sp ? sp[i]?.[1] || 0 : 0;
+    const [x, y] = pts[i];
+    if (sx < 0) snapLoX = true; else if (sx > 0) snapHiX = true;
+    else { if (x < finMinX) finMinX = x; if (x > finMaxX) finMaxX = x; }
+    if (sy < 0) snapLoY = true; else if (sy > 0) snapHiY = true;
+    else { if (y < finMinY) finMinY = y; if (y > finMaxY) finMaxY = y; }
+  }
+  const hasSnap = snapLoX || snapHiX || snapLoY || snapHiY;
+  const loX = Math.min(PILE_LO, Number.isFinite(finMinX) ? finMinX - 0.25 : PILE_LO);
+  const hiX = Math.max(PILE_HI, Number.isFinite(finMaxX) ? finMaxX + 0.25 : PILE_HI);
+  const loY = Math.min(PILE_LO, Number.isFinite(finMinY) ? finMinY - 0.25 : PILE_LO);
+  const hiY = Math.max(PILE_HI, Number.isFinite(finMaxY) ? finMaxY + 0.25 : PILE_HI);
+  const effPts = hasSnap ? pts.map(([x, y], i) => [
+    sp[i]?.[0] < 0 ? loX - 0.05 : sp[i]?.[0] > 0 ? hiX + 0.05 : x,
+    sp[i]?.[1] < 0 ? loY - 0.05 : sp[i]?.[1] > 0 ? hiY + 0.05 : y,
+  ]) : pts;
+  let minx = Infinity, maxx = -Infinity, miny = Infinity, maxy = -Infinity;
+  for (const [x, y] of effPts) {
     if (x < minx) minx = x; if (x > maxx) maxx = x;
     if (y < miny) miny = y; if (y > maxy) maxy = y;
-    if (isSnapLo(x)) snapLoX = true; if (isSnapHi(x)) snapHiX = true;
-    if (isSnapLo(y)) snapLoY = true; if (isSnapHi(y)) snapHiY = true;
   }
-  const loX = snapLoX && minx >= SNAP_LO - SNAP_TOL ? PILE_LO : Math.min(PILE_LO, minx) - 1;
-  const hiX = snapHiX && maxx <= SNAP_HI + SNAP_TOL ? PILE_HI : Math.max(PILE_HI, maxx) + 1;
-  const loY = snapLoY && miny >= SNAP_LO - SNAP_TOL ? PILE_LO : Math.min(PILE_LO, miny) - 1;
-  const hiY = snapHiY && maxy <= SNAP_HI + SNAP_TOL ? PILE_HI : Math.max(PILE_HI, maxy) + 1;
   for (let i = 0; i < out.length; i++) {
     const rx = ux[i], ry = uy[i];
     if (rx !== rx || ry !== ry) continue; // NaN: in no gate
-    const x = rx < loX ? loX : rx > hiX ? hiX : rx;
-    const y = ry < loY ? loY : ry > hiY ? hiY : ry;
+    const x = snapLoX && rx < loX ? loX : snapHiX && rx > hiX ? hiX : rx;
+    const y = snapLoY && ry < loY ? loY : snapHiY && ry > hiY ? hiY : ry;
     if (x < minx || x > maxx || y < miny || y > maxy) continue;
-    out[i] = pointInPolygon(x, y, pts) ? 1 : 0;
+    out[i] = pointInPolygon(x, y, effPts) ? 1 : 0;
   }
   return out;
 }
@@ -305,9 +334,13 @@ export class GateEngine {
     }
     if (g.type === 'rect' || g.type === 'quad' || g.type === 'interval' || g.type === 'split') {
       let x0, x1, y0 = -Infinity, y1 = Infinity;
-      if (g.type === 'rect') ({ x0, x1, y0, y1 } = g);
-      else if (g.type === 'interval') ({ x0, x1 } = g);
-      else if (g.type === 'split') { x0 = g.side === 'L' ? -Infinity : g.cx; x1 = g.side === 'L' ? g.cx : Infinity; }
+      const sp = g.snap && typeof g.snap === 'object' ? g.snap : null;
+      if (g.type === 'rect') {
+        x0 = snapBound(g.x0, sp?.x0, -1); x1 = snapBound(g.x1, sp?.x1, 1);
+        y0 = snapBound(g.y0, sp?.y0, -1); y1 = snapBound(g.y1, sp?.y1, 1);
+      } else if (g.type === 'interval') {
+        x0 = snapBound(g.x0, sp?.x0, -1); x1 = snapBound(g.x1, sp?.x1, 1);
+      } else if (g.type === 'split') { x0 = g.side === 'L' ? -Infinity : g.cx; x1 = g.side === 'L' ? g.cx : Infinity; }
       else {
         const right = g.q === 'UR' || g.q === 'LR', up = g.q === 'UR' || g.q === 'UL';
         x0 = right ? g.cx : -Infinity; x1 = right ? Infinity : g.cx;
@@ -316,11 +349,7 @@ export class GateEngine {
       const cfgX = this.getCfg(g.x);
       const tx = makeTransform(cfgX);
       const ux = sample.unit(g.x, cfgX);
-      let [lox, hix] = unitRange(tx, x0, x1);
-      if (g.type === 'rect' || g.type === 'interval') {
-        if (isSnapLo(lox)) lox = -Infinity;
-        if (isSnapHi(hix)) hix = Infinity;
-      }
+      const [lox, hix] = unitRange(tx, x0, x1);
       if (isOneD(g)) {
         for (let i = 0; i < N; i++) out[i] = inRange(ux[i], lox, hix) ? 1 : 0;
         return out;
@@ -328,11 +357,7 @@ export class GateEngine {
       const cfgY = this.getCfg(g.y);
       const ty = makeTransform(cfgY);
       const uy = sample.unit(g.y, cfgY);
-      let [loy, hiy] = unitRange(ty, y0, y1);
-      if (g.type === 'rect') {
-        if (isSnapLo(loy)) loy = -Infinity;
-        if (isSnapHi(hiy)) hiy = Infinity;
-      }
+      const [loy, hiy] = unitRange(ty, y0, y1);
       for (let i = 0; i < N; i++) out[i] = inRange(ux[i], lox, hix) && inRange(uy[i], loy, hiy) ? 1 : 0;
       return out;
     }
@@ -340,7 +365,7 @@ export class GateEngine {
       const cfgX = this.getCfg(g.x), cfgY = this.getCfg(g.y);
       const tx = makeTransform(cfgX), ty = makeTransform(cfgY);
       const pts = g.pts.map(([x, y]) => [f32(tx.fwd(x)), f32(ty.fwd(y))]);
-      return polygonMask(sample.unit(g.x, cfgX), sample.unit(g.y, cfgY), pts, out);
+      return polygonMask(sample.unit(g.x, cfgX), sample.unit(g.y, cfgY), pts, out, g.snap);
     }
     throw new Error('Unknown gate type ' + g.type);
   }
